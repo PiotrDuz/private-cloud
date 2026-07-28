@@ -1,0 +1,13 @@
+[Unit]
+Description=Load and mount the encrypted ZFS datasets used by k0s
+Requires=zfs-import.target
+After=zfs-import.target zfs-mount.service
+Before=k0scontroller.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/k0s-zfs-mount @@ROOT_DATASET@@
+
+[Install]
+WantedBy=multi-user.target

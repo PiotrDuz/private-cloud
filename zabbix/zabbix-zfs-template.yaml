@@ -1,0 +1,1152 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: e5cc588e59564dd5a08ce6a3f16a44d9
+      name: Templates/Storage
+  templates:
+    - uuid: 504a4b6fc42f4c9b94fd7ec763221781
+      template: 'ZFS by Zabbix agent active'
+      name: 'ZFS by Zabbix agent active'
+      description: 'Read-only OpenZFS monitoring through the private-cloud Agent 2 collectors.'
+      groups:
+        - name: Templates/Storage
+      items:
+        - uuid: 5ea421b42fee4eec9ac12cc8cdde64a0
+          name: 'ZFS: Metrics JSON'
+          type: ZABBIX_ACTIVE
+          key: zfs.metrics
+          delay: 1m
+          timeout: 30s
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          tags:
+            - tag: component
+              value: raw
+        - uuid: 9b6bad59af6d401ebd59f2ecefb306af
+          name: 'ZFS: Collector errors'
+          type: DEPENDENT
+          key: zfs.collector.errors
+          delay: '0'
+          history: 30d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.error_count
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: health
+          triggers:
+            - uuid: ee4bc2be30f3404aa7670c9dd99b50db
+              expression: 'last(/ZFS by Zabbix agent active/zfs.collector.errors)>0'
+              name: 'ZFS collector reports errors'
+              priority: HIGH
+        - uuid: fa4578081b4744b8bdbdb0fd7ac5d3e3
+          name: 'ZFS: Metrics heartbeat'
+          type: DEPENDENT
+          key: zfs.metrics.heartbeat
+          delay: '0'
+          history: 7d
+          units: unixtime
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.generated_at
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: health
+          triggers:
+            - uuid: 01e8b6d0010246558db5179557527a08
+              expression: 'nodata(/ZFS by Zabbix agent active/zfs.metrics.heartbeat,5m)=1'
+              name: 'No ZFS metrics received for 5 minutes'
+              priority: HIGH
+        - uuid: 41476b7eb9a4446db70f22d245cc90b8
+          name: 'ZFS: Snapshot metrics JSON'
+          type: ZABBIX_ACTIVE
+          key: zfs.snapshots
+          delay: 15m
+          timeout: 30s
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          tags:
+            - tag: component
+              value: raw
+        - uuid: c9f2f186cad64de893108795c60d1971
+          name: 'ZFS: Snapshot collector errors'
+          type: DEPENDENT
+          key: zfs.snapshot.collector.errors
+          delay: '0'
+          history: 30d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.error_count
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: health
+          triggers:
+            - uuid: ce8bdb23e6ed4665aa7d8aca548af16c
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.collector.errors)>0'
+              name: 'ZFS snapshot collector reports errors'
+              priority: HIGH
+        - uuid: a8a6e94c3fd34818b791bc71c0b52b68
+          name: 'ZFS: Snapshot metrics heartbeat'
+          type: DEPENDENT
+          key: zfs.snapshots.heartbeat
+          delay: '0'
+          history: 7d
+          units: unixtime
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.generated_at
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: health
+          triggers:
+            - uuid: b98cf73f3a6d49a0b3e94b52ae9ba7c2
+              expression: 'nodata(/ZFS by Zabbix agent active/zfs.snapshots.heartbeat,30m)=1'
+              name: 'No ZFS snapshot metrics received for 30 minutes'
+              priority: WARNING
+        - uuid: 268483d2cbbe4adfb427d914e1a46ed2
+          name: 'ZFS: Total snapshots'
+          type: DEPENDENT
+          key: zfs.snapshots.total
+          delay: '0'
+          history: 90d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.total_count
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: f83c5e2d849e4f54b6e3de686a2acbe2
+          name: 'ZFS ARC: Size'
+          type: DEPENDENT
+          key: zfs.arc.size
+          delay: '0'
+          history: 30d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arc.size
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: arc
+        - uuid: c5c76d53b1b14e6fa10f673706f5341d
+          name: 'ZFS ARC: Target size'
+          type: DEPENDENT
+          key: zfs.arc.target_size
+          delay: '0'
+          history: 30d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arc.target_size
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: arc
+        - uuid: 42444e4a76cf42b9bc426552103864c4
+          name: 'ZFS ARC: Hit ratio'
+          type: DEPENDENT
+          key: zfs.arc.hit_ratio
+          delay: '0'
+          history: 30d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arc.hit_ratio
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: arc
+        - uuid: cbbdfd3c9f6546118e286b139e1f978f
+          name: 'ZFS ARC: Metadata used'
+          type: DEPENDENT
+          key: zfs.arc.metadata_used
+          delay: '0'
+          history: 30d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arc.metadata_used
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: arc
+        - uuid: 0a4a96b5d4934aa882cd8770f7398f3c
+          name: 'ZFS ARC: Maximum size'
+          type: DEPENDENT
+          key: zfs.arc.maximum_size
+          delay: '0'
+          history: 30d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arc.maximum_size
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: arc
+        - uuid: 584451a0ebc64bcc8321dd9218cf9df6
+          name: 'ZFS ARC: Metadata limit'
+          type: DEPENDENT
+          key: zfs.arc.metadata_limit
+          delay: '0'
+          history: 30d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arc.metadata_limit
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: arc
+        - uuid: f9072830887142bea957858d39ec10a9
+          name: 'ZFS L2ARC: Size'
+          type: DEPENDENT
+          key: zfs.l2arc.size
+          delay: '0'
+          history: 30d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arc.l2_size
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: l2arc
+        - uuid: 25f14bf08da1479f984591ca5360128f
+          name: 'ZFS L2ARC: Hit ratio'
+          type: DEPENDENT
+          key: zfs.l2arc.hit_ratio
+          delay: '0'
+          history: 30d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arc.l2_hit_ratio
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: l2arc
+        - uuid: fd8b1f24f6f340ba8bd459d2e9e4f297
+          name: 'ZFS L2ARC: I/O errors'
+          type: DEPENDENT
+          key: zfs.l2arc.errors.io
+          delay: '0'
+          history: 90d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arc.l2_io_errors
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: errors
+          triggers:
+            - uuid: d8a97541c4744f738744323580229e0f
+              expression: 'last(/ZFS by Zabbix agent active/zfs.l2arc.errors.io)>0'
+              name: 'ZFS L2ARC has I/O errors'
+              priority: HIGH
+        - uuid: 042dbb39bf3141fab90b1ff6b61d5810
+          name: 'ZFS L2ARC: Checksum errors'
+          type: DEPENDENT
+          key: zfs.l2arc.errors.checksum
+          delay: '0'
+          history: 90d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arc.l2_checksum_errors
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: errors
+          triggers:
+            - uuid: 3d34041c3b3347c49a4b1275617d01ad
+              expression: 'last(/ZFS by Zabbix agent active/zfs.l2arc.errors.checksum)>0'
+              name: 'ZFS L2ARC has checksum errors'
+              priority: HIGH
+      discovery_rules:
+        - uuid: 214f60db809d4f20af09eeaa051b281d
+          name: 'ZFS pool discovery'
+          type: DEPENDENT
+          key: zfs.pool.discovery
+          delay: '0'
+          lifetime: 7d
+          item_prototypes:
+            - uuid: efd8ec0db060455ba4cf855c96f7a69d
+              name: 'Pool {#POOL.NAME}: Health'
+              type: DEPENDENT
+              key: 'zfs.pool.health["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              value_type: CHAR
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["health"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: pool
+                - tag: pool
+                  value: '{#POOL.NAME}'
+            - uuid: f3f8eb76441e43dd97156f230d18e9d7
+              name: 'Pool {#POOL.NAME}: Online'
+              type: DEPENDENT
+              key: 'zfs.pool.online["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              valuemap:
+                name: 'ZFS yes/no'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["online"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: pool
+                - tag: pool
+                  value: '{#POOL.NAME}'
+              trigger_prototypes:
+                - uuid: f546191712c641a78480556e5e7f3d19
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.online["{#POOL.NAME}"])<>1'
+                  name: 'ZFS pool {#POOL.NAME} is not online'
+                  priority: DISASTER
+            - uuid: 72973772caf34f658532cf46c1807952
+              name: 'Pool {#POOL.NAME}: Size'
+              type: DEPENDENT
+              key: 'zfs.pool.size["{#POOL.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["size"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: pool
+            - uuid: 397364f3e02c4da18612112932383857
+              name: 'Pool {#POOL.NAME}: Allocated'
+              type: DEPENDENT
+              key: 'zfs.pool.allocated["{#POOL.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["allocated"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: pool
+            - uuid: a69a252a7ed4493080ad2cb321312d08
+              name: 'Pool {#POOL.NAME}: Free'
+              type: DEPENDENT
+              key: 'zfs.pool.free["{#POOL.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["free"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: pool
+            - uuid: 23c01c22143444c098d120655178ccda
+              name: 'Pool {#POOL.NAME}: Capacity'
+              type: DEPENDENT
+              key: 'zfs.pool.capacity["{#POOL.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: '%'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["capacity"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: pool
+              trigger_prototypes:
+                - uuid: 764c619524264e2c9b3b71b19ffdfd72
+                  expression: 'min(/ZFS by Zabbix agent active/zfs.pool.capacity["{#POOL.NAME}"],10m)>={$ZFS.POOL.CAPACITY.HIGH}'
+                  name: 'ZFS pool {#POOL.NAME} capacity is high'
+                  priority: HIGH
+                - uuid: 443667cba8b44d55acdc5a7768df906a
+                  expression: 'min(/ZFS by Zabbix agent active/zfs.pool.capacity["{#POOL.NAME}"],10m)>={$ZFS.POOL.CAPACITY.WARN}'
+                  name: 'ZFS pool {#POOL.NAME} capacity is elevated'
+                  priority: WARNING
+                  dependencies:
+                    - name: 'ZFS pool {#POOL.NAME} capacity is high'
+                      expression: 'min(/ZFS by Zabbix agent active/zfs.pool.capacity["{#POOL.NAME}"],10m)>={$ZFS.POOL.CAPACITY.HIGH}'
+            - uuid: 1af3260926464104a858e80e4204f28b
+              name: 'Pool {#POOL.NAME}: Fragmentation'
+              type: DEPENDENT
+              key: 'zfs.pool.fragmentation["{#POOL.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: '%'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["fragmentation"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: pool
+            - uuid: bc538fb92605438cad07141ae5b1597a
+              name: 'Pool {#POOL.NAME}: Deduplication ratio'
+              type: DEPENDENT
+              key: 'zfs.pool.dedup_ratio["{#POOL.NAME}"]'
+              delay: '0'
+              history: 30d
+              value_type: FLOAT
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["dedup_ratio"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: pool
+            - uuid: 9ed33fb93bec445fb68374e8fac901d6
+              name: 'Pool {#POOL.NAME}: Read errors'
+              type: DEPENDENT
+              key: 'zfs.pool.errors.read["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["read_errors"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: errors
+              trigger_prototypes:
+                - uuid: eda8f6f38acc49f9a17768917854db93
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.errors.read["{#POOL.NAME}"])>0'
+                  name: 'ZFS pool {#POOL.NAME} has read errors'
+                  priority: HIGH
+            - uuid: 88192cd038fd43f6bab1128917e93bcf
+              name: 'Pool {#POOL.NAME}: Write errors'
+              type: DEPENDENT
+              key: 'zfs.pool.errors.write["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["write_errors"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: errors
+              trigger_prototypes:
+                - uuid: 8867841d4047487fbda610d509a4deda
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.errors.write["{#POOL.NAME}"])>0'
+                  name: 'ZFS pool {#POOL.NAME} has write errors'
+                  priority: HIGH
+            - uuid: 2551d66846f241d98dacd2487ee5b177
+              name: 'Pool {#POOL.NAME}: Checksum errors'
+              type: DEPENDENT
+              key: 'zfs.pool.errors.checksum["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["checksum_errors"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: errors
+              trigger_prototypes:
+                - uuid: 59317d1bb40e4870a17185017ea502b9
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.errors.checksum["{#POOL.NAME}"])>0'
+                  name: 'ZFS pool {#POOL.NAME} has checksum errors'
+                  priority: HIGH
+            - uuid: b6430bfe1f684279b7867ffeb7113813
+              name: 'Pool {#POOL.NAME}: Permanent errors present'
+              type: DEPENDENT
+              key: 'zfs.pool.errors.permanent["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              valuemap:
+                name: 'ZFS yes/no'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["permanent_errors"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: errors
+              trigger_prototypes:
+                - uuid: e619691c4de249f1a12ef8bb95b20bf0
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.errors.permanent["{#POOL.NAME}"])>0'
+                  name: 'ZFS pool {#POOL.NAME} has permanent data errors'
+                  priority: DISASTER
+            - uuid: 1f692182af7a43e4940ce605e6b28de8
+              name: 'Pool {#POOL.NAME}: Scrub active'
+              type: DEPENDENT
+              key: 'zfs.pool.scrub.active["{#POOL.NAME}"]'
+              delay: '0'
+              history: 30d
+              valuemap:
+                name: 'ZFS yes/no'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["scrub_active"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: scrub
+            - uuid: 7795c878683d4529a7a9c0efb3d4855f
+              name: 'Pool {#POOL.NAME}: Last scrub repaired'
+              type: DEPENDENT
+              key: 'zfs.pool.scrub.repaired["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["last_scrub_repaired"]'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '0'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: scrub
+            - uuid: 970efb0b7ce749c0ae076b0e0b0a68ac
+              name: 'Pool {#POOL.NAME}: Last scrub completion'
+              type: DEPENDENT
+              key: 'zfs.pool.scrub.epoch["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              units: unixtime
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["last_scrub_epoch"]'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '0'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: scrub
+            - uuid: c41517f8b22149f5ba1810bd9e923f46
+              name: 'Pool {#POOL.NAME}: Resilver active'
+              type: DEPENDENT
+              key: 'zfs.pool.resilver.active["{#POOL.NAME}"]'
+              delay: '0'
+              history: 30d
+              valuemap:
+                name: 'ZFS yes/no'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["resilver_active"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: resilver
+            - uuid: c32aa15a6c204ed68e3b2e6a77d20bef
+              name: 'Pool {#POOL.NAME}: Read throughput'
+              type: DEPENDENT
+              key: 'zfs.pool.io.read["{#POOL.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: Bps
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["read_bytes"]'
+                - type: CHANGE_PER_SECOND
+                  parameters:
+                    - ''
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: io
+            - uuid: ae383960d1104606987017c44d92e27e
+              name: 'Pool {#POOL.NAME}: Write throughput'
+              type: DEPENDENT
+              key: 'zfs.pool.io.write["{#POOL.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: Bps
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["write_bytes"]'
+                - type: CHANGE_PER_SECOND
+                  parameters:
+                    - ''
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: io
+            - uuid: c5450800e59648e6bb56cf71f154be1a
+              name: 'Pool {#POOL.NAME}: Read operations'
+              type: DEPENDENT
+              key: 'zfs.pool.io.read_ops["{#POOL.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: ops
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["read_operations"]'
+                - type: CHANGE_PER_SECOND
+                  parameters:
+                    - ''
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: io
+            - uuid: af05f76fc20d41a786f5af5071297b42
+              name: 'Pool {#POOL.NAME}: Write operations'
+              type: DEPENDENT
+              key: 'zfs.pool.io.write_ops["{#POOL.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: ops
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["write_operations"]'
+                - type: CHANGE_PER_SECOND
+                  parameters:
+                    - ''
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: io
+          master_item:
+            key: zfs.metrics
+          lld_macro_paths:
+            - lld_macro: '{#POOL.NAME}'
+              path: $.name
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.pools.*
+        - uuid: dbbd080e21c746ff9c47393b3f3cd11f
+          name: 'ZFS vdev discovery'
+          type: DEPENDENT
+          key: zfs.vdev.discovery
+          delay: '0'
+          lifetime: 7d
+          item_prototypes:
+            - uuid: 0ab5c8c59471469587a0fa9586c64b11
+              name: 'Vdev {#VDEV.NAME}: State'
+              type: DEPENDENT
+              key: 'zfs.vdev.state["{#VDEV.ID}"]'
+              delay: '0'
+              history: 90d
+              value_type: CHAR
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["vdevs"]["{#VDEV.ID}"]["state"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: vdev
+                - tag: pool
+                  value: '{#VDEV.POOL}'
+            - uuid: c09038a1bec8437c8ae4561387c15bd6
+              name: 'Vdev {#VDEV.NAME}: Online'
+              type: DEPENDENT
+              key: 'zfs.vdev.online["{#VDEV.ID}"]'
+              delay: '0'
+              history: 90d
+              valuemap:
+                name: 'ZFS yes/no'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["vdevs"]["{#VDEV.ID}"]["online"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: vdev
+                - tag: pool
+                  value: '{#VDEV.POOL}'
+              trigger_prototypes:
+                - uuid: 1864244eb29b403b8690bad6a870146c
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.vdev.online["{#VDEV.ID}"])<>1'
+                  name: 'ZFS vdev {#VDEV.NAME} is not online'
+                  priority: HIGH
+            - uuid: 5ac31998ba9d43669289031474a45c6a
+              name: 'Vdev {#VDEV.NAME}: Read errors'
+              type: DEPENDENT
+              key: 'zfs.vdev.errors.read["{#VDEV.ID}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["vdevs"]["{#VDEV.ID}"]["read_errors"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: errors
+              trigger_prototypes:
+                - uuid: 0619996817fe4d568398851dd32770df
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.vdev.errors.read["{#VDEV.ID}"])>0'
+                  name: 'ZFS vdev {#VDEV.NAME} has read errors'
+                  priority: HIGH
+            - uuid: 943085587ace4b78ae010af3ffc434b3
+              name: 'Vdev {#VDEV.NAME}: Write errors'
+              type: DEPENDENT
+              key: 'zfs.vdev.errors.write["{#VDEV.ID}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["vdevs"]["{#VDEV.ID}"]["write_errors"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: errors
+              trigger_prototypes:
+                - uuid: eb4a9a97bc3844da8d30f69aba873d3f
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.vdev.errors.write["{#VDEV.ID}"])>0'
+                  name: 'ZFS vdev {#VDEV.NAME} has write errors'
+                  priority: HIGH
+            - uuid: 36d6f81627164eff8d1f41a36876ad71
+              name: 'Vdev {#VDEV.NAME}: Checksum errors'
+              type: DEPENDENT
+              key: 'zfs.vdev.errors.checksum["{#VDEV.ID}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["vdevs"]["{#VDEV.ID}"]["checksum_errors"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: errors
+              trigger_prototypes:
+                - uuid: bdc5b4cf79914e12be670de7b2b83628
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.vdev.errors.checksum["{#VDEV.ID}"])>0'
+                  name: 'ZFS vdev {#VDEV.NAME} has checksum errors'
+                  priority: HIGH
+          master_item:
+            key: zfs.metrics
+          lld_macro_paths:
+            - lld_macro: '{#VDEV.ID}'
+              path: $.id
+            - lld_macro: '{#VDEV.NAME}'
+              path: $.name
+            - lld_macro: '{#VDEV.POOL}'
+              path: $.pool
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.vdevs.*
+        - uuid: 6f78cb5a55c34cde8c25f0a57f007c68
+          name: 'ZFS dataset discovery'
+          type: DEPENDENT
+          key: zfs.dataset.discovery
+          delay: '0'
+          lifetime: 7d
+          item_prototypes:
+            - uuid: 4aabde17a6f3444d87495bf37da88f14
+              name: 'Dataset {#DATASET.NAME}: Used'
+              type: DEPENDENT
+              key: 'zfs.dataset.used["{#DATASET.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#DATASET.NAME}"]["used"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: dataset
+            - uuid: 92d85aa4b1704548ae436885ac0850fe
+              name: 'Dataset {#DATASET.NAME}: Available'
+              type: DEPENDENT
+              key: 'zfs.dataset.available["{#DATASET.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#DATASET.NAME}"]["available"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: dataset
+            - uuid: d0a3ed767f3f486c99fd06a6f25a1a02
+              name: 'Dataset {#DATASET.NAME}: Referenced'
+              type: DEPENDENT
+              key: 'zfs.dataset.referenced["{#DATASET.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#DATASET.NAME}"]["referenced"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: dataset
+            - uuid: e6105b448af643e3b3537a9b14e94842
+              name: 'Dataset {#DATASET.NAME}: Logical used'
+              type: DEPENDENT
+              key: 'zfs.dataset.logicalused["{#DATASET.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#DATASET.NAME}"]["logicalused"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: dataset
+            - uuid: b8c028c703e441619517568bdd9c3cb7
+              name: 'Dataset {#DATASET.NAME}: Used by dataset'
+              type: DEPENDENT
+              key: 'zfs.dataset.usedbydataset["{#DATASET.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#DATASET.NAME}"]["usedbydataset"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: dataset
+            - uuid: 1d1a9118c7204ecf96710484d40c9982
+              name: 'Dataset {#DATASET.NAME}: Used by children'
+              type: DEPENDENT
+              key: 'zfs.dataset.usedbychildren["{#DATASET.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#DATASET.NAME}"]["usedbychildren"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: dataset
+            - uuid: bf4cae2e80404fe7b6f34c8a6d198c2d
+              name: 'Dataset {#DATASET.NAME}: Used by snapshots'
+              type: DEPENDENT
+              key: 'zfs.dataset.usedbysnapshots["{#DATASET.NAME}"]'
+              delay: '0'
+              history: 90d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#DATASET.NAME}"]["usedbysnapshots"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: snapshots
+            - uuid: a1ba7f541fa54387b054141588cb3d2e
+              name: 'Dataset {#DATASET.NAME}: Compression ratio'
+              type: DEPENDENT
+              key: 'zfs.dataset.compressratio["{#DATASET.NAME}"]'
+              delay: '0'
+              history: 30d
+              value_type: FLOAT
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#DATASET.NAME}"]["compressratio"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: dataset
+            - uuid: 82de6bfed9fc4250ac47ac0b2df5b071
+              name: 'Dataset {#DATASET.NAME}: Quota'
+              type: DEPENDENT
+              key: 'zfs.dataset.quota["{#DATASET.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#DATASET.NAME}"]["quota"]'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '0'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: dataset
+            - uuid: 517c09463cd4488a872860bb0ec0cece
+              name: 'Dataset {#DATASET.NAME}: Reservation'
+              type: DEPENDENT
+              key: 'zfs.dataset.reservation["{#DATASET.NAME}"]'
+              delay: '0'
+              history: 30d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#DATASET.NAME}"]["reservation"]'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '0'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: dataset
+            - uuid: 0e71f96009dc4204850d10ad0c11bec7
+              name: 'Dataset {#DATASET.NAME}: Mounted'
+              type: DEPENDENT
+              key: 'zfs.dataset.mounted["{#DATASET.NAME}"]'
+              delay: '0'
+              history: 90d
+              valuemap:
+                name: 'ZFS yes/no'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#DATASET.NAME}"]["mounted"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: dataset
+            - uuid: 7b3695422a2a437a854b2b9a1e944e7e
+              name: 'Dataset {#DATASET.NAME}: Key status'
+              type: DEPENDENT
+              key: 'zfs.dataset.keystatus["{#DATASET.NAME}"]'
+              delay: '0'
+              history: 90d
+              value_type: CHAR
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#DATASET.NAME}"]["keystatus"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: encryption
+            - uuid: f59926b1128f4afbb288c33e62c33f62
+              name: 'Dataset {#DATASET.NAME}: Encryption'
+              type: DEPENDENT
+              key: 'zfs.dataset.encryption["{#DATASET.NAME}"]'
+              delay: '0'
+              history: 90d
+              value_type: CHAR
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#DATASET.NAME}"]["encryption"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: encryption
+          master_item:
+            key: zfs.metrics
+          lld_macro_paths:
+            - lld_macro: '{#DATASET.NAME}'
+              path: $.name
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.datasets.*
+        - uuid: 2ea8a6675e924d2d8e150458f81bc33f
+          name: 'ZFS snapshot summary discovery'
+          type: DEPENDENT
+          key: zfs.snapshot.discovery
+          delay: '0'
+          lifetime: 7d
+          item_prototypes:
+            - uuid: 0842ce6d61694b10acbbf8c2720cb96b
+              name: 'Dataset {#SNAPSHOT.DATASET}: Snapshot count'
+              type: DEPENDENT
+              key: 'zfs.snapshot.count["{#SNAPSHOT.DATASET}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#SNAPSHOT.DATASET}"]["count"]'
+              master_item:
+                key: zfs.snapshots
+              tags:
+                - tag: component
+                  value: snapshots
+            - uuid: d189f95d807b494bb160d6d7c08ed039
+              name: 'Dataset {#SNAPSHOT.DATASET}: Snapshot retained space'
+              type: DEPENDENT
+              key: 'zfs.snapshot.retained["{#SNAPSHOT.DATASET}"]'
+              delay: '0'
+              history: 90d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#SNAPSHOT.DATASET}"]["retained_bytes"]'
+              master_item:
+                key: zfs.snapshots
+              tags:
+                - tag: component
+                  value: snapshots
+              trigger_prototypes:
+                - uuid: 169fe62466764b7ca09e8ee5b3c7121c
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.retained["{#SNAPSHOT.DATASET}"])>{$ZFS.SNAPSHOT.RETAINED.WARN}'
+                  name: 'ZFS dataset {#SNAPSHOT.DATASET} retains substantial snapshot space'
+                  priority: WARNING
+            - uuid: 14f89e5fe3dd4aa6946a17a5b387ee32
+              name: 'Dataset {#SNAPSHOT.DATASET}: Oldest snapshot age'
+              type: DEPENDENT
+              key: 'zfs.snapshot.oldest_age["{#SNAPSHOT.DATASET}"]'
+              delay: '0'
+              history: 90d
+              units: s
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#SNAPSHOT.DATASET}"]["oldest_age"]'
+              master_item:
+                key: zfs.snapshots
+              tags:
+                - tag: component
+                  value: snapshots
+            - uuid: 06051d06b0354d47be595508906c2434
+              name: 'Dataset {#SNAPSHOT.DATASET}: Newest snapshot age'
+              type: DEPENDENT
+              key: 'zfs.snapshot.newest_age["{#SNAPSHOT.DATASET}"]'
+              delay: '0'
+              history: 90d
+              units: s
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["datasets"]["{#SNAPSHOT.DATASET}"]["newest_age"]'
+              master_item:
+                key: zfs.snapshots
+              tags:
+                - tag: component
+                  value: snapshots
+          master_item:
+            key: zfs.snapshots
+          lld_macro_paths:
+            - lld_macro: '{#SNAPSHOT.DATASET}'
+              path: $.name
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.datasets.*
+      macros:
+        - macro: '{$ZFS.POOL.CAPACITY.HIGH}'
+          value: '90'
+          description: 'Pool capacity percentage for a high-severity alert.'
+        - macro: '{$ZFS.POOL.CAPACITY.WARN}'
+          value: '80'
+          description: 'Pool capacity percentage for a warning.'
+        - macro: '{$ZFS.SNAPSHOT.RETAINED.WARN}'
+          value: '5368709120'
+          description: 'Snapshot-retained bytes per dataset for a warning; default is 5 GiB.'
+      valuemaps:
+        - uuid: c0e5ac7f684a4f0c879bd5cf057d22aa
+          name: 'ZFS yes/no'
+          mappings:
+            - value: '0'
+              newvalue: 'No'
+            - value: '1'
+              newvalue: 'Yes'
