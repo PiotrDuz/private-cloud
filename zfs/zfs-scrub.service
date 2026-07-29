@@ -1,0 +1,7 @@
+[Unit]
+Description=Run monthly ZFS scrub for tank
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/zpool scrub tank
+

@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zabbix-web
+  namespace: private-cloud
+  labels:
+    app.kubernetes.io/name: zabbix
+    app.kubernetes.io/component: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: zabbix
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: zabbix
+        app.kubernetes.io/component: web
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:18.4-bookworm
+          imagePullPolicy: IfNotPresent
+          command:
+            - pg_isready
+          args:
+            - -h
+            - $(DB_SERVER_HOST)
+            - -p
+            - $(DB_SERVER_PORT)
+            - -U
+            - $(POSTGRES_USER)
+          env:
+            - name: DB_SERVER_HOST
+              value: postgres
+            - name: DB_SERVER_PORT
+              value: "5432"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+      containers:
+        - name: web
+          image: zabbix/zabbix-web-nginx-pgsql:ubuntu-7.4.12
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: DB_SERVER_HOST
+              value: postgres
+            - name: DB_SERVER_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: ZBX_SERVER_HOST
+              value: zabbix-server
+            - name: ZBX_SERVER_PORT
+              value: "10051"
+            - name: PHP_TZ
+              value: Etc/UTC
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3

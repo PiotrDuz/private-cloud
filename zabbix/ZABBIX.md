@@ -2,14 +2,14 @@
 
 This directory contains a host-side Zabbix Agent 2 installer, the native SMART
 plugin setup, and two read-only OpenZFS collectors. It targets Ubuntu 26.04 and
-Zabbix 7.0 LTS.
+Zabbix Agent 2 7.0 LTS.
 
 ## Architecture
 
-Run `zabbix-agent2` as a system service on the ZFS host. Run Zabbix Server,
-PostgreSQL, and the web frontend in Kubernetes. The agent uses active checks,
-so it initiates the connection to Zabbix Server on TCP port 10051. It listens
-only on `127.0.0.1` for passive checks.
+Run `zabbix-agent2` as a system service on the ZFS host. Run Zabbix Server
+7.4.12, PostgreSQL, and the web frontend in Kubernetes. The agent uses active
+checks through the Zabbix Server NodePort. It listens only on `127.0.0.1` for
+passive checks.
 
 ZED and the monthly scrub timer remain separate. Zabbix observes their results;
 it does not replace local ZFS event processing or initiate scheduled scrubs.
@@ -21,11 +21,21 @@ the storage controller exposes SMART data to the operating system.
 The Zabbix host name supplied here must exactly match the host name configured
 in the Zabbix frontend.
 
+Install ZFS, k0s, and PostgreSQL first.
+Deploy the Zabbix Kubernetes service before the host agent:
+
+```bash
+sudo python3 ./k0s-services/zabbix/install.py
+```
+
+The installer uses NodePort `31051` for Zabbix Server and `30080` for the web
+frontend. Replace `10.0.0.20` below with the k0s node address.
+
 Recommended TLS PSK setup:
 
 ```bash
-sudo ./zabbix-agent-setup.sh \
-  --server-active 10.0.0.20:10051 \
+sudo python3 ./zabbix/install.py \
+  --server-active 10.0.0.20:31051 \
   --hostname piotr-server-test \
   --psk-identity piotr-server-test-zabbix
 ```
@@ -38,8 +48,8 @@ Plaintext mode must be explicitly requested and should only be used temporarily
 on a trusted lab network:
 
 ```bash
-sudo ./zabbix-agent-setup.sh \
-  --server-active 10.0.0.20:10051 \
+sudo python3 ./zabbix/install.py \
+  --server-active 10.0.0.20:31051 \
   --hostname piotr-server-test \
   --allow-plaintext
 ```
@@ -62,13 +72,13 @@ Link these templates:
 - `SMART by Zabbix agent active 2`
 - `ZFS by Zabbix agent active` from `zabbix-zfs-template.yaml`
 
-The Kubernetes service for Zabbix Server must make TCP port 10051 reachable
-from the Ubuntu host. The frontend is a separate HTTP service and should be
-published through HTTPS and preferably a VPN.
+Zabbix Server is reachable at `<node-address>:31051`.
+The frontend is separately reachable at `http://<node-address>:30080`.
+Publish the frontend through HTTPS and preferably a VPN.
 
 ## SMART monitoring
 
-The installer adds `smartmontools`, configures the built-in Agent 2 SMART
+The Python installer adds `smartmontools`, configures the built-in Agent 2 SMART
 plugin, and installs `/etc/sudoers.d/zabbix-smartctl`. The sudo rule permits
 only the read and discovery command forms used by the plugin. It is
 syntax-checked with `visudo` before installation.

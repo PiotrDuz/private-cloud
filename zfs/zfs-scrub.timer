@@ -1,0 +1,10 @@
+[Unit]
+Description=Schedule monthly ZFS scrub for tank
+
+[Timer]
+OnCalendar=monthly
+Persistent=true
+Unit=zfs-scrub.service
+
+[Install]
+WantedBy=timers.target

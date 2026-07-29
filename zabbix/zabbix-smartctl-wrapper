@@ -1,18 +1,20 @@
-#!/usr/bin/env bash
-set -u
+#!/usr/bin/env python3
+from __future__ import annotations
 
-readonly SMARTCTL_PATH="/usr/sbin/smartctl"
+import subprocess
+import sys
 
-"$SMARTCTL_PATH" "$@"
-smartctl_status=$?
+SMARTCTL_PATH = "/usr/sbin/smartctl"
 
-# smartctl uses bits 3-7 to report device-health findings in addition to
-# including those findings in its JSON output. Zabbix Agent 2 7.0.9+ treats
-# every non-zero status as an execution failure (ZBX-27105), which prevents
-# discovery precisely when a disk is unhealthy. Preserve invocation, device,
-# SMART-command, and signal failures, but let the plugin parse health findings.
-if ((smartctl_status >= 128 || (smartctl_status & 7) != 0)); then
-    exit "$smartctl_status"
-fi
 
-exit 0
+def main() -> int:
+    result = subprocess.run([SMARTCTL_PATH, *sys.argv[1:]], check=False)
+    if result.returncode < 0:
+        return 128 - result.returncode
+    if result.returncode >= 128 or result.returncode & 7:
+        return result.returncode
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

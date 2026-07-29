@@ -1,19 +1,20 @@
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: local-zfs-pv-@@INDEX@@
+  name: zabbix-server-data
   labels:
-    storage.k0sproject.io/backend: zfs
+    app.kubernetes.io/name: zabbix
+    app.kubernetes.io/component: server-data
 spec:
   capacity:
-    storage: @@CAPACITY@@
+    storage: 1Gi
   volumeMode: Filesystem
   accessModes:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
-  storageClassName: local-zfs
+  storageClassName: ""
   local:
-    path: @@PATH@@
+    path: /var/lib/zabbix
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -21,4 +22,4 @@ spec:
             - key: kubernetes.io/hostname
               operator: In
               values:
-                - @@NODE_NAME@@
+                - localhost
