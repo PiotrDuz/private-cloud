@@ -37,6 +37,14 @@ POOL_NAME = "tank"
 POOL_MOUNTPOINT = "/tank"
 SECURE_DATASET = f"{POOL_NAME}/secure"
 SECURE_MOUNTPOINT = f"{POOL_MOUNTPOINT}/secure"
+BACKUP_DATASET = f"{SECURE_DATASET}/backup"
+BACKUP_MOUNTPOINT = f"{SECURE_MOUNTPOINT}/backup"
+NO_BACKUP_DATASET = f"{SECURE_DATASET}/no-backup"
+NO_BACKUP_MOUNTPOINT = f"{SECURE_MOUNTPOINT}/no-backup"
+STORAGE_BRANCHES = (
+    (BACKUP_DATASET, BACKUP_MOUNTPOINT),
+    (NO_BACKUP_DATASET, NO_BACKUP_MOUNTPOINT),
+)
 KEY_DIRECTORY = Path("/etc/zfs/keys")
 KEY_FILE = KEY_DIRECTORY / "tank-secure.key"
 MINIMUM_DISKS = 2
@@ -68,7 +76,9 @@ def run_installation(state: InstallationState) -> None:
     erase_selected_disks(state, selected)
     create_pool(state, selected)
     create_secure_dataset(state)
+    create_storage_branches(state)
     validate_secure_capacity(state)
+    validate_storage_branches(state)
     configure_services(state)
     show_result(state)
 
@@ -394,6 +404,19 @@ def create_secure_dataset(state: InstallationState) -> None:
     )
 
 
+def create_storage_branches(state: InstallationState) -> None:
+    for dataset, mountpoint in STORAGE_BRANCHES:
+        state.runner.run(
+            [
+                "zfs",
+                "create",
+                "-o",
+                f"mountpoint={mountpoint}",
+                dataset,
+            ]
+        )
+
+
 def validate_secure_capacity(state: InstallationState) -> None:
     for property_name in (
         "quota",
@@ -408,6 +431,18 @@ def validate_secure_capacity(state: InstallationState) -> None:
             raise InstallerError(
                 f"Encrypted dataset capacity is limited by {property_name}={value}"
             )
+
+
+def validate_storage_branches(state: InstallationState) -> None:
+    for dataset, mountpoint in STORAGE_BRANCHES:
+        actual_mountpoint = state.runner.capture(
+            ["zfs", "get", "-H", "-o", "value", "mountpoint", dataset]
+        ).stdout.strip()
+        mounted = state.runner.capture(
+            ["zfs", "get", "-H", "-o", "value", "mounted", dataset]
+        ).stdout.strip()
+        if actual_mountpoint != mountpoint or mounted != "yes":
+            raise InstallerError(f"Storage branch is not mounted correctly: {dataset}")
 
 
 def configure_services(state: InstallationState) -> None:
@@ -470,6 +505,8 @@ def show_result(state: InstallationState) -> None:
             "name,used,avail,compression,encryption,mountpoint",
             POOL_NAME,
             SECURE_DATASET,
+            BACKUP_DATASET,
+            NO_BACKUP_DATASET,
         ]
     )
     print(f"\nThe passphrase file is {KEY_FILE} with mode 0600.")

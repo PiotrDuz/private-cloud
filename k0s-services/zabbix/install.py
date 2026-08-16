@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import time
 from pathlib import Path
@@ -21,8 +20,10 @@ from install_helpers import (
     require_root,
 )
 from k0s_service_helpers import (
+    SERVICE_VOLUME_CAPACITY,
     apply_kustomize_overlay,
     apply_string_secret,
+    parse_storage_quantity,
     ready_k0s_node_name,
     render_kustomize_overlay,
     runtime_kustomize_overlay,
@@ -76,7 +77,8 @@ def run_installation(
     dataset, storage_bytes = prepare_storage(config, runner)
     node_name = ready_k0s_node_name(runner)
     verify_existing_pv(node_name, dataset.mountpoint, runner)
-    apply_resources(config, node_name, dataset.mountpoint, storage_bytes)
+    verify_existing_pvc(runner)
+    apply_resources(config, node_name, dataset.mountpoint)
     restart_zabbix_deployments(runner)
     validate_installation(node_name, runner)
     registration = configure_zabbix(config)
@@ -182,7 +184,7 @@ def resolve_storage_bytes(
     runner: CommandRunner,
 ) -> int:
     requested_bytes = parse_storage_quantity(config.storage_size)
-    existing_quantities = existing_kubernetes_storage_quantities(runner)
+    existing_quantities = []
     for property_name in ("quota", "used"):
         result = runner.run(
             ["zfs", "get", "-Hp", "-o", "value", property_name, dataset.name],
@@ -203,65 +205,6 @@ def resolve_storage_bytes(
             f"Zabbix storage; use at least {minimum_size}"
         )
     return requested_bytes
-
-
-def existing_kubernetes_storage_quantities(
-    runner: CommandRunner,
-) -> list[str]:
-    quantities: list[str] = []
-    pvc_result = runner.run(
-        [
-            "k0s",
-            "kubectl",
-            "get",
-            "persistentvolumeclaim",
-            ZABBIX_PVC,
-            "-n",
-            NAMESPACE,
-            "-o",
-            "json",
-        ],
-        check=False,
-    )
-    if pvc_result.returncode == 0:
-        try:
-            pvc = json.loads(pvc_result.stdout)
-            quantities.append(
-                str(pvc["spec"]["resources"]["requests"]["storage"])
-            )
-            capacity = pvc.get("status", {}).get("capacity", {}).get("storage")
-            if capacity is not None:
-                quantities.append(str(capacity))
-        except (KeyError, TypeError, json.JSONDecodeError) as error:
-            raise InstallerError(
-                f"Existing PersistentVolumeClaim {ZABBIX_PVC} is malformed"
-            ) from error
-
-    pv_result = runner.run(
-        ["k0s", "kubectl", "get", "persistentvolume", ZABBIX_PV, "-o", "json"],
-        check=False,
-    )
-    if pv_result.returncode == 0:
-        try:
-            pv = json.loads(pv_result.stdout)
-            quantities.append(str(pv["spec"]["capacity"]["storage"]))
-        except (KeyError, TypeError, json.JSONDecodeError) as error:
-            raise InstallerError(
-                f"Existing PersistentVolume {ZABBIX_PV} is malformed"
-            ) from error
-    return quantities
-
-
-def parse_storage_quantity(value: str) -> int:
-    match = re.fullmatch(r"([0-9]+)(Ki|Mi|Gi|Ti|Pi|Ei|K|M|G|T|P|E)?", value)
-    if match is None or int(match.group(1)) == 0:
-        raise InstallerError(f"Invalid existing storage capacity: {value}")
-    suffix = match.group(2) or ""
-    decimal_powers = {"": 0, "K": 1, "M": 2, "G": 3, "T": 4, "P": 5, "E": 6}
-    if suffix in decimal_powers:
-        return int(match.group(1)) * 1000 ** decimal_powers[suffix]
-    binary_powers = {"Ki": 1, "Mi": 2, "Gi": 3, "Ti": 4, "Pi": 5, "Ei": 6}
-    return int(match.group(1)) * 1024 ** binary_powers[suffix]
 
 
 def minimum_configured_size(required_bytes: int) -> str:
@@ -294,26 +237,65 @@ def verify_existing_pv(
     try:
         spec = json.loads(result.stdout)["spec"]
         path = spec["local"]["path"]
+        capacity = spec["capacity"]["storage"]
         values = spec["nodeAffinity"]["required"]["nodeSelectorTerms"][0][
             "matchExpressions"
         ][0]["values"]
     except (IndexError, KeyError, TypeError, json.JSONDecodeError) as error:
-        raise InstallerError(f"Existing PersistentVolume {ZABBIX_PV} is malformed") from error
-    if path != str(mountpoint) or values != [node_name]:
         raise InstallerError(
-            f"Existing PersistentVolume {ZABBIX_PV} is pinned to different storage or node"
+            f"Existing PersistentVolume {ZABBIX_PV} is malformed"
+        ) from error
+    if (
+        path != str(mountpoint)
+        or values != [node_name]
+        or parse_storage_quantity(str(capacity))
+        != parse_storage_quantity(SERVICE_VOLUME_CAPACITY)
+    ):
+        raise InstallerError(
+            f"Existing PersistentVolume {ZABBIX_PV} uses a different path, node, "
+            "or capacity"
         )
+
+
+def verify_existing_pvc(runner: CommandRunner) -> None:
+    result = runner.run(
+        [
+            "k0s",
+            "kubectl",
+            "get",
+            "persistentvolumeclaim",
+            ZABBIX_PVC,
+            "-n",
+            NAMESPACE,
+            "-o",
+            "json",
+        ],
+        check=False,
+    )
+    if result.returncode != 0:
+        return
+    try:
+        claim = json.loads(result.stdout)
+        requested = claim["spec"]["resources"]["requests"]["storage"]
+        capacity = claim.get("status", {}).get("capacity", {}).get("storage")
+    except (KeyError, TypeError, json.JSONDecodeError) as error:
+        raise InstallerError(
+            f"Existing PersistentVolumeClaim {ZABBIX_PVC} is malformed"
+        ) from error
+    expected = parse_storage_quantity(SERVICE_VOLUME_CAPACITY)
+    values = [requested] if capacity is None else [requested, capacity]
+    if any(parse_storage_quantity(str(value)) != expected for value in values):
+        raise InstallerError(f"Existing {ZABBIX_PVC} does not use fixed 10Ti capacity")
 
 
 def apply_resources(
     config: InstallConfig,
     node_name: str,
     mountpoint: Path,
-    storage_bytes: int,
 ) -> None:
     with runtime_kustomize_overlay(
         BASE_DIRECTORY,
-        runtime_patches(config, node_name, mountpoint, storage_bytes),
+        runtime_patches(config, node_name, mountpoint),
     ) as overlay_path:
         render_kustomize_overlay(overlay_path)
         apply_kustomize_overlay(overlay_path)
@@ -451,7 +433,6 @@ def runtime_patches(
     config: InstallConfig,
     node_name: str,
     mountpoint: Path,
-    storage_bytes: int,
 ) -> dict[str, str]:
     value = json.dumps
     return {
@@ -461,7 +442,7 @@ metadata:
   name: {ZABBIX_PV}
 spec:
   capacity:
-    storage: {value(str(storage_bytes))}
+    storage: {value(SERVICE_VOLUME_CAPACITY)}
   local:
     path: {value(str(mountpoint))}
   nodeAffinity:
@@ -481,7 +462,7 @@ metadata:
 spec:
   resources:
     requests:
-      storage: {value(str(storage_bytes))}
+      storage: {value(SERVICE_VOLUME_CAPACITY)}
 """,
         "server-service.yaml": f"""apiVersion: v1
 kind: Service

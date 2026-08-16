@@ -23,7 +23,7 @@ SERVICE_NAME = "postgres"
 SECRET_NAME = "postgres-admin-credentials"
 ADMIN_DATABASE = "postgres"
 ADMIN_USERNAME = "postgres"
-DATASET_SUFFIX = "k0s/services-backed/postgres"
+DATASET_SUFFIX = "backup/k0s/services/postgres"
 
 
 def load_config() -> PostgresConfig:

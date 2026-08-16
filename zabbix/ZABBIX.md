@@ -124,6 +124,7 @@ The storage dashboard sorts leaf datasets by utilization and charts used bytes.
 Missing or unlimited leaf quotas are collector errors instead of inferred limits.
 Permanent ZFS data errors are disasters and unsuccessful scrub results are high alerts.
 Repaired scrub damage and recorded pool or vdev errors are persistent warnings.
+The fixed leaves follow the `backup` and `no-backup` storage branches.
 
 `zfs.snapshots` runs every 15 minutes. It reports per-dataset snapshot count,
 `usedbysnapshots`, and oldest/newest snapshot age. Snapshot names are not sent

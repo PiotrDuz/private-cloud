@@ -23,7 +23,7 @@ from k0s_service_helpers import (  # noqa: E402
     service_dataset_spec,
 )
 
-DATASET_SUFFIX = "k0s/services-backed/zabbix"
+DATASET_SUFFIX = "backup/k0s/services/zabbix"
 
 
 def load_config() -> InstallConfig:

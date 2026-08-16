@@ -8,6 +8,9 @@ This installer creates the PostgreSQL dataset and deploys one PostgreSQL pod.
 - The administrator database and role are both `postgres`.
 - `POSTGRES_MAX_RAM` is required and sets the pod memory limit.
 - `POSTGRES_VOLUME_SIZE` defaults to `20G`.
+- The dataset is `tank/secure/backup/k0s/services/postgres`.
+- The PV and PVC advertise a fixed `10Ti` capacity.
+- The ZFS dataset quota enforces `POSTGRES_VOLUME_SIZE`.
 - The image is `postgres:18.4-bookworm`.
 - Static Kubernetes resources are committed under `kustomize/base`.
 - Do not apply `kustomize/base` directly because the installer supplies validated runtime values.

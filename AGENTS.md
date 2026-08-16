@@ -16,6 +16,6 @@ Writing scripts rules:
 7. Do not place excessive prints. The script should be ready to self-check and return a result to be ingested by parent script that gathers all the scirpts and runs them in order.
 
 Kubernetess services rules:
- - each service has its own dataset which sits either under services-backed, or under services-no-backup dataset (default is services-backed unless otherwise stated)
- - each servcie has dedicated PV which has a large capacity (like 10TB). so i doesnt have to be extended. The zs dataset quota is keeping the size in check
- - each dataset for kubernetes service should have a quota 
+ - each service has its own dataset under backup/k0s/services or no-backup/k0s/services, with backup as the default
+ - each servcie has a dedicated 10Ti PV so it does not need extension
+ - each dataset for kubernetes service should have a quota

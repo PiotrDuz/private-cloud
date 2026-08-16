@@ -33,8 +33,9 @@ sudo --preserve-env=ZABBIX_DB_PASSWORD,ZABBIX_ADMIN_PASSWORD python3 ./k0s-servi
 unset ZABBIX_DB_PASSWORD ZABBIX_ADMIN_PASSWORD
 ```
 
-The installer creates `tank/secure/k0s/services-backed/zabbix` by default.
-Reruns reject a requested size below the existing ZFS, PV, or PVC capacity.
+The installer creates `tank/secure/backup/k0s/services/zabbix` by default.
+Reruns reject a requested quota below the existing ZFS quota or used space.
+The PV and PVC advertise a fixed `10Ti` capacity.
 It mounts that dataset at `/var/lib/zabbix` through a local PV and PVC.
 
 The Zabbix Server NodePort is `31051` by default.

@@ -13,9 +13,11 @@ if str(PROJECT_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIRECTORY))
 
 from k0s_service_helpers import (
+    SERVICE_VOLUME_CAPACITY,
     apply_kustomize_overlay,
     apply_string_secret,
     ensure_service_dataset,
+    parse_storage_quantity,
     ready_k0s_node_name,
     render_kustomize_overlay,
     runtime_kustomize_overlay,
@@ -131,6 +133,7 @@ def validate_existing_resources(
 ) -> None:
     validate_existing_secret(config, runner)
     validate_existing_pv(dataset, node_name, runner)
+    validate_existing_pvc(runner)
 
 
 def validate_existing_secret(
@@ -195,13 +198,53 @@ def validate_existing_pv(
     try:
         spec = json.loads(result.stdout)["spec"]
         actual_path = spec["local"]["path"]
+        capacity = spec["capacity"]["storage"]
         terms = spec["nodeAffinity"]["required"]["nodeSelectorTerms"]
         expression = terms[0]["matchExpressions"][0]
         values = expression["values"]
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
         raise InstallerError("Existing PostgreSQL persistent volume is invalid") from error
-    if actual_path != str(dataset.mountpoint) or node_name not in values:
-        raise InstallerError("Existing PostgreSQL persistent volume targets another path or node")
+    if (
+        actual_path != str(dataset.mountpoint)
+        or node_name not in values
+        or parse_storage_quantity(str(capacity))
+        != parse_storage_quantity(SERVICE_VOLUME_CAPACITY)
+    ):
+        raise InstallerError(
+            "Existing PostgreSQL persistent volume uses a different path, node, "
+            "or capacity"
+        )
+
+
+def validate_existing_pvc(runner: CommandRunner) -> None:
+    result = runner.run(
+        [
+            "k0s",
+            "kubectl",
+            "get",
+            "persistentvolumeclaim",
+            "postgres-data",
+            "-n",
+            NAMESPACE,
+            "-o",
+            "json",
+        ],
+        check=False,
+    )
+    if result.returncode != 0:
+        return
+    try:
+        claim = json.loads(result.stdout)
+        requested = claim["spec"]["resources"]["requests"]["storage"]
+        capacity = claim.get("status", {}).get("capacity", {}).get("storage")
+    except (KeyError, TypeError, json.JSONDecodeError) as error:
+        raise InstallerError(
+            "Existing PostgreSQL persistent volume claim is invalid"
+        ) from error
+    expected = parse_storage_quantity(SERVICE_VOLUME_CAPACITY)
+    values = [requested] if capacity is None else [requested, capacity]
+    if any(parse_storage_quantity(str(value)) != expected for value in values):
+        raise InstallerError("Existing PostgreSQL volume does not use fixed 10Ti capacity")
 
 
 def apply_resources(
@@ -380,7 +423,7 @@ metadata:
   name: postgres-local-pv
 spec:
   capacity:
-    storage: {value(config.volume_size)}
+    storage: {value(SERVICE_VOLUME_CAPACITY)}
   local:
     path: {value(str(dataset.mountpoint))}
   nodeAffinity:
@@ -400,7 +443,7 @@ metadata:
 spec:
   resources:
     requests:
-      storage: {value(config.volume_size)}
+      storage: {value(SERVICE_VOLUME_CAPACITY)}
 """,
         "deployment.yaml": f"""apiVersion: apps/v1
 kind: Deployment

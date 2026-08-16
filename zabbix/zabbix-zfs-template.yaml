@@ -142,7 +142,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/config"]["retained_bytes"]'
+                - '$["datasets"]["tank/secure/backup/k0s/config"]["retained_bytes"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -159,7 +159,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/config"]["retained_percent"]'
+                - '$["datasets"]["tank/secure/backup/k0s/config"]["retained_percent"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -175,7 +175,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/config"]["oldest_age"]'
+                - '$["datasets"]["tank/secure/backup/k0s/config"]["oldest_age"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -196,7 +196,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/images"]["retained_bytes"]'
+                - '$["datasets"]["tank/secure/no-backup/k0s/images"]["retained_bytes"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -213,7 +213,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/images"]["retained_percent"]'
+                - '$["datasets"]["tank/secure/no-backup/k0s/images"]["retained_percent"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -229,7 +229,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/images"]["oldest_age"]'
+                - '$["datasets"]["tank/secure/no-backup/k0s/images"]["oldest_age"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -250,7 +250,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/ephemeral"]["retained_bytes"]'
+                - '$["datasets"]["tank/secure/no-backup/k0s/ephemeral"]["retained_bytes"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -267,7 +267,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/ephemeral"]["retained_percent"]'
+                - '$["datasets"]["tank/secure/no-backup/k0s/ephemeral"]["retained_percent"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -283,7 +283,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/ephemeral"]["oldest_age"]'
+                - '$["datasets"]["tank/secure/no-backup/k0s/ephemeral"]["oldest_age"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -304,7 +304,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/services-backed/postgres"]["retained_bytes"]'
+                - '$["datasets"]["tank/secure/backup/k0s/services/postgres"]["retained_bytes"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -321,7 +321,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/services-backed/postgres"]["retained_percent"]'
+                - '$["datasets"]["tank/secure/backup/k0s/services/postgres"]["retained_percent"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -337,7 +337,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/services-backed/postgres"]["oldest_age"]'
+                - '$["datasets"]["tank/secure/backup/k0s/services/postgres"]["oldest_age"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -358,7 +358,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/services-backed/zabbix"]["retained_bytes"]'
+                - '$["datasets"]["tank/secure/backup/k0s/services/zabbix"]["retained_bytes"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -375,7 +375,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/services-backed/zabbix"]["retained_percent"]'
+                - '$["datasets"]["tank/secure/backup/k0s/services/zabbix"]["retained_percent"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -391,7 +391,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/services-backed/zabbix"]["oldest_age"]'
+                - '$["datasets"]["tank/secure/backup/k0s/services/zabbix"]["oldest_age"]'
           master_item:
             key: zfs.snapshots
           tags:
@@ -582,7 +582,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/config"]["used"]'
+                - '$["datasets"]["tank/secure/backup/k0s/config"]["used"]'
           master_item:
             key: zfs.metrics
           tags:
@@ -599,7 +599,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/config"]["utilization"]'
+                - '$["datasets"]["tank/secure/backup/k0s/config"]["utilization"]'
           master_item:
             key: zfs.metrics
           tags:
@@ -620,7 +620,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/images"]["used"]'
+                - '$["datasets"]["tank/secure/no-backup/k0s/images"]["used"]'
           master_item:
             key: zfs.metrics
           tags:
@@ -637,7 +637,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/images"]["utilization"]'
+                - '$["datasets"]["tank/secure/no-backup/k0s/images"]["utilization"]'
           master_item:
             key: zfs.metrics
           tags:
@@ -658,7 +658,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/ephemeral"]["used"]'
+                - '$["datasets"]["tank/secure/no-backup/k0s/ephemeral"]["used"]'
           master_item:
             key: zfs.metrics
           tags:
@@ -675,7 +675,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/ephemeral"]["utilization"]'
+                - '$["datasets"]["tank/secure/no-backup/k0s/ephemeral"]["utilization"]'
           master_item:
             key: zfs.metrics
           tags:
@@ -696,7 +696,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/services-backed/postgres"]["used"]'
+                - '$["datasets"]["tank/secure/backup/k0s/services/postgres"]["used"]'
           master_item:
             key: zfs.metrics
           tags:
@@ -713,7 +713,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/services-backed/postgres"]["utilization"]'
+                - '$["datasets"]["tank/secure/backup/k0s/services/postgres"]["utilization"]'
           master_item:
             key: zfs.metrics
           tags:
@@ -734,7 +734,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/services-backed/zabbix"]["used"]'
+                - '$["datasets"]["tank/secure/backup/k0s/services/zabbix"]["used"]'
           master_item:
             key: zfs.metrics
           tags:
@@ -751,7 +751,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$["datasets"]["tank/secure/k0s/services-backed/zabbix"]["utilization"]'
+                - '$["datasets"]["tank/secure/backup/k0s/services/zabbix"]["utilization"]'
           master_item:
             key: zfs.metrics
           tags:

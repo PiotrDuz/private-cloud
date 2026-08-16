@@ -95,28 +95,42 @@ def build_dataset_layout(
         )
 
     root_path = Path(root_mountpoint)
-    k0s_path = root_path / "k0s"
+    runtime_path = root_path / "k0s"
+    backup_path = root_path / "backup"
+    no_backup_path = root_path / "no-backup"
     return {
-        "k0s": DatasetSpec(f"{config.root_dataset}/k0s", k0s_path),
+        "backup": DatasetSpec(f"{config.root_dataset}/backup", backup_path),
+        "backup_k0s": DatasetSpec(
+            f"{config.root_dataset}/backup/k0s",
+            backup_path / "k0s",
+        ),
         "config": DatasetSpec(
-            f"{config.root_dataset}/k0s/config",
-            k0s_path / "config",
+            f"{config.root_dataset}/backup/k0s/config",
+            runtime_path,
+        ),
+        "services": DatasetSpec(
+            f"{config.root_dataset}/backup/k0s/services",
+            backup_path / "k0s" / "services",
+        ),
+        "no_backup": DatasetSpec(
+            f"{config.root_dataset}/no-backup",
+            no_backup_path,
+        ),
+        "no_backup_k0s": DatasetSpec(
+            f"{config.root_dataset}/no-backup/k0s",
+            no_backup_path / "k0s",
+        ),
+        "no_backup_services": DatasetSpec(
+            f"{config.root_dataset}/no-backup/k0s/services",
+            no_backup_path / "k0s" / "services",
         ),
         "images": DatasetSpec(
-            f"{config.root_dataset}/k0s/images",
-            k0s_path / "images",
+            f"{config.root_dataset}/no-backup/k0s/images",
+            runtime_path / "containerd",
         ),
         "ephemeral": DatasetSpec(
-            f"{config.root_dataset}/k0s/ephemeral",
-            k0s_path / "containerd",
-        ),
-        "services_backed": DatasetSpec(
-            f"{config.root_dataset}/k0s/services-backed",
-            k0s_path / "services-backed",
-        ),
-        "services_no_backup": DatasetSpec(
-            f"{config.root_dataset}/k0s/services-no-backup",
-            k0s_path / "services-no-backup",
+            f"{config.root_dataset}/no-backup/k0s/ephemeral",
+            runtime_path / "kubelet",
         ),
     }
 
@@ -218,6 +232,14 @@ def install_controller(
         check=False,
     )
     if service_result.stdout.strip():
+        definition = runner.run(["systemctl", "cat", "k0scontroller.service"])
+        expected_paths = (
+            f"--config={datasets['config'].mountpoint / 'k0s.yaml'}",
+            f"--data-dir={datasets['config'].mountpoint}",
+            f"--kubelet-root-dir={datasets['ephemeral'].mountpoint}",
+        )
+        if not all(path in definition.stdout for path in expected_paths):
+            raise InstallerError("Existing k0s service uses a different storage layout")
         runner.run(["systemctl", "is-active", "--quiet", "k0scontroller.service"])
         return
 
@@ -232,8 +254,8 @@ def install_controller(
             "--enable-worker",
             "--no-taints",
             f"--config={cluster_config}",
-            f"--data-dir={datasets['k0s'].mountpoint}",
-            f"--kubelet-root-dir={datasets['ephemeral'].mountpoint / 'kubelet'}",
+            f"--data-dir={datasets['config'].mountpoint}",
+            f"--kubelet-root-dir={datasets['ephemeral'].mountpoint}",
         ]
     )
     runner.run(["systemctl", "daemon-reload"])
@@ -289,7 +311,7 @@ def installation_result(
         "k0s_version": config.k0s_version,
         "node": node_name,
         "status": "installed",
-        "storage_model": "service-owned",
+        "storage_model": "backup-split",
     }
 
 

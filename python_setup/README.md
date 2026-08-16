@@ -16,6 +16,10 @@ The Zabbix service and agent use the fixed `private-cloud-zabbix` host name.
 The k0s stage uses the pinned version without extra prompts.
 The k0s stage requests fixed quotas for its config, images, and ephemeral datasets.
 The ZFS stage gives `tank/secure` all available pool capacity without a size prompt.
+The ZFS stage creates the `backup` and `no-backup` branches.
+The k0s config and current service datasets use the `backup` branch.
+The k0s images and ephemeral datasets use the `no-backup` branch.
+The k0s runtime paths remain under `/tank/secure/k0s`.
 Service installers create their own datasets, PVs, and PVCs.
 The flow stops when an installer fails.
 Skipped stages support resuming an existing installation.

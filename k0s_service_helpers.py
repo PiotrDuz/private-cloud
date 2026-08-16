@@ -13,6 +13,8 @@ from typing import Iterator, Mapping
 
 from installer_helpers import CommandRunner, InstallerError
 
+SERVICE_VOLUME_CAPACITY = "10Ti"
+
 
 def validate_kustomize_base(base_directory: Path) -> None:
     if not base_directory.is_dir():
@@ -101,11 +103,42 @@ def service_dataset_spec(
     )
 
 
+def parse_storage_quantity(value: str) -> int:
+    match = re.fullmatch(
+        r"([0-9]+)(Ki|Mi|Gi|Ti|Pi|Ei|K|M|G|T|P|E)?",
+        value,
+    )
+    if match is None or int(match.group(1)) == 0:
+        raise InstallerError(f"Invalid storage capacity: {value}")
+    suffix = match.group(2) or ""
+    decimal_powers = {
+        "": 0,
+        "K": 1,
+        "M": 2,
+        "G": 3,
+        "T": 4,
+        "P": 5,
+        "E": 6,
+    }
+    if suffix in decimal_powers:
+        return int(match.group(1)) * 1000 ** decimal_powers[suffix]
+    binary_powers = {"Ki": 1, "Mi": 2, "Gi": 3, "Ti": 4, "Pi": 5, "Ei": 6}
+    return int(match.group(1)) * 1024 ** binary_powers[suffix]
+
+
 def ensure_service_dataset(
     runner: CommandRunner,
     dataset: DatasetSpec,
     properties: Mapping[str, str],
 ) -> None:
+    parent_dataset = dataset.name.rsplit("/", 1)[0]
+    parent_result = runner.run(
+        ["zfs", "list", "-H", "-o", "name", parent_dataset],
+        check=False,
+    )
+    if parent_result.returncode != 0:
+        raise InstallerError(f"Service dataset parent does not exist: {parent_dataset}")
+
     result = runner.run(
         ["zfs", "list", "-H", "-o", "name", dataset.name],
         check=False,

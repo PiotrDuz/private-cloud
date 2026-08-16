@@ -28,11 +28,11 @@ ZPOOL = command_path("zpool")
 POOL_NAME = "tank"
 SECURE_DATASET = "tank/secure"
 LEAF_DATASETS = (
-    "tank/secure/k0s/config",
-    "tank/secure/k0s/images",
-    "tank/secure/k0s/ephemeral",
-    "tank/secure/k0s/services-backed/postgres",
-    "tank/secure/k0s/services-backed/zabbix",
+    "tank/secure/backup/k0s/config",
+    "tank/secure/no-backup/k0s/images",
+    "tank/secure/no-backup/k0s/ephemeral",
+    "tank/secure/backup/k0s/services/postgres",
+    "tank/secure/backup/k0s/services/zabbix",
 )
 
 
