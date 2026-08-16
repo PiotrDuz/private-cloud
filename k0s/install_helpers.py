@@ -23,23 +23,15 @@ from installer_helpers import (  # noqa: E402
 def load_config() -> InstallConfig:
     root_dataset = os.environ.get("ROOT_DATASET", "tank/secure")
     k0s_version = os.environ.get("K0S_VERSION", "v1.36.2+k0s.0")
-    pv_count_value = os.environ.get("PV_COUNT", "2")
-    pv_size = os.environ.get("PV_SIZE", "5G")
 
     if not re.fullmatch(r"[A-Za-z0-9_.:-]+(?:/[A-Za-z0-9_.:-]+)+", root_dataset):
         raise InstallerError(f"Invalid ROOT_DATASET: {root_dataset}")
-    if not pv_count_value.isdecimal() or int(pv_count_value) < 1:
-        raise InstallerError("PV_COUNT must be a positive integer")
     if not k0s_version:
         raise InstallerError("K0S_VERSION cannot be empty")
-    if not re.fullmatch(r"[1-9][0-9]*[KMGTPE]", pv_size):
-        raise InstallerError("PV_SIZE must be a positive whole size such as 5G")
 
     return InstallConfig(
         root_dataset=root_dataset,
         k0s_version=k0s_version,
-        pv_count=int(pv_count_value),
-        pv_size=pv_size,
     )
 
 
@@ -89,8 +81,6 @@ def zfs_value(runner: CommandRunner, dataset: str, property_name: str) -> str:
 class InstallConfig:
     root_dataset: str
     k0s_version: str
-    pv_count: int
-    pv_size: str
 
 
 @dataclass(frozen=True)

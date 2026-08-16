@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import hmac
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -23,6 +24,8 @@ from k0s_service_helpers import (
 )
 
 from install_helpers import (
+    ADMIN_DATABASE,
+    ADMIN_USERNAME,
     NAMESPACE,
     SECRET_NAME,
     SERVICE_NAME,
@@ -41,10 +44,14 @@ BASE_DIRECTORY = Path(__file__).resolve().parent / "kustomize" / "base"
 
 def main() -> int:
     try:
-        result = run_installation(load_config(), CommandRunner())
+        config = load_config()
+        os.environ.pop("POSTGRES_ADMIN_PASSWORD", None)
+        result = run_installation(config, CommandRunner())
     except InstallerError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
+    finally:
+        os.environ.pop("POSTGRES_ADMIN_PASSWORD", None)
 
     print(json.dumps(result, sort_keys=True))
     return 0
@@ -155,9 +162,9 @@ def validate_existing_secret(
     except (KeyError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise InstallerError("Existing PostgreSQL credentials secret is invalid") from error
     expected = {
-        "POSTGRES_DB": config.database,
-        "POSTGRES_USER": config.username,
-        "POSTGRES_PASSWORD": config.password,
+        "POSTGRES_DB": ADMIN_DATABASE,
+        "POSTGRES_USER": ADMIN_USERNAME,
+        "POSTGRES_PASSWORD": config.admin_password,
     }
     for key, value in expected.items():
         if not hmac.compare_digest(existing[key], value):
@@ -221,9 +228,9 @@ def apply_resources(
             NAMESPACE,
             SECRET_NAME,
             {
-                "POSTGRES_DB": config.database,
-                "POSTGRES_USER": config.username,
-                "POSTGRES_PASSWORD": config.password,
+                "POSTGRES_DB": ADMIN_DATABASE,
+                "POSTGRES_USER": ADMIN_USERNAME,
+                "POSTGRES_PASSWORD": config.admin_password,
             },
         )
         apply_kustomize_overlay(overlay_path)
@@ -267,9 +274,9 @@ def wait_for_postgres(config: PostgresConfig, runner: CommandRunner) -> None:
             "--",
             "pg_isready",
             "-U",
-            config.username,
+            ADMIN_USERNAME,
             "-d",
-            config.database,
+            ADMIN_DATABASE,
         ]
     )
 
@@ -320,9 +327,9 @@ def validate_postgres_settings(
             "-v",
             "ON_ERROR_STOP=1",
             "-U",
-            config.username,
+            ADMIN_USERNAME,
             "-d",
-            config.database,
+            ADMIN_DATABASE,
             "-c",
             "SELECT pg_size_bytes(current_setting('shared_buffers'));",
         ]
@@ -346,9 +353,9 @@ def validate_postgres_settings(
             "-v",
             "ON_ERROR_STOP=1",
             "-U",
-            config.username,
+            ADMIN_USERNAME,
             "-d",
-            config.database,
+            ADMIN_DATABASE,
             "-c",
             "SHOW full_page_writes; SHOW wal_compression; SHOW wal_init_zero; "
             "SHOW wal_recycle; SHOW data_checksums;",
@@ -426,17 +433,17 @@ spec:
               command:
                 - pg_isready
                 - -U
-                - {value(config.username)}
+                - {value(ADMIN_USERNAME)}
                 - -d
-                - {value(config.database)}
+                - {value(ADMIN_DATABASE)}
           livenessProbe:
             exec:
               command:
                 - pg_isready
                 - -U
-                - {value(config.username)}
+                - {value(ADMIN_USERNAME)}
                 - -d
-                - {value(config.database)}
+                - {value(ADMIN_DATABASE)}
 """,
     }
 

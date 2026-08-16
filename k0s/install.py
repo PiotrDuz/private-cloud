@@ -50,8 +50,7 @@ def run_installation(
     install_k0s_binary(config, runner)
     install_controller(datasets, runner)
     node_name = wait_for_ready_node(runner)
-    configure_local_volumes(config, datasets, node_name, runner)
-    validate_installation(config, datasets, runner)
+    validate_installation(datasets, runner)
     return installation_result(config, datasets, node_name)
 
 
@@ -110,7 +109,6 @@ def build_dataset_layout(
 
     root_path = Path(root_mountpoint)
     k0s_path = root_path / "k0s"
-    k8s_path = root_path / "k8s"
     return {
         "k0s": DatasetSpec(f"{config.root_dataset}/k0s", k0s_path),
         "config": DatasetSpec(
@@ -124,11 +122,6 @@ def build_dataset_layout(
         "ephemeral": DatasetSpec(
             f"{config.root_dataset}/k0s/ephemeral",
             k0s_path / "containerd",
-        ),
-        "k8s": DatasetSpec(f"{config.root_dataset}/k8s", k8s_path),
-        "volumes": DatasetSpec(
-            f"{config.root_dataset}/k8s/volumes",
-            k8s_path / "volumes",
         ),
         "services_backed": DatasetSpec(
             f"{config.root_dataset}/k0s/services-backed",
@@ -153,24 +146,6 @@ def prepare_datasets(
 
     for dataset in datasets.values():
         ensure_dataset(runner, dataset)
-
-    volumes = datasets["volumes"]
-    for index in range(1, config.pv_count + 1):
-        suffix = f"{index:02d}"
-        pv_dataset = DatasetSpec(
-            f"{volumes.name}/pv{suffix}",
-            volumes.mountpoint / f"pv{suffix}",
-        )
-        ensure_dataset(runner, pv_dataset)
-        runner.run(
-            [
-                "zfs",
-                "set",
-                f"quota={config.pv_size}",
-                f"reservation={config.pv_size}",
-                pv_dataset.name,
-            ]
-        )
 
 
 def configure_boot_dependency(
@@ -266,24 +241,7 @@ def wait_for_ready_node(runner: CommandRunner) -> str:
     raise InstallerError("The k0s node did not become Ready within five minutes")
 
 
-def configure_local_volumes(
-    config: InstallConfig,
-    datasets: dict[str, DatasetSpec],
-    node_name: str,
-    runner: CommandRunner,
-) -> None:
-    manifest = render_storage_manifest(
-        config,
-        datasets["volumes"].mountpoint,
-        node_name,
-    )
-    storage_manifest = datasets["config"].mountpoint / "local-zfs-storage.yaml"
-    write_managed_file(storage_manifest, manifest, 0o644)
-    runner.run(["k0s", "kubectl", "apply", "-f", str(storage_manifest)])
-
-
 def validate_installation(
-    config: InstallConfig,
     datasets: dict[str, DatasetSpec],
     runner: CommandRunner,
 ) -> None:
@@ -293,34 +251,18 @@ def validate_installation(
             raise InstallerError(f"ZFS dataset is not mounted: {dataset.name}")
         runner.run(["mountpoint", "-q", str(dataset.mountpoint)])
 
-    runner.run(["k0s", "kubectl", "get", "storageclass", "local-zfs"])
-    for index in range(1, config.pv_count + 1):
-        runner.run(
-            [
-                "k0s",
-                "kubectl",
-                "get",
-                "persistentvolume",
-                f"local-zfs-pv-{index:02d}",
-            ]
-        )
-
 
 def installation_result(
     config: InstallConfig,
     datasets: dict[str, DatasetSpec],
     node_name: str,
 ) -> dict[str, Any]:
-    volumes = datasets["volumes"]
     return {
         "datasets": [dataset.name for dataset in datasets.values()],
         "k0s_version": config.k0s_version,
         "node": node_name,
-        "persistent_volumes": [
-            f"{volumes.name}/pv{index:02d}"
-            for index in range(1, config.pv_count + 1)
-        ],
         "status": "installed",
+        "storage_model": "service-owned",
     }
 
 
@@ -336,55 +278,6 @@ After={ZFS_MOUNT_SERVICE}
 [Service]
 {checks}
 """
-
-
-def render_storage_manifest(
-    config: InstallConfig,
-    volumes_root: Path,
-    node_name: str,
-) -> str:
-    documents = [
-        """apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: local-zfs
-  annotations:
-    storageclass.kubernetes.io/is-default-class: "true"
-provisioner: kubernetes.io/no-provisioner
-reclaimPolicy: Retain
-volumeBindingMode: WaitForFirstConsumer
-"""
-    ]
-    for index in range(1, config.pv_count + 1):
-        suffix = f"{index:02d}"
-        documents.append(
-            f"""apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: local-zfs-pv-{suffix}
-  labels:
-    storage.k0sproject.io/backend: zfs
-spec:
-  capacity:
-    storage: {json.dumps(config.pv_size)}
-  volumeMode: Filesystem
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: local-zfs
-  local:
-    path: {json.dumps(str(volumes_root / f"pv{suffix}"))}
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-        - matchExpressions:
-            - key: kubernetes.io/hostname
-              operator: In
-              values:
-                - {json.dumps(node_name)}
-"""
-        )
-    return "---\n" + "---\n".join(documents)
 
 
 if __name__ == "__main__":

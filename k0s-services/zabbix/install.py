@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -20,30 +22,49 @@ from install_helpers import (
 )
 from k0s_service_helpers import (
     apply_kustomize_overlay,
+    apply_string_secret,
     ready_k0s_node_name,
     render_kustomize_overlay,
     runtime_kustomize_overlay,
     validate_kustomize_base,
     zfs_value,
 )
+from postgres_database import ensure_zabbix_database
+from zabbix_api import configure_monitored_host, validate_template
 
 NAMESPACE = "private-cloud"
-POSTGRES_SECRET = "postgres-credentials"
 POSTGRES_SERVICE = "postgres"
+POSTGRES_DEPLOYMENT = "postgres"
+ZABBIX_DATABASE_SECRET = "zabbix-postgres-credentials"
 ZABBIX_PV = "zabbix-server-data"
 ZABBIX_PVC = "zabbix-server-data"
+PROJECT_DIRECTORY = Path(__file__).resolve().parents[2]
 BASE_DIRECTORY = Path(__file__).resolve().parent / "kustomize" / "base"
+ZABBIX_TEMPLATE_DIRECTORY = PROJECT_DIRECTORY / "zabbix"
+ZABBIX_TEMPLATES = (
+    ZABBIX_TEMPLATE_DIRECTORY / "zabbix-zfs-template.yaml",
+    ZABBIX_TEMPLATE_DIRECTORY / "zabbix-memory-ecc-template.yaml",
+)
 
 
 def main() -> int:
     try:
-        result = run_installation(load_config(), CommandRunner())
+        config = load_config()
+        clear_password_environment()
+        result = run_installation(config, CommandRunner())
     except InstallerError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
+    finally:
+        clear_password_environment()
 
     print(json.dumps(result, sort_keys=True))
     return 0
+
+
+def clear_password_environment() -> None:
+    os.environ.pop("ZABBIX_ADMIN_PASSWORD", None)
+    os.environ.pop("ZABBIX_DB_PASSWORD", None)
 
 
 def run_installation(
@@ -51,18 +72,31 @@ def run_installation(
     runner: CommandRunner,
 ) -> dict[str, Any]:
     preflight(config, runner)
-    dataset = prepare_storage(config, runner)
+    prepare_database(config)
+    dataset, storage_bytes = prepare_storage(config, runner)
     node_name = ready_k0s_node_name(runner)
     verify_existing_pv(node_name, dataset.mountpoint, runner)
-    apply_resources(config, node_name, dataset.mountpoint)
+    apply_resources(config, node_name, dataset.mountpoint, storage_bytes)
+    restart_zabbix_deployments(runner)
     validate_installation(node_name, runner)
-    return installation_result(config, dataset, node_name)
+    registration = configure_zabbix(config)
+    return installation_result(
+        config,
+        dataset,
+        node_name,
+        storage_bytes,
+        registration,
+    )
 
 
 def preflight(config: InstallConfig, runner: CommandRunner) -> None:
     require_root()
     require_commands(["k0s", "mountpoint", "zfs"])
     validate_kustomize_base(BASE_DIRECTORY)
+    for template_path in ZABBIX_TEMPLATES:
+        if not template_path.is_file():
+            raise InstallerError(f"Zabbix template not found: {template_path}")
+        validate_template(template_path)
     root_result = runner.run(
         ["zfs", "list", "-H", "-o", "name", config.root_dataset],
         check=False,
@@ -75,10 +109,22 @@ def preflight(config: InstallConfig, runner: CommandRunner) -> None:
             "k0s",
             "kubectl",
             "get",
-            "secret",
-            POSTGRES_SECRET,
+            "deployment",
+            POSTGRES_DEPLOYMENT,
             "-n",
             NAMESPACE,
+        ]
+    )
+    runner.run(
+        [
+            "k0s",
+            "kubectl",
+            "rollout",
+            "status",
+            f"deployment/{POSTGRES_DEPLOYMENT}",
+            "-n",
+            NAMESPACE,
+            "--timeout=5m",
         ]
     )
     runner.run(
@@ -94,10 +140,28 @@ def preflight(config: InstallConfig, runner: CommandRunner) -> None:
     )
 
 
+def prepare_database(config: InstallConfig) -> None:
+    ensure_zabbix_database(
+        NAMESPACE,
+        config.database,
+        config.database_username,
+        config.database_password,
+    )
+    apply_string_secret(
+        NAMESPACE,
+        ZABBIX_DATABASE_SECRET,
+        {
+            "POSTGRES_DB": config.database,
+            "POSTGRES_USER": config.database_username,
+            "POSTGRES_PASSWORD": config.database_password,
+        },
+    )
+
+
 def prepare_storage(
     config: InstallConfig,
     runner: CommandRunner,
-) -> DatasetSpec:
+) -> tuple[DatasetSpec, int]:
     root_mountpoint = zfs_value(runner, config.root_dataset, "mountpoint")
     if not root_mountpoint.startswith("/") or any(
         character.isspace() for character in root_mountpoint
@@ -106,9 +170,114 @@ def prepare_storage(
             f"{config.root_dataset} needs an absolute mountpoint without whitespace"
         )
     dataset = dataset_spec(config, Path(root_mountpoint))
-    ensure_zabbix_dataset(config, dataset, runner)
+    storage_bytes = resolve_storage_bytes(config, dataset, runner)
+    ensure_zabbix_dataset(dataset, runner, str(storage_bytes))
     runner.run(["mountpoint", "-q", str(dataset.mountpoint)])
-    return dataset
+    return dataset, storage_bytes
+
+
+def resolve_storage_bytes(
+    config: InstallConfig,
+    dataset: DatasetSpec,
+    runner: CommandRunner,
+) -> int:
+    requested_bytes = parse_storage_quantity(config.storage_size)
+    existing_quantities = existing_kubernetes_storage_quantities(runner)
+    for property_name in ("quota", "used"):
+        result = runner.run(
+            ["zfs", "get", "-Hp", "-o", "value", property_name, dataset.name],
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip().isdecimal():
+            existing_quantities.append(result.stdout.strip())
+    if not existing_quantities:
+        return requested_bytes
+
+    required_bytes = max(
+        parse_storage_quantity(value) for value in existing_quantities
+    )
+    if requested_bytes < required_bytes:
+        minimum_size = minimum_configured_size(required_bytes)
+        raise InstallerError(
+            f"ZABBIX_STORAGE_SIZE={config.storage_size} cannot shrink existing "
+            f"Zabbix storage; use at least {minimum_size}"
+        )
+    return requested_bytes
+
+
+def existing_kubernetes_storage_quantities(
+    runner: CommandRunner,
+) -> list[str]:
+    quantities: list[str] = []
+    pvc_result = runner.run(
+        [
+            "k0s",
+            "kubectl",
+            "get",
+            "persistentvolumeclaim",
+            ZABBIX_PVC,
+            "-n",
+            NAMESPACE,
+            "-o",
+            "json",
+        ],
+        check=False,
+    )
+    if pvc_result.returncode == 0:
+        try:
+            pvc = json.loads(pvc_result.stdout)
+            quantities.append(
+                str(pvc["spec"]["resources"]["requests"]["storage"])
+            )
+            capacity = pvc.get("status", {}).get("capacity", {}).get("storage")
+            if capacity is not None:
+                quantities.append(str(capacity))
+        except (KeyError, TypeError, json.JSONDecodeError) as error:
+            raise InstallerError(
+                f"Existing PersistentVolumeClaim {ZABBIX_PVC} is malformed"
+            ) from error
+
+    pv_result = runner.run(
+        ["k0s", "kubectl", "get", "persistentvolume", ZABBIX_PV, "-o", "json"],
+        check=False,
+    )
+    if pv_result.returncode == 0:
+        try:
+            pv = json.loads(pv_result.stdout)
+            quantities.append(str(pv["spec"]["capacity"]["storage"]))
+        except (KeyError, TypeError, json.JSONDecodeError) as error:
+            raise InstallerError(
+                f"Existing PersistentVolume {ZABBIX_PV} is malformed"
+            ) from error
+    return quantities
+
+
+def parse_storage_quantity(value: str) -> int:
+    match = re.fullmatch(r"([0-9]+)(Ki|Mi|Gi|Ti|Pi|Ei|K|M|G|T|P|E)?", value)
+    if match is None or int(match.group(1)) == 0:
+        raise InstallerError(f"Invalid existing storage capacity: {value}")
+    suffix = match.group(2) or ""
+    decimal_powers = {"": 0, "K": 1, "M": 2, "G": 3, "T": 4, "P": 5, "E": 6}
+    if suffix in decimal_powers:
+        return int(match.group(1)) * 1000 ** decimal_powers[suffix]
+    binary_powers = {"Ki": 1, "Mi": 2, "Gi": 3, "Ti": 4, "Pi": 5, "Ei": 6}
+    return int(match.group(1)) * 1024 ** binary_powers[suffix]
+
+
+def minimum_configured_size(required_bytes: int) -> str:
+    units = (
+        ("E", 1000**6),
+        ("P", 1000**5),
+        ("T", 1000**4),
+        ("G", 1000**3),
+        ("M", 1000**2),
+        ("K", 1000),
+    )
+    for suffix, multiplier in units:
+        if required_bytes >= multiplier:
+            amount = (required_bytes + multiplier - 1) // multiplier
+            return f"{amount}{suffix}"
+    return "1K"
 
 
 def verify_existing_pv(
@@ -140,13 +309,29 @@ def apply_resources(
     config: InstallConfig,
     node_name: str,
     mountpoint: Path,
+    storage_bytes: int,
 ) -> None:
     with runtime_kustomize_overlay(
         BASE_DIRECTORY,
-        runtime_patches(config, node_name, mountpoint),
+        runtime_patches(config, node_name, mountpoint, storage_bytes),
     ) as overlay_path:
         render_kustomize_overlay(overlay_path)
         apply_kustomize_overlay(overlay_path)
+
+
+def restart_zabbix_deployments(runner: CommandRunner) -> None:
+    runner.run(
+        [
+            "k0s",
+            "kubectl",
+            "rollout",
+            "restart",
+            "deployment/zabbix-server",
+            "deployment/zabbix-web",
+            "-n",
+            NAMESPACE,
+        ]
+    )
 
 
 def validate_installation(node_name: str, runner: CommandRunner) -> None:
@@ -178,6 +363,17 @@ def validate_installation(node_name: str, runner: CommandRunner) -> None:
     for service in ("zabbix-server", "zabbix-web"):
         wait_for_endpoints(service, runner)
     runner.run(["k0s", "kubectl", "get", "persistentvolume", ZABBIX_PV])
+    runner.run(
+        [
+            "k0s",
+            "kubectl",
+            "get",
+            "secret",
+            ZABBIX_DATABASE_SECRET,
+            "-n",
+            NAMESPACE,
+        ]
+    )
     runner.run(
         [
             "k0s",
@@ -218,17 +414,35 @@ def wait_for_endpoints(service: str, runner: CommandRunner) -> None:
     raise InstallerError(f"Service {service} has no ready endpoints after five minutes")
 
 
+def configure_zabbix(config: InstallConfig) -> dict[str, Any]:
+    api_url = f"http://127.0.0.1:{config.web_node_port}/api_jsonrpc.php"
+    return configure_monitored_host(
+        api_url,
+        config.admin_username,
+        config.admin_password,
+        config.hostname,
+        ZABBIX_TEMPLATES,
+    )
+
+
 def installation_result(
     config: InstallConfig,
     dataset: DatasetSpec,
     node_name: str,
+    storage_bytes: int,
+    registration: dict[str, Any],
 ) -> dict[str, Any]:
     return {
+        "database": config.database,
+        "database_user": config.database_username,
         "dataset": dataset.name,
         "mountpoint": str(dataset.mountpoint),
         "node": node_name,
+        "registered_host": registration["host"],
         "server_node_port": config.server_node_port,
+        "storage_bytes": storage_bytes,
         "status": "installed",
+        "templates": registration["templates"],
         "web_node_port": config.web_node_port,
     }
 
@@ -237,6 +451,7 @@ def runtime_patches(
     config: InstallConfig,
     node_name: str,
     mountpoint: Path,
+    storage_bytes: int,
 ) -> dict[str, str]:
     value = json.dumps
     return {
@@ -246,7 +461,7 @@ metadata:
   name: {ZABBIX_PV}
 spec:
   capacity:
-    storage: {value(config.storage_size)}
+    storage: {value(str(storage_bytes))}
   local:
     path: {value(str(mountpoint))}
   nodeAffinity:
@@ -266,7 +481,7 @@ metadata:
 spec:
   resources:
     requests:
-      storage: {value(config.storage_size)}
+      storage: {value(str(storage_bytes))}
 """,
         "server-service.yaml": f"""apiVersion: v1
 kind: Service

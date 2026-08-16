@@ -1,0 +1,316 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 0d3d247511b44be682c5bcce3fded7f3
+      name: Templates/Hardware
+  templates:
+    - uuid: 92d3ae533b1446548d523ec42f22ae5f
+      template: 'Memory ECC by Zabbix agent active'
+      name: 'Memory ECC by Zabbix agent active'
+      description: 'Linux EDAC memory monitoring, including Intel in-band ECC through igen6_edac.'
+      groups:
+        - name: Templates/Hardware
+      items:
+        - uuid: 0d81855d556f4bd081cc3e6a65267cda
+          name: 'Memory ECC: Metrics JSON'
+          type: ZABBIX_ACTIVE
+          key: memory.ecc.metrics
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          tags:
+            - tag: component
+              value: raw
+        - uuid: 71d9c7412b6f48608f189ad73553e109
+          name: 'Memory ECC: Monitoring available'
+          type: DEPENDENT
+          key: memory.ecc.available
+          delay: '0'
+          history: 30d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.available
+          master_item:
+            key: memory.ecc.metrics
+          tags:
+            - tag: component
+              value: health
+          valuemap:
+            name: 'Memory ECC availability'
+          triggers:
+            - uuid: 7e591390738c4da58058ff76f8848ecc
+              expression: 'last(/Memory ECC by Zabbix agent active/memory.ecc.available)<>1'
+              name: 'Memory ECC monitoring is unavailable'
+              priority: HIGH
+        - uuid: 30dd06bac64c430d802b7252d5870f52
+          name: 'Memory ECC: Collector errors'
+          type: DEPENDENT
+          key: memory.ecc.collector.errors
+          delay: '0'
+          history: 30d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.error_count
+          master_item:
+            key: memory.ecc.metrics
+          tags:
+            - tag: component
+              value: health
+          triggers:
+            - uuid: e70cdb35cb5c4a72886f6dffa0c1b5c0
+              expression: 'last(/Memory ECC by Zabbix agent active/memory.ecc.collector.errors)>0'
+              name: 'Memory ECC collector reports errors'
+              priority: HIGH
+        - uuid: 83e63d905fc1496282ea329181b78c99
+          name: 'Memory ECC: Metrics heartbeat'
+          type: DEPENDENT
+          key: memory.ecc.metrics.heartbeat
+          delay: '0'
+          history: 7d
+          units: unixtime
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.generated_at
+          master_item:
+            key: memory.ecc.metrics
+          tags:
+            - tag: component
+              value: health
+          triggers:
+            - uuid: bbd9bf3ca5304aa48dfc0182d58fc812
+              expression: 'nodata(/Memory ECC by Zabbix agent active/memory.ecc.metrics.heartbeat,5m)=1'
+              name: 'No memory ECC metrics received for 5 minutes'
+              priority: HIGH
+        - uuid: 186a0f3781994e9880f44b2aefd09fc4
+          name: 'Memory ECC: Corrected errors'
+          type: DEPENDENT
+          key: memory.ecc.errors.corrected
+          delay: '0'
+          history: 90d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.corrected_errors
+          master_item:
+            key: memory.ecc.metrics
+          tags:
+            - tag: component
+              value: errors
+          triggers:
+            - uuid: dfe2e5603c444087a2b19a95d42e0dba
+              expression: 'change(/Memory ECC by Zabbix agent active/memory.ecc.errors.corrected)>0'
+              name: 'Memory ECC corrected a new error'
+              priority: WARNING
+        - uuid: 3e15f374d83b4a89b6c8dd1be531d598
+          name: 'Memory ECC: Uncorrected errors'
+          type: DEPENDENT
+          key: memory.ecc.errors.uncorrected
+          delay: '0'
+          history: 90d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.uncorrected_errors
+          master_item:
+            key: memory.ecc.metrics
+          tags:
+            - tag: component
+              value: errors
+          triggers:
+            - uuid: 0eda51e50e324b7a87afb8e9474bfb7b
+              expression: 'change(/Memory ECC by Zabbix agent active/memory.ecc.errors.uncorrected)>0'
+              name: 'Memory ECC reported a new uncorrected error'
+              priority: DISASTER
+      discovery_rules:
+        - uuid: 5fd7b23556174d989315a4012c10ee26
+          name: 'Memory ECC controller discovery'
+          type: DEPENDENT
+          key: memory.ecc.controller.discovery
+          delay: '0'
+          lifetime: 7d
+          item_prototypes:
+            - uuid: 730ea00e4bac41d6a303c34ad562a938
+              name: 'Memory controller {#ECC.CONTROLLER.ID}: Name'
+              type: DEPENDENT
+              key: 'memory.ecc.controller.name["{#ECC.CONTROLLER.ID}"]'
+              delay: '0'
+              history: 90d
+              value_type: CHAR
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["controllers"]["{#ECC.CONTROLLER.ID}"]["name"]'
+              master_item:
+                key: memory.ecc.metrics
+              tags:
+                - tag: component
+                  value: controller
+            - uuid: 430f95e7abca427b8e33d309cf521d81
+              name: 'Memory controller {#ECC.CONTROLLER.ID}: Corrected errors'
+              type: DEPENDENT
+              key: 'memory.ecc.controller.errors.corrected["{#ECC.CONTROLLER.ID}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["controllers"]["{#ECC.CONTROLLER.ID}"]["corrected_errors"]'
+              master_item:
+                key: memory.ecc.metrics
+              tags:
+                - tag: component
+                  value: errors
+            - uuid: 7e4038f237234a438c1b4a90c4b03cb2
+              name: 'Memory controller {#ECC.CONTROLLER.ID}: Uncorrected errors'
+              type: DEPENDENT
+              key: 'memory.ecc.controller.errors.uncorrected["{#ECC.CONTROLLER.ID}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["controllers"]["{#ECC.CONTROLLER.ID}"]["uncorrected_errors"]'
+              master_item:
+                key: memory.ecc.metrics
+              tags:
+                - tag: component
+                  value: errors
+            - uuid: 394334a7aa964ea5b49d316df3ce7cdd
+              name: 'Memory controller {#ECC.CONTROLLER.ID}: Corrected errors without DIMM information'
+              type: DEPENDENT
+              key: 'memory.ecc.controller.errors.corrected_noinfo["{#ECC.CONTROLLER.ID}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["controllers"]["{#ECC.CONTROLLER.ID}"]["corrected_errors_without_dimm"]'
+              master_item:
+                key: memory.ecc.metrics
+              tags:
+                - tag: component
+                  value: errors
+            - uuid: f7f4f3a363204486a32e34341038fd9d
+              name: 'Memory controller {#ECC.CONTROLLER.ID}: Uncorrected errors without DIMM information'
+              type: DEPENDENT
+              key: 'memory.ecc.controller.errors.uncorrected_noinfo["{#ECC.CONTROLLER.ID}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["controllers"]["{#ECC.CONTROLLER.ID}"]["uncorrected_errors_without_dimm"]'
+              master_item:
+                key: memory.ecc.metrics
+              tags:
+                - tag: component
+                  value: errors
+            - uuid: 60739f0762094de4858fd12ae851e441
+              name: 'Memory controller {#ECC.CONTROLLER.ID}: Managed memory'
+              type: DEPENDENT
+              key: 'memory.ecc.controller.managed["{#ECC.CONTROLLER.ID}"]'
+              delay: '0'
+              history: 30d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["controllers"]["{#ECC.CONTROLLER.ID}"]["managed_bytes"]'
+              master_item:
+                key: memory.ecc.metrics
+              tags:
+                - tag: component
+                  value: controller
+            - uuid: d2def18910df4a5388130f730cfcdc5a
+              name: 'Memory controller {#ECC.CONTROLLER.ID}: Counter age'
+              type: DEPENDENT
+              key: 'memory.ecc.controller.counter_age["{#ECC.CONTROLLER.ID}"]'
+              delay: '0'
+              history: 30d
+              units: s
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["controllers"]["{#ECC.CONTROLLER.ID}"]["seconds_since_reset"]'
+              master_item:
+                key: memory.ecc.metrics
+              tags:
+                - tag: component
+                  value: controller
+          master_item:
+            key: memory.ecc.metrics
+          lld_macro_paths:
+            - lld_macro: '{#ECC.CONTROLLER.ID}'
+              path: $.id
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.controllers.*
+        - uuid: 5a5a7ce83272499c8e7cc52355853960
+          name: 'Memory ECC DIMM discovery'
+          type: DEPENDENT
+          key: memory.ecc.dimm.discovery
+          delay: '0'
+          lifetime: 7d
+          item_prototypes:
+            - uuid: 4e8b1b5e1e304d4a8c6dd01796743d7a
+              name: 'DIMM {#ECC.DIMM.LABEL} ({#ECC.DIMM.LOCATION}): Corrected errors'
+              type: DEPENDENT
+              key: 'memory.ecc.dimm.errors.corrected["{#ECC.DIMM.ID}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["dimms"]["{#ECC.DIMM.ID}"]["corrected_errors"]'
+              master_item:
+                key: memory.ecc.metrics
+              tags:
+                - tag: component
+                  value: errors
+                - tag: controller
+                  value: '{#ECC.DIMM.CONTROLLER}'
+            - uuid: 1decde222340458ca9deffd14bd90c0a
+              name: 'DIMM {#ECC.DIMM.LABEL} ({#ECC.DIMM.LOCATION}): Uncorrected errors'
+              type: DEPENDENT
+              key: 'memory.ecc.dimm.errors.uncorrected["{#ECC.DIMM.ID}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["dimms"]["{#ECC.DIMM.ID}"]["uncorrected_errors"]'
+              master_item:
+                key: memory.ecc.metrics
+              tags:
+                - tag: component
+                  value: errors
+                - tag: controller
+                  value: '{#ECC.DIMM.CONTROLLER}'
+          master_item:
+            key: memory.ecc.metrics
+          lld_macro_paths:
+            - lld_macro: '{#ECC.DIMM.CONTROLLER}'
+              path: $.controller
+            - lld_macro: '{#ECC.DIMM.ID}'
+              path: $.id
+            - lld_macro: '{#ECC.DIMM.LABEL}'
+              path: $.label
+            - lld_macro: '{#ECC.DIMM.LOCATION}'
+              path: $.location
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.dimms.*
+      valuemaps:
+        - uuid: dd4e2ba4626d48ad886406d120d4e5ce
+          name: 'Memory ECC availability'
+          mappings:
+            - value: '0'
+              newvalue: 'Unavailable'
+            - value: '1'
+              newvalue: 'Available'

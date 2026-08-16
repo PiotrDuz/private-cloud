@@ -178,8 +178,7 @@ def pool_exists(runner: CommandRunner, pool_name: str) -> bool:
 
 
 def read_tty(tty: TextIO, prompt: str) -> str:
-    tty.write(prompt)
-    tty.flush()
+    print(prompt, end="", flush=True)
     value = tty.readline()
     if value == "":
         raise InstallerError("Terminal input ended unexpectedly")
@@ -187,14 +186,13 @@ def read_tty(tty: TextIO, prompt: str) -> str:
 
 
 def prompt_for_passphrase(
-    tty: TextIO,
     dataset: str,
     key_file: Path,
 ) -> bytearray | None:
     print(f"\nChoose the passphrase for {dataset} (8-512 bytes).")
     print(f"It will not be displayed and will be stored in {key_file}.")
     while True:
-        first = getpass.getpass("Passphrase: ", stream=tty)
+        first = getpass.getpass("Passphrase: ")
         encoded = first.encode("utf-8")
         if not 8 <= len(encoded) <= 512:
             print(
@@ -203,7 +201,7 @@ def prompt_for_passphrase(
             )
             continue
 
-        second = getpass.getpass("Confirm passphrase: ", stream=tty)
+        second = getpass.getpass("Confirm passphrase: ")
         if first != second:
             print("WARNING: Passphrases do not match; try again", file=sys.stderr)
             continue

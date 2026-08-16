@@ -2,14 +2,14 @@
     1. Setup disks into raidz1, root = "tank"
     2. Setup encryption, use file with known password so it can be recreated once file is lost. 
     "tank/secure"
-    3. Schedule monthly scrubs
-    4. Enable auto trims
-    5. add auto mount on system startup service
+    3. Give tank/secure all available pool capacity without a quota or reservation
+    4. Schedule monthly scrubs
+    5. Enable auto trims
+    6. add auto mount on system startup service
 2. Setup k0s (fodler k0s)
     1. place container data and images under tank/secure/k0s/images, tank/secure/k0s/ephemeral for containers
-    2. place k0s setup and configuration under tank/secure/k0s/config, 
-    tank/secure/k8s/volumes for persistent application volume
-    3. Further datasets for each service that should be backed up is be placed in k0s/services-backed
+    2. place k0s setup and configuration under tank/secure/k0s/config
+    3. Each backed-up service creates its own dataset and static PV under k0s/services-backed
     4. Further datasets for servcies not to be backed up places in k0s/services-no-backup
     5. install k0s
     6. make sure k0s starts after zfs is muounted and unlocked on system startup
@@ -35,8 +35,9 @@
         - total pool size
         - SMART disk metrics
         - system general performance (ram, cpu)
+        - RAM ECC corrected and uncorrected errors
     2. Zabbix server with its owndataset and PV should be deployed in cluster
-    3. Postgres should have zabbix database created
+    3. Zabbix service creates its database, login role, and credentials Secret
     4. Connect zabbix to database
     5. expose zabbix server port so it can be connected with metrics gatherer on host
     

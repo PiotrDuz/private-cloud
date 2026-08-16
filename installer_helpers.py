@@ -7,6 +7,8 @@ import tempfile
 from pathlib import Path
 from typing import Mapping, Sequence
 
+ZABBIX_HOSTNAME = "private-cloud-zabbix"
+
 
 def require_root() -> None:
     if os.geteuid() != 0:

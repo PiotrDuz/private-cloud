@@ -2,14 +2,25 @@ from __future__ import annotations
 
 import getpass
 import hmac
+import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 PROJECT_DIRECTORY = Path(__file__).resolve().parent.parent
+if str(PROJECT_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIRECTORY))
+
+from installer_helpers import ZABBIX_HOSTNAME  # noqa: E402
+
+PROGRESS_CONTEXT_FIELDS = frozenset(
+    ("hostname", "root_dataset", "server_node_port", "web_node_port")
+)
 Validator = Callable[[str], None]
 
 
@@ -21,6 +32,106 @@ def require_setup_environment(scripts: Sequence[Path]) -> None:
     for script in scripts:
         if not script.is_file():
             raise SetupError(f"Installer not found: {script}")
+
+
+def load_setup_progress(
+    path: Path,
+    stage_names: Sequence[str],
+) -> SetupProgress:
+    if not path.exists():
+        return SetupProgress()
+    validate_progress_path(path)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SetupError(f"Cannot read setup progress: {path}") from error
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        raise SetupError(f"Unsupported setup progress format: {path}")
+
+    completed = payload.get("completed")
+    current_stage = payload.get("current_stage")
+    context = payload.get("context")
+    allowed = set(stage_names)
+    invalid_completed = (
+        not isinstance(completed, list)
+        or any(
+            not isinstance(stage, str) or stage not in allowed
+            for stage in completed
+        )
+        or len(completed) != len(set(completed))
+    )
+    invalid_current = current_stage is not None and (
+        not isinstance(current_stage, str) or current_stage not in allowed
+    )
+    invalid_context = not isinstance(context, dict)
+    if not invalid_context:
+        invalid_context = any(
+            not isinstance(key, str)
+            or key not in PROGRESS_CONTEXT_FIELDS
+            or not isinstance(value, str)
+            for key, value in context.items()
+        )
+    if invalid_completed or invalid_current or invalid_context:
+        raise SetupError(f"Invalid setup progress: {path}")
+    if current_stage in completed:
+        raise SetupError(f"Invalid setup progress: {path}")
+    positions = [stage_names.index(stage) for stage in completed]
+    if positions != sorted(positions):
+        raise SetupError(f"Invalid setup progress order: {path}")
+    return SetupProgress(completed, current_stage, context)
+
+
+def save_setup_progress(path: Path, progress: SetupProgress) -> None:
+    ensure_progress_directory(path.parent)
+    content = json.dumps(
+        {
+            "completed": progress.completed,
+            "context": progress.context,
+            "current_stage": progress.current_stage,
+            "version": 1,
+        },
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            delete=False,
+        ) as temporary_file:
+            temporary_file.write(content)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+            temporary_path = Path(temporary_file.name)
+        temporary_path.chmod(0o600)
+        temporary_path.replace(path)
+    except OSError as error:
+        raise SetupError(f"Cannot save setup progress: {path}") from error
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def validate_progress_path(path: Path) -> None:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise SetupError(f"Cannot inspect setup progress: {path}") from error
+    if path.is_symlink() or metadata.st_uid != os.geteuid() or metadata.st_mode & 0o022:
+        raise SetupError(f"Unsafe setup progress file: {path}")
+
+
+def ensure_progress_directory(path: Path) -> None:
+    try:
+        path.mkdir(parents=True, mode=0o700, exist_ok=True)
+        metadata = path.lstat()
+    except OSError as error:
+        raise SetupError(f"Cannot prepare setup progress directory: {path}") from error
+    if path.is_symlink() or metadata.st_uid != os.geteuid() or metadata.st_mode & 0o022:
+        raise SetupError(f"Unsafe setup progress directory: {path}")
 
 
 def begin_step(number: int, total: int, title: str, detail: str) -> bool:
@@ -56,12 +167,14 @@ def prompt_value(
         return value
 
 
-def prompt_secret(label: str) -> str:
+def prompt_secret(label: str, *, confirm: bool = True) -> str:
     while True:
         first = getpass.getpass(f"{label}: ")
         if not first:
             print("The value cannot be empty", file=sys.stderr)
             continue
+        if not confirm:
+            return first
         second = getpass.getpass(f"Confirm {label.lower()}: ")
         if hmac.compare_digest(first, second):
             return first
@@ -200,6 +313,13 @@ def validate_absolute_path(value: str) -> None:
         raise ValueError("use an absolute path")
     if "\n" in value or "\r" in value:
         raise ValueError("line breaks are not allowed")
+
+
+@dataclass
+class SetupProgress:
+    completed: list[str] = field(default_factory=list)
+    current_stage: str | None = None
+    context: dict[str, str] = field(default_factory=dict)
 
 
 class SetupError(RuntimeError):

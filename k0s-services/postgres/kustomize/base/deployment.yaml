@@ -23,7 +23,7 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - -c
-            - shared_buffers=128Mi
+            - shared_buffers=128MB
             - -c
             - full_page_writes=off
             - -c
@@ -36,17 +36,17 @@ spec:
             - name: POSTGRES_DB
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
+                  name: postgres-admin-credentials
                   key: POSTGRES_DB
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
+                  name: postgres-admin-credentials
                   key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
+                  name: postgres-admin-credentials
                   key: POSTGRES_PASSWORD
             - name: POSTGRES_INITDB_ARGS
               value: --no-data-checksums

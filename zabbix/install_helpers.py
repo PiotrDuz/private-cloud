@@ -11,6 +11,7 @@ if str(PROJECT_DIRECTORY) not in sys.path:
 from installer_helpers import (  # noqa: E402
     CommandRunner,
     InstallerError,
+    ZABBIX_HOSTNAME,
     read_os_release,
     require_commands,
     require_root,
@@ -22,6 +23,3 @@ from installer_helpers import (  # noqa: E402
 class InstallConfig:
     server_active: str
     hostname: str
-    psk_identity: str | None
-    psk_file: Path
-    allow_plaintext: bool

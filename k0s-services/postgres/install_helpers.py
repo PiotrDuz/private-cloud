@@ -20,7 +20,9 @@ from k0s_service_helpers import DatasetSpec, service_dataset_spec  # noqa: E402
 
 NAMESPACE = "private-cloud"
 SERVICE_NAME = "postgres"
-SECRET_NAME = "postgres-credentials"
+SECRET_NAME = "postgres-admin-credentials"
+ADMIN_DATABASE = "postgres"
+ADMIN_USERNAME = "postgres"
 DATASET_SUFFIX = "k0s/services-backed/postgres"
 
 
@@ -28,9 +30,7 @@ def load_config() -> PostgresConfig:
     root_dataset = os.environ.get("ROOT_DATASET", "tank/secure")
     volume_size = os.environ.get("POSTGRES_VOLUME_SIZE", "20G")
     max_ram = os.environ.get("POSTGRES_MAX_RAM", "")
-    database = os.environ.get("POSTGRES_DB", "zabbix")
-    username = os.environ.get("POSTGRES_USER", "zabbix")
-    password = os.environ.get("POSTGRES_PASSWORD", "")
+    admin_password = os.environ.get("POSTGRES_ADMIN_PASSWORD", "")
 
     if not re.fullmatch(r"[A-Za-z0-9_.:-]+(?:/[A-Za-z0-9_.:-]+)+", root_dataset):
         raise InstallerError(f"Invalid ROOT_DATASET: {root_dataset}")
@@ -44,33 +44,21 @@ def load_config() -> PostgresConfig:
         raise InstallerError(
             "POSTGRES_MAX_RAM must be a positive binary size such as 2Gi"
         )
-    for name, value in (("POSTGRES_DB", database), ("POSTGRES_USER", username)):
-        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", value):
-            raise InstallerError(f"Invalid {name}: {value}")
-    if not password:
-        raise InstallerError("POSTGRES_PASSWORD must be set")
+    if not admin_password:
+        raise InstallerError("POSTGRES_ADMIN_PASSWORD must be set")
+    shared_buffers_mebibytes = half_memory_mebibytes(max_ram)
 
     return PostgresConfig(
         root_dataset=root_dataset,
         volume_size=volume_size,
         max_ram=max_ram,
-        database=database,
-        username=username,
-        password=password,
-        shared_buffers=half_memory(max_ram),
-        shared_buffers_bytes=memory_bytes(half_memory(max_ram)),
+        admin_password=admin_password,
+        shared_buffers=f"{shared_buffers_mebibytes}MB",
+        shared_buffers_bytes=shared_buffers_mebibytes * 1024**2,
     )
 
 
-def memory_bytes(value: str) -> int:
-    match = re.fullmatch(r"([1-9][0-9]*)(Ki|Mi|Gi|Ti)", value)
-    if match is None:
-        raise InstallerError(f"Invalid memory size: {value}")
-    multipliers = {"Ki": 1024, "Mi": 1024**2, "Gi": 1024**3, "Ti": 1024**4}
-    return int(match.group(1)) * multipliers[match.group(2)]
-
-
-def half_memory(value: str) -> str:
+def half_memory_mebibytes(value: str) -> int:
     match = re.fullmatch(r"([1-9][0-9]*)(Ki|Mi|Gi|Ti)", value)
     if match is None:
         raise InstallerError(f"Invalid memory size: {value}")
@@ -80,7 +68,7 @@ def half_memory(value: str) -> str:
     half_mebibytes = number * multiplier // 2 // 1024
     if half_mebibytes < 128:
         raise InstallerError("POSTGRES_MAX_RAM must produce at least 128Mi shared_buffers")
-    return f"{half_mebibytes}Mi"
+    return half_mebibytes
 
 
 def dataset_spec(config: PostgresConfig, root_mountpoint: Path) -> DatasetSpec:
@@ -92,8 +80,6 @@ class PostgresConfig:
     root_dataset: str
     volume_size: str
     max_ram: str
-    database: str
-    username: str
-    password: str
+    admin_password: str
     shared_buffers: str
     shared_buffers_bytes: int

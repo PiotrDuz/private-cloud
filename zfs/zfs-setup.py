@@ -39,7 +39,7 @@ SECURE_DATASET = f"{POOL_NAME}/secure"
 SECURE_MOUNTPOINT = f"{POOL_MOUNTPOINT}/secure"
 KEY_DIRECTORY = Path("/etc/zfs/keys")
 KEY_FILE = KEY_DIRECTORY / "tank-secure.key"
-MINIMUM_DISKS = 3
+MINIMUM_DISKS = 2
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
 MOUNT_HELPER_SOURCE = SCRIPT_DIRECTORY / "zfs_mount.py"
 MOUNT_HELPER_TARGET = Path("/usr/local/sbin/zfs-unlock-mount")
@@ -56,7 +56,6 @@ def run_installation(state: InstallationState) -> None:
     disks = discover_disks(state)
     selected = select_disks(state, disks)
     state.passphrase = prompt_for_passphrase(
-        state.tty,
         SECURE_DATASET,
         KEY_FILE,
     )
@@ -69,6 +68,7 @@ def run_installation(state: InstallationState) -> None:
     erase_selected_disks(state, selected)
     create_pool(state, selected)
     create_secure_dataset(state)
+    validate_secure_capacity(state)
     configure_services(state)
     show_result(state)
 
@@ -262,6 +262,7 @@ def show_plan(
         )
     print(f"  Approximate raw RAIDZ1 capacity: {human_size(estimated_size)}")
     print(f"  Encrypted dataset: {SECURE_DATASET} at {SECURE_MOUNTPOINT}")
+    print("  Capacity:          all available pool space (no quota or reservation)")
     print(f"  Passphrase file:  {KEY_FILE}")
     print("\nALL DATA ON THE SELECTED DISKS WILL BE PERMANENTLY ERASED.")
 
@@ -373,6 +374,14 @@ def create_secure_dataset(state: InstallationState) -> None:
             "zfs",
             "create",
             "-o",
+            "quota=none",
+            "-o",
+            "refquota=none",
+            "-o",
+            "reservation=none",
+            "-o",
+            "refreservation=none",
+            "-o",
             "encryption=aes-256-gcm",
             "-o",
             "keyformat=passphrase",
@@ -383,6 +392,22 @@ def create_secure_dataset(state: InstallationState) -> None:
             SECURE_DATASET,
         ]
     )
+
+
+def validate_secure_capacity(state: InstallationState) -> None:
+    for property_name in (
+        "quota",
+        "refquota",
+        "reservation",
+        "refreservation",
+    ):
+        value = state.runner.capture(
+            ["zfs", "get", "-H", "-o", "value", property_name, SECURE_DATASET]
+        ).stdout.strip()
+        if value != "none":
+            raise InstallerError(
+                f"Encrypted dataset capacity is limited by {property_name}={value}"
+            )
 
 
 def configure_services(state: InstallationState) -> None:
@@ -455,7 +480,7 @@ def show_result(state: InstallationState) -> None:
 def main() -> int:
     state: InstallationState | None = None
     try:
-        with open("/dev/tty", "r+", encoding="utf-8", buffering=1) as tty:
+        with open("/dev/tty", "r", encoding="utf-8") as tty:
             state = InstallationState(
                 tty=tty,
                 runner=CommandRunner(),

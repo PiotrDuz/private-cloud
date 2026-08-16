@@ -1,15 +1,15 @@
 # Zabbix Agent 2 and OpenZFS monitoring
 
 This directory contains a host-side Zabbix Agent 2 installer, the native SMART
-plugin setup, and two read-only OpenZFS collectors. It targets Ubuntu 26.04 and
-Zabbix Agent 2 7.0 LTS.
+plugin setup, read-only OpenZFS collectors, and a read-only Linux EDAC memory
+ECC collector. It targets Ubuntu 26.04 and Zabbix Agent 2 7.0 LTS.
 
 ## Architecture
 
 Run `zabbix-agent2` as a system service on the ZFS host. Run Zabbix Server
-7.4.12, PostgreSQL, and the web frontend in Kubernetes. The agent uses active
-checks through the Zabbix Server NodePort. It listens only on `127.0.0.1` for
-passive checks.
+7.4.12, PostgreSQL, and the web frontend in Kubernetes on the same machine.
+The agent uses unencrypted active checks through the local Zabbix Server
+NodePort. It listens only on `127.0.0.1` for passive checks.
 
 ZED and the monthly scrub timer remain separate. Zabbix observes their results;
 it does not replace local ZFS event processing or initiate scheduled scrubs.
@@ -18,62 +18,34 @@ the storage controller exposes SMART data to the operating system.
 
 ## Install
 
-The Zabbix host name supplied here must exactly match the host name configured
-in the Zabbix frontend.
-
-Install ZFS, k0s, and PostgreSQL first.
-Deploy the Zabbix Kubernetes service before the host agent:
+Run the interactive setup from the repository root:
 
 ```bash
-sudo python3 ./k0s-services/zabbix/install.py
+sudo python3 ./python_setup/setup.py
 ```
 
-The installer uses NodePort `31051` for Zabbix Server and `30080` for the web
-frontend. Replace `10.0.0.20` below with the k0s node address.
+The Zabbix service stage prompts for the PostgreSQL role, database password,
+frontend administrator credentials. It creates the database,
+imports the custom templates, creates or updates the host, and
+links the Linux, SMART, ZFS, and memory ECC active templates. The host-agent
+stage uses the fixed `private-cloud-zabbix` host name and defaults to `127.0.0.1:31051`.
 
-Recommended TLS PSK setup:
-
-```bash
-sudo python3 ./zabbix/install.py \
-  --server-active 10.0.0.20:31051 \
-  --hostname piotr-server-test \
-  --psk-identity piotr-server-test-zabbix
-```
-
-If Kubernetes is not ready yet, wait to run the installer until the final
-Zabbix Server address is known. Rerunning the installer is supported. An
-existing PSK file is never overwritten.
-
-Plaintext mode must be explicitly requested and should only be used temporarily
-on a trusted lab network:
+For a standalone agent installation:
 
 ```bash
 sudo python3 ./zabbix/install.py \
-  --server-active 10.0.0.20:31051 \
-  --hostname piotr-server-test \
-  --allow-plaintext
+  --server-active 127.0.0.1:31051
 ```
+
+The monitoring transport is plaintext because the agent and server run on the
+same machine. Rerunning the installer removes old managed TLS settings and
+keeps the agent in unencrypted mode.
 
 The installer creates a backup of the package configuration at
 `/etc/zabbix/zabbix_agent2.conf.pre-private-cloud` before its first change.
 
-## Zabbix host configuration
-
-For PSK mode, configure the Zabbix host with:
-
-- Connections from host: PSK
-- PSK identity: the value passed to `--psk-identity`
-- PSK: output from `sudo cat /etc/zabbix/zabbix_agent2.psk`
-- Host name: the exact value passed to `--hostname`
-
-Link these templates:
-
-- `Linux by Zabbix agent active`
-- `SMART by Zabbix agent active 2`
-- `ZFS by Zabbix agent active` from `zabbix-zfs-template.yaml`
-
 Zabbix Server is reachable at `<node-address>:31051`.
-The frontend is separately reachable at `http://<node-address>:30080`.
+The frontend is reachable at `http://<node-address>:30080`.
 Publish the frontend through HTTPS and preferably a VPN.
 
 ## SMART monitoring
@@ -108,6 +80,33 @@ future passthrough disk is discovered, but monitor the physical disks on the
 hypervisor or storage system as well. An empty result is reported as a warning
 by the installer rather than treated as an installation failure.
 
+## Intel in-band ECC monitoring
+
+The memory ECC collector reads the Linux EDAC counters from
+`/sys/devices/system/edac/mc`. Intel in-band ECC is exposed there by the
+`igen6_edac` kernel driver when the processor is supported and IBECC is enabled
+in firmware. The installer makes a non-fatal attempt to load this driver before
+checking whether EDAC is available.
+
+The template records corrected and uncorrected error totals and discovers
+per-controller and per-DIMM counters. It warns on each counter increase and
+raises a disaster event when an uncorrected error is reported. The counters
+start at driver initialization and may return to zero after a reboot or driver
+reload.
+
+The service installer links the memory ECC template automatically.
+Its availability trigger reports when no EDAC memory controller is registered,
+which commonly means IBECC is disabled in firmware or `igen6_edac` did not
+bind to the processor.
+
+Verify the driver and counters on the host:
+
+```bash
+sudo modprobe igen6_edac
+lsmod | grep igen6_edac
+find /sys/devices/system/edac/mc -maxdepth 2 -type f
+```
+
 ## Collector keys
 
 `zfs.metrics` runs every minute through the template. It reports:
@@ -135,6 +134,7 @@ Run the collectors with the same permissions as the service:
 ```bash
 sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py metrics | python3 -m json.tool
 sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py snapshots | python3 -m json.tool
+sudo -u zabbix /usr/local/libexec/zabbix/memory-ecc-collector.py | python3 -m json.tool
 ```
 
 Test the registered Agent 2 keys:
@@ -142,6 +142,7 @@ Test the registered Agent 2 keys:
 ```bash
 sudo zabbix_agent2 -t zfs.metrics
 sudo zabbix_agent2 -t zfs.snapshots
+sudo zabbix_agent2 -t memory.ecc.metrics
 sudo zabbix_agent2 -t smart.disk.discovery
 sudo zabbix_agent2 -t smart.disk.get
 ```
@@ -153,7 +154,8 @@ systemctl status zabbix-agent2.service
 sudo journalctl -u zabbix-agent2.service
 ```
 
-The ZFS collector has no flexible arguments and invokes no shell. The `zabbix`
-user receives no pool-modification, dataset-modification, or encryption-key
-permissions. Its additional sudo access is limited to the documented SMART
-plugin forms of the root-owned smartctl wrapper.
+The ZFS and memory ECC collectors have no flexible arguments and invoke no
+shell. The `zabbix` user receives no pool-modification, dataset-modification,
+encryption-key, EDAC reset, or error-injection permissions. Its additional sudo
+access is limited to the documented SMART plugin forms of the root-owned
+smartctl wrapper.
