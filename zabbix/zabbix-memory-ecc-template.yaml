@@ -102,8 +102,8 @@ zabbix_export:
               value: errors
           triggers:
             - uuid: dfe2e5603c444087a2b19a95d42e0dba
-              expression: 'change(/Memory ECC by Zabbix agent active/memory.ecc.errors.corrected)>0'
-              name: 'Memory ECC corrected a new error'
+              expression: 'last(/Memory ECC by Zabbix agent active/memory.ecc.errors.corrected)>0'
+              name: 'Memory ECC has corrected errors recorded'
               priority: WARNING
         - uuid: 3e15f374d83b4a89b6c8dd1be531d598
           name: 'Memory ECC: Uncorrected errors'
@@ -122,8 +122,8 @@ zabbix_export:
               value: errors
           triggers:
             - uuid: 0eda51e50e324b7a87afb8e9474bfb7b
-              expression: 'change(/Memory ECC by Zabbix agent active/memory.ecc.errors.uncorrected)>0'
-              name: 'Memory ECC reported a new uncorrected error'
+              expression: 'last(/Memory ECC by Zabbix agent active/memory.ecc.errors.uncorrected)>0'
+              name: 'Memory ECC has uncorrected errors'
               priority: DISASTER
       discovery_rules:
         - uuid: 5fd7b23556174d989315a4012c10ee26

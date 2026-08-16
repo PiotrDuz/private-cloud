@@ -25,6 +25,15 @@ def command_path(name):
 
 ZFS = command_path("zfs")
 ZPOOL = command_path("zpool")
+POOL_NAME = "tank"
+SECURE_DATASET = "tank/secure"
+LEAF_DATASETS = (
+    "tank/secure/k0s/config",
+    "tank/secure/k0s/images",
+    "tank/secure/k0s/ephemeral",
+    "tank/secure/k0s/services-backed/postgres",
+    "tank/secure/k0s/services-backed/zabbix",
+)
 
 
 class Collector:
@@ -79,7 +88,9 @@ class Collector:
         properties = (
             "name,size,allocated,free,fragmentation,capacity,dedupratio,health"
         )
-        output = self.run([ZPOOL, "list", "-H", "-p", "-o", properties])
+        output = self.run(
+            [ZPOOL, "list", "-H", "-p", "-o", properties, POOL_NAME]
+        )
         pools = {}
         for line in output.splitlines():
             fields = line.split("\t")
@@ -104,10 +115,18 @@ class Collector:
                 "resilver_active": 0,
                 "last_scrub_repaired": None,
                 "last_scrub_epoch": None,
+                "last_scrub_age": None,
+                "last_scrub_duration": None,
+                "last_scrub_errors": None,
+                "autotrim": self.pool_autotrim(name),
                 "scan": "none requested",
             }
             pools[name].update(self.pool_io(name))
         return pools
+
+    def pool_autotrim(self, pool):
+        output = self.run([ZPOOL, "get", "-H", "-o", "value", "autotrim", pool])
+        return 1 if output.strip() == "on" else 0
 
     def parse_kstat(self, path, required=False):
         values = {}
@@ -166,7 +185,7 @@ class Collector:
         }
 
     def status(self, pools):
-        output = self.run([ZPOOL, "status", "-P", "-p"])
+        output = self.run([ZPOOL, "status", "-P", "-p", POOL_NAME])
         vdevs = {}
         current_pool = None
         in_config = False
@@ -188,6 +207,17 @@ class Collector:
                 if repaired:
                     pools[current_pool]["last_scrub_repaired"] = self.human_size(
                         repaired.group(1)
+                    )
+                scrub_errors = re.search(r"with ([0-9]+) errors?", scan)
+                if scrub_errors:
+                    pools[current_pool]["last_scrub_errors"] = int(
+                        scrub_errors.group(1)
+                    )
+                duration = re.search(r" in ([0-9]+):([0-9]+):([0-9]+)", scan)
+                if duration:
+                    hours, minutes, seconds = map(int, duration.groups())
+                    pools[current_pool]["last_scrub_duration"] = (
+                        hours * 3600 + minutes * 60 + seconds
                     )
                 if scan.startswith("scrub repaired") and " on " in scan:
                     date_text = scan.rsplit(" on ", 1)[1]
@@ -235,60 +265,63 @@ class Collector:
         return vdevs
 
     def datasets(self):
-        properties = [
-            "name",
-            "type",
-            "available",
-            "used",
-            "referenced",
-            "logicalused",
-            "logicalreferenced",
-            "usedbydataset",
-            "usedbychildren",
-            "usedbysnapshots",
-            "usedbyrefreservation",
-            "compressratio",
-            "quota",
-            "reservation",
-            "refreservation",
-            "mounted",
-            "encryption",
-            "keystatus",
-            "recordsize",
-            "volblocksize",
-        ]
+        datasets = {}
+        for name in LEAF_DATASETS:
+            output = self.run(
+                [
+                    ZFS,
+                    "list",
+                    "-H",
+                    "-p",
+                    "-o",
+                    "name,used,quota",
+                    name,
+                ]
+            )
+            fields = output.strip().split("\t")
+            if len(fields) != 3:
+                continue
+            used = self.number(fields[1])
+            quota = self.number(fields[2])
+            if not isinstance(used, int):
+                self.errors.append(f"{name} returned invalid used space")
+                continue
+            if not isinstance(quota, int) or quota <= 0:
+                self.errors.append(f"{name} has no positive quota")
+                continue
+            datasets[name] = {
+                "name": name,
+                "used": used,
+                "quota": quota,
+                "utilization": round(used * 100 / quota, 4),
+            }
+        return datasets
+
+    def secure_dataset(self):
         output = self.run(
             [
                 ZFS,
                 "list",
                 "-H",
-                "-p",
-                "-r",
-                "-t",
-                "filesystem,volume",
                 "-o",
-                ",".join(properties),
+                "name,mounted,encryption,keystatus",
+                SECURE_DATASET,
             ]
         )
-        numeric = set(properties[2:15] + properties[18:20])
-        datasets = {}
-        for line in output.splitlines():
-            fields = line.split("\t")
-            if len(fields) != len(properties):
-                continue
-            row = dict(zip(properties, fields))
-            name = row["name"]
-            dataset = {"name": name, "type": row["type"]}
-            for property_name in properties[2:]:
-                value = row[property_name]
-                if property_name in numeric:
-                    dataset[property_name] = self.number(value)
-                elif property_name == "mounted":
-                    dataset[property_name] = 1 if value == "yes" else 0
-                else:
-                    dataset[property_name] = value
-            datasets[name] = dataset
-        return datasets
+        fields = output.strip().split("\t")
+        if len(fields) != 4:
+            return {
+                "name": SECURE_DATASET,
+                "mounted": 0,
+                "encrypted": 0,
+                "key_available": 0,
+            }
+        return {
+            "name": fields[0],
+            "mounted": 1 if fields[1] == "yes" else 0,
+            "encrypted": 0 if fields[2] in ("off", "-") else 1,
+            "key_available": 1 if fields[3] == "available" else 0,
+        }
 
     def arc(self):
         stats = self.parse_kstat("/proc/spl/kstat/zfs/arcstats", required=True)
@@ -319,13 +352,19 @@ class Collector:
         }
 
     def metrics(self):
+        generated_at = int(time.time())
         pools = self.pools()
         vdevs = self.status(pools)
+        for pool in pools.values():
+            epoch = pool["last_scrub_epoch"]
+            if isinstance(epoch, int):
+                pool["last_scrub_age"] = max(0, generated_at - epoch)
         result = {
-            "generated_at": int(time.time()),
+            "generated_at": generated_at,
             "pools": pools,
             "vdevs": vdevs,
             "datasets": self.datasets(),
+            "secure": self.secure_dataset(),
             "arc": self.arc(),
         }
         result["error_count"] = len(self.errors)
@@ -335,27 +374,33 @@ class Collector:
     def snapshots(self):
         generated_at = int(time.time())
         datasets = {}
-        dataset_output = self.run(
-            [
-                ZFS,
-                "list",
-                "-H",
-                "-p",
-                "-r",
-                "-t",
-                "filesystem,volume",
-                "-o",
-                "name,usedbysnapshots",
-            ]
-        )
-        for line in dataset_output.splitlines():
-            fields = line.split("\t")
-            if len(fields) != 2:
+        for dataset_name in LEAF_DATASETS:
+            dataset_output = self.run(
+                [
+                    ZFS,
+                    "list",
+                    "-H",
+                    "-p",
+                    "-o",
+                    "name,used,usedbysnapshots",
+                    dataset_name,
+                ]
+            )
+            fields = dataset_output.strip().split("\t")
+            if len(fields) != 3:
                 continue
+            used_bytes = self.number(fields[1]) or 0
+            retained_bytes = self.number(fields[2]) or 0
             datasets[fields[0]] = {
                 "name": fields[0],
                 "count": 0,
-                "retained_bytes": self.number(fields[1]) or 0,
+                "dataset_used_bytes": used_bytes,
+                "retained_bytes": retained_bytes,
+                "retained_percent": (
+                    round(retained_bytes * 100 / used_bytes, 4)
+                    if used_bytes
+                    else 0
+                ),
                 "snapshot_unique_bytes_sum": 0,
                 "oldest_creation": 0,
                 "oldest_age": 0,
@@ -363,37 +408,39 @@ class Collector:
                 "newest_age": 0,
             }
 
-        snapshot_output = self.run(
-            [
-                ZFS,
-                "list",
-                "-H",
-                "-p",
-                "-r",
-                "-t",
-                "snapshot",
-                "-o",
-                "name,creation,used",
-            ]
-        )
-        for line in snapshot_output.splitlines():
-            fields = line.split("\t")
-            if len(fields) != 3 or "@" not in fields[0]:
-                continue
-            dataset_name = fields[0].rsplit("@", 1)[0]
-            if dataset_name not in datasets:
-                continue
-            creation = self.number(fields[1])
-            used = self.number(fields[2]) or 0
-            summary = datasets[dataset_name]
-            summary["count"] += 1
-            summary["snapshot_unique_bytes_sum"] += used
-            if not isinstance(creation, int):
-                continue
-            if summary["oldest_creation"] == 0 or creation < summary["oldest_creation"]:
-                summary["oldest_creation"] = creation
-            if summary["newest_creation"] == 0 or creation > summary["newest_creation"]:
-                summary["newest_creation"] = creation
+        for dataset_name in LEAF_DATASETS:
+            snapshot_output = self.run(
+                [
+                    ZFS,
+                    "list",
+                    "-H",
+                    "-p",
+                    "-d",
+                    "1",
+                    "-t",
+                    "snapshot",
+                    "-o",
+                    "name,creation,used",
+                    dataset_name,
+                ]
+            )
+            for line in snapshot_output.splitlines():
+                fields = line.split("\t")
+                if len(fields) != 3 or "@" not in fields[0]:
+                    continue
+                creation = self.number(fields[1])
+                used = self.number(fields[2]) or 0
+                summary = datasets.get(dataset_name)
+                if summary is None:
+                    continue
+                summary["count"] += 1
+                summary["snapshot_unique_bytes_sum"] += used
+                if not isinstance(creation, int):
+                    continue
+                if summary["oldest_creation"] == 0 or creation < summary["oldest_creation"]:
+                    summary["oldest_creation"] = creation
+                if summary["newest_creation"] == 0 or creation > summary["newest_creation"]:
+                    summary["newest_creation"] = creation
 
         for summary in datasets.values():
             if summary["oldest_creation"] != 0:

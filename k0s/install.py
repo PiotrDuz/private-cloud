@@ -19,6 +19,7 @@ from install_helpers import (
     require_commands,
     require_root,
     write_managed_file,
+    zfs_size_bytes,
     zfs_value,
 )
 
@@ -74,20 +75,6 @@ def preflight(config: InstallConfig, runner: CommandRunner) -> None:
     if mount_service.returncode != 0:
         raise InstallerError(
             f"Install the ZFS boot service before k0s: {ZFS_MOUNT_SERVICE}"
-        )
-
-    service_result = runner.run(
-        [
-            "systemctl",
-            "list-unit-files",
-            "k0scontroller.service",
-            "--no-legend",
-        ],
-        check=False,
-    )
-    if service_result.stdout.strip():
-        raise InstallerError(
-            "k0scontroller.service already exists; refusing to replace the cluster"
         )
 
 
@@ -147,6 +134,28 @@ def prepare_datasets(
     for dataset in datasets.values():
         ensure_dataset(runner, dataset)
 
+    quotas = {
+        "config": config.config_quota,
+        "images": config.images_quota,
+        "ephemeral": config.ephemeral_quota,
+    }
+    for name, quota in quotas.items():
+        apply_dataset_quota(datasets[name], quota, runner)
+
+
+def apply_dataset_quota(
+    dataset: DatasetSpec,
+    quota: str,
+    runner: CommandRunner,
+) -> None:
+    requested_bytes = zfs_size_bytes(quota)
+    runner.run(["zfs", "set", f"quota={quota}", dataset.name])
+    actual = runner.run(
+        ["zfs", "get", "-Hp", "-o", "value", "quota", dataset.name]
+    ).stdout.strip()
+    if not actual.isdecimal() or int(actual) != requested_bytes:
+        raise InstallerError(f"Failed to apply quota={quota} to {dataset.name}")
+
 
 def configure_boot_dependency(
     datasets: dict[str, DatasetSpec],
@@ -199,6 +208,19 @@ def install_controller(
     datasets: dict[str, DatasetSpec],
     runner: CommandRunner,
 ) -> None:
+    service_result = runner.run(
+        [
+            "systemctl",
+            "list-unit-files",
+            "k0scontroller.service",
+            "--no-legend",
+        ],
+        check=False,
+    )
+    if service_result.stdout.strip():
+        runner.run(["systemctl", "is-active", "--quiet", "k0scontroller.service"])
+        return
+
     cluster_config = datasets["config"].mountpoint / "k0s.yaml"
     generated_config = runner.run(["k0s", "config", "create"])
     write_managed_file(cluster_config, generated_config.stdout, 0o600)
@@ -259,6 +281,11 @@ def installation_result(
 ) -> dict[str, Any]:
     return {
         "datasets": [dataset.name for dataset in datasets.values()],
+        "leaf_quotas": {
+            datasets["config"].name: config.config_quota,
+            datasets["images"].name: config.images_quota,
+            datasets["ephemeral"].name: config.ephemeral_quota,
+        },
         "k0s_version": config.k0s_version,
         "node": node_name,
         "status": "installed",

@@ -64,7 +64,12 @@ def main() -> int:
         print("Stages run in dependency order and stop on the first failure.")
         progress = prepare_progress(context)
         run_checkpointed_stage(context, progress, "zfs", run_zfs_step)
-        run_checkpointed_stage(context, progress, "k0s", run_k0s_step)
+        run_checkpointed_stage(
+            context,
+            progress,
+            "k0s",
+            lambda: run_k0s_step(context),
+        )
         run_checkpointed_stage(
             context,
             progress,
@@ -181,6 +186,9 @@ def show_saved_progress(progress: SetupProgress) -> None:
 
 def context_values(context: SetupContext) -> dict[str, str]:
     return {
+        "k0s_config_quota": context.k0s_config_quota,
+        "k0s_images_quota": context.k0s_images_quota,
+        "k0s_ephemeral_quota": context.k0s_ephemeral_quota,
         "server_node_port": context.server_node_port,
         "web_node_port": context.web_node_port,
     }
@@ -188,6 +196,9 @@ def context_values(context: SetupContext) -> dict[str, str]:
 
 def restore_context(context: SetupContext, values: dict[str, str]) -> None:
     for name in (
+        "k0s_config_quota",
+        "k0s_images_quota",
+        "k0s_ephemeral_quota",
         "server_node_port",
         "web_node_port",
     ):
@@ -208,7 +219,7 @@ def run_zfs_step() -> str:
     return "completed"
 
 
-def run_k0s_step() -> str:
+def run_k0s_step(context: SetupContext) -> str:
     if not begin_step(
         2,
         STEP_COUNT,
@@ -217,11 +228,52 @@ def run_k0s_step() -> str:
     ):
         return "skipped"
 
+    while True:
+        config_quota = prompt_value(
+            "k0s configuration dataset quota",
+            default=context.k0s_config_quota,
+            validator=validate_zfs_size,
+        )
+        images_quota = prompt_value(
+            "k0s images dataset quota",
+            default=context.k0s_images_quota,
+            validator=validate_zfs_size,
+        )
+        ephemeral_quota = prompt_value(
+            "k0s ephemeral dataset quota",
+            default=context.k0s_ephemeral_quota,
+            validator=validate_zfs_size,
+        )
+        decision = resolve_review(
+            review_configuration(
+                "k0s storage",
+                (
+                    ("Root dataset", ROOT_DATASET),
+                    ("Configuration quota", config_quota),
+                    ("Images quota", images_quota),
+                    ("Ephemeral quota", ephemeral_quota),
+                ),
+            )
+        )
+        if decision is None:
+            continue
+        if decision is False:
+            return "skipped"
+        break
+
     run_installer(
         "k0s cluster",
         K0S_INSTALLER,
-        environment={"ROOT_DATASET": ROOT_DATASET},
+        environment={
+            "ROOT_DATASET": ROOT_DATASET,
+            "K0S_CONFIG_QUOTA": config_quota,
+            "K0S_IMAGES_QUOTA": images_quota,
+            "K0S_EPHEMERAL_QUOTA": ephemeral_quota,
+        },
     )
+    context.k0s_config_quota = config_quota
+    context.k0s_images_quota = images_quota
+    context.k0s_ephemeral_quota = ephemeral_quota
     return "completed"
 
 
@@ -433,6 +485,9 @@ def show_result(context: SetupContext) -> None:
 
 @dataclass
 class SetupContext:
+    k0s_config_quota: str = "1G"
+    k0s_images_quota: str = "10G"
+    k0s_ephemeral_quota: str = "10G"
     server_node_port: str = "31051"
     web_node_port: str = "30080"
     results: dict[str, str] | None = None

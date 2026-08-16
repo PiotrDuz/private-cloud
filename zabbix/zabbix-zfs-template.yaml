@@ -132,6 +132,276 @@ zabbix_export:
           tags:
             - tag: component
               value: snapshots
+        - uuid: e10c194d76c34f6481d41f945099f17e
+          name: 'Dataset config: Snapshot retained space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained["config"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/config"]["retained_bytes"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: dc014fac579249968ff0f0a0f1e9c1cf
+          name: 'Dataset config: Snapshot share of used space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained_percent["config"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/config"]["retained_percent"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 81ac48b915f14588810624f3d3113fa7
+          name: 'Dataset config: Oldest snapshot age'
+          type: DEPENDENT
+          key: 'zfs.snapshot.oldest_age["config"]'
+          delay: '0'
+          history: 90d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/config"]["oldest_age"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+          triggers:
+            - uuid: 9666d3a715e34eaea95968bd7d2003a2
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["config"])>{$ZFS.SNAPSHOT.MAX_AGE}'
+              name: 'ZFS dataset config has an old snapshot'
+              priority: WARNING
+        - uuid: f49fb4470ed2478fad34bb0bf20ddd7c
+          name: 'Dataset images: Snapshot retained space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained["images"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/images"]["retained_bytes"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 5b0964d4d8b44264bf0b49c0242add9c
+          name: 'Dataset images: Snapshot share of used space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained_percent["images"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/images"]["retained_percent"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: e6b864e656434e008900f97e24b19fc8
+          name: 'Dataset images: Oldest snapshot age'
+          type: DEPENDENT
+          key: 'zfs.snapshot.oldest_age["images"]'
+          delay: '0'
+          history: 90d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/images"]["oldest_age"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+          triggers:
+            - uuid: 2931ea71ab704e9f8d8aa2b958942aa2
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["images"])>{$ZFS.SNAPSHOT.MAX_AGE}'
+              name: 'ZFS dataset images has an old snapshot'
+              priority: WARNING
+        - uuid: 094ae063528947d58f80f6f2274cb707
+          name: 'Dataset ephemeral: Snapshot retained space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained["ephemeral"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/ephemeral"]["retained_bytes"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 8c0768fc664f4efc8c57156455b611db
+          name: 'Dataset ephemeral: Snapshot share of used space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained_percent["ephemeral"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/ephemeral"]["retained_percent"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 1815ebc262c944f486ef18b8bbb9ea78
+          name: 'Dataset ephemeral: Oldest snapshot age'
+          type: DEPENDENT
+          key: 'zfs.snapshot.oldest_age["ephemeral"]'
+          delay: '0'
+          history: 90d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/ephemeral"]["oldest_age"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+          triggers:
+            - uuid: 8d42cef72d4a480db1a8939759522ec1
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["ephemeral"])>{$ZFS.SNAPSHOT.MAX_AGE}'
+              name: 'ZFS dataset ephemeral has an old snapshot'
+              priority: WARNING
+        - uuid: 62908dbcc7084d3aac04bd48991772df
+          name: 'Dataset postgres: Snapshot retained space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained["postgres"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/services-backed/postgres"]["retained_bytes"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 411a7e91f39a4e55bb678705a9adcf9f
+          name: 'Dataset postgres: Snapshot share of used space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained_percent["postgres"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/services-backed/postgres"]["retained_percent"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: ffc063e6780745f886b57e16a7401615
+          name: 'Dataset postgres: Oldest snapshot age'
+          type: DEPENDENT
+          key: 'zfs.snapshot.oldest_age["postgres"]'
+          delay: '0'
+          history: 90d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/services-backed/postgres"]["oldest_age"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+          triggers:
+            - uuid: 301b8e397a3a433b8e8c40637d0499f6
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["postgres"])>{$ZFS.SNAPSHOT.MAX_AGE}'
+              name: 'ZFS dataset postgres has an old snapshot'
+              priority: WARNING
+        - uuid: 24a3dd8c12c84a0c81f399a08f54034a
+          name: 'Dataset zabbix: Snapshot retained space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained["zabbix"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/services-backed/zabbix"]["retained_bytes"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: fe083fa8557e49e7bb396ce9d9750758
+          name: 'Dataset zabbix: Snapshot share of used space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained_percent["zabbix"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/services-backed/zabbix"]["retained_percent"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 4ebed81814c94d259e269441262f5542
+          name: 'Dataset zabbix: Oldest snapshot age'
+          type: DEPENDENT
+          key: 'zfs.snapshot.oldest_age["zabbix"]'
+          delay: '0'
+          history: 90d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/services-backed/zabbix"]["oldest_age"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+          triggers:
+            - uuid: b9c6989e56d34e0bb78a39195e7ed0b2
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["zabbix"])>{$ZFS.SNAPSHOT.MAX_AGE}'
+              name: 'ZFS dataset zabbix has an old snapshot'
+              priority: WARNING
         - uuid: f83c5e2d849e4f54b6e3de686a2acbe2
           name: 'ZFS ARC: Size'
           type: DEPENDENT
@@ -280,8 +550,8 @@ zabbix_export:
           triggers:
             - uuid: d8a97541c4744f738744323580229e0f
               expression: 'last(/ZFS by Zabbix agent active/zfs.l2arc.errors.io)>0'
-              name: 'ZFS L2ARC has I/O errors'
-              priority: HIGH
+              name: 'ZFS L2ARC has recorded I/O errors'
+              priority: WARNING
         - uuid: 042dbb39bf3141fab90b1ff6b61d5810
           name: 'ZFS L2ARC: Checksum errors'
           type: DEPENDENT
@@ -300,7 +570,263 @@ zabbix_export:
           triggers:
             - uuid: 3d34041c3b3347c49a4b1275617d01ad
               expression: 'last(/ZFS by Zabbix agent active/zfs.l2arc.errors.checksum)>0'
-              name: 'ZFS L2ARC has checksum errors'
+              name: 'ZFS L2ARC has recorded checksum errors'
+              priority: WARNING
+        - uuid: f7e2905147dc4271b29a599e542a0f43
+          name: 'Dataset config: Used'
+          type: DEPENDENT
+          key: 'zfs.dataset.used["config"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/config"]["used"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: 057a1fcd2c1248beb720a0e7d8bc4f3e
+          name: 'Dataset config: Utilization'
+          type: DEPENDENT
+          key: 'zfs.dataset.utilization["config"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/config"]["utilization"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset-capacity
+          triggers:
+            - uuid: 43f5ad8fe88e4b8982fd1b8d2a0b7e16
+              expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["config"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
+              name: 'ZFS dataset config is over 90% utilized'
+              priority: HIGH
+        - uuid: feba17967bf140238298cd6b6b0c1304
+          name: 'Dataset images: Used'
+          type: DEPENDENT
+          key: 'zfs.dataset.used["images"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/images"]["used"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: f801f092bba448bba990a7a2c9a8ead5
+          name: 'Dataset images: Utilization'
+          type: DEPENDENT
+          key: 'zfs.dataset.utilization["images"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/images"]["utilization"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset-capacity
+          triggers:
+            - uuid: 5890c68e4fe5442f9ff48e0241db4994
+              expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["images"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
+              name: 'ZFS dataset images is over 90% utilized'
+              priority: HIGH
+        - uuid: e9656d6120074ecd9f21fd0d272700cb
+          name: 'Dataset ephemeral: Used'
+          type: DEPENDENT
+          key: 'zfs.dataset.used["ephemeral"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/ephemeral"]["used"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: dc4c116414ea47c79d887ee630c5aa50
+          name: 'Dataset ephemeral: Utilization'
+          type: DEPENDENT
+          key: 'zfs.dataset.utilization["ephemeral"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/ephemeral"]["utilization"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset-capacity
+          triggers:
+            - uuid: 746cc8cd72174802bf1535e8799341e8
+              expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["ephemeral"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
+              name: 'ZFS dataset ephemeral is over 90% utilized'
+              priority: HIGH
+        - uuid: 15f2168805bf4a5392aa5d79cdef390f
+          name: 'Dataset postgres: Used'
+          type: DEPENDENT
+          key: 'zfs.dataset.used["postgres"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/services-backed/postgres"]["used"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: aa828bcc890449998125b0c77e1fc229
+          name: 'Dataset postgres: Utilization'
+          type: DEPENDENT
+          key: 'zfs.dataset.utilization["postgres"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/services-backed/postgres"]["utilization"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset-capacity
+          triggers:
+            - uuid: dbc32cae536b4483b38212eee047f6ed
+              expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["postgres"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
+              name: 'ZFS dataset postgres is over 90% utilized'
+              priority: HIGH
+        - uuid: 482f7fa0d34642e0a7924f8320778984
+          name: 'Dataset zabbix: Used'
+          type: DEPENDENT
+          key: 'zfs.dataset.used["zabbix"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/services-backed/zabbix"]["used"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: 21f4b64a28d24745baa8373d053c6984
+          name: 'Dataset zabbix: Utilization'
+          type: DEPENDENT
+          key: 'zfs.dataset.utilization["zabbix"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/k0s/services-backed/zabbix"]["utilization"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset-capacity
+          triggers:
+            - uuid: 9a3d40245c8b413cb65f97bb04aef490
+              expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["zabbix"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
+              name: 'ZFS dataset zabbix is over 90% utilized'
+              priority: HIGH
+        - uuid: f84affdcefe9481a93797566dae6b289
+          name: 'Secure dataset: Mounted'
+          type: DEPENDENT
+          key: zfs.secure.mounted
+          delay: '0'
+          history: 90d
+          valuemap:
+            name: 'ZFS yes/no'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.secure.mounted
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: encryption
+          triggers:
+            - uuid: 16ced1b2aade492aaf97fa0adc40cd98
+              expression: 'last(/ZFS by Zabbix agent active/zfs.secure.mounted)<>1'
+              name: 'ZFS secure dataset is not mounted'
+              priority: HIGH
+        - uuid: 650cc74e9b9342beb0a920ce3871902b
+          name: 'Secure dataset: Encryption enabled'
+          type: DEPENDENT
+          key: zfs.secure.encrypted
+          delay: '0'
+          history: 90d
+          valuemap:
+            name: 'ZFS yes/no'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.secure.encrypted
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: encryption
+          triggers:
+            - uuid: dc528ef5c5754dc0baba817605a1c88b
+              expression: 'last(/ZFS by Zabbix agent active/zfs.secure.encrypted)<>1'
+              name: 'ZFS secure dataset is not encrypted'
+              priority: DISASTER
+        - uuid: 90f9d79423184464a9767329a0ec2877
+          name: 'Secure dataset: Key available'
+          type: DEPENDENT
+          key: zfs.secure.key_available
+          delay: '0'
+          history: 90d
+          valuemap:
+            name: 'ZFS yes/no'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.secure.key_available
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: encryption
+          triggers:
+            - uuid: 415d1503aba14557bf122dd248f1baeb
+              expression: 'last(/ZFS by Zabbix agent active/zfs.secure.key_available)<>1'
+              name: 'ZFS secure dataset key is unavailable'
               priority: HIGH
       discovery_rules:
         - uuid: 214f60db809d4f20af09eeaa051b281d
@@ -477,9 +1003,9 @@ zabbix_export:
                   value: errors
               trigger_prototypes:
                 - uuid: eda8f6f38acc49f9a17768917854db93
-                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.errors.read["{#POOL.NAME}"])>0'
-                  name: 'ZFS pool {#POOL.NAME} has read errors'
-                  priority: HIGH
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.errors.read["{#POOL.NAME}"])>0 and last(/ZFS by Zabbix agent active/zfs.pool.online["{#POOL.NAME}"])=1 and last(/ZFS by Zabbix agent active/zfs.pool.errors.permanent["{#POOL.NAME}"])=0'
+                  name: 'ZFS pool {#POOL.NAME} has recorded read errors'
+                  priority: WARNING
             - uuid: 88192cd038fd43f6bab1128917e93bcf
               name: 'Pool {#POOL.NAME}: Write errors'
               type: DEPENDENT
@@ -497,9 +1023,9 @@ zabbix_export:
                   value: errors
               trigger_prototypes:
                 - uuid: 8867841d4047487fbda610d509a4deda
-                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.errors.write["{#POOL.NAME}"])>0'
-                  name: 'ZFS pool {#POOL.NAME} has write errors'
-                  priority: HIGH
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.errors.write["{#POOL.NAME}"])>0 and last(/ZFS by Zabbix agent active/zfs.pool.online["{#POOL.NAME}"])=1 and last(/ZFS by Zabbix agent active/zfs.pool.errors.permanent["{#POOL.NAME}"])=0'
+                  name: 'ZFS pool {#POOL.NAME} has recorded write errors'
+                  priority: WARNING
             - uuid: 2551d66846f241d98dacd2487ee5b177
               name: 'Pool {#POOL.NAME}: Checksum errors'
               type: DEPENDENT
@@ -517,9 +1043,69 @@ zabbix_export:
                   value: errors
               trigger_prototypes:
                 - uuid: 59317d1bb40e4870a17185017ea502b9
-                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.errors.checksum["{#POOL.NAME}"])>0'
-                  name: 'ZFS pool {#POOL.NAME} has checksum errors'
-                  priority: HIGH
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.errors.checksum["{#POOL.NAME}"])>0 and last(/ZFS by Zabbix agent active/zfs.pool.online["{#POOL.NAME}"])=1 and last(/ZFS by Zabbix agent active/zfs.pool.errors.permanent["{#POOL.NAME}"])=0'
+                  name: 'ZFS pool {#POOL.NAME} has recorded checksum errors'
+                  priority: WARNING
+            - uuid: 4003ac811aa346d2a7e102143bbb4b63
+              name: 'Pool {#POOL.NAME}: Read error rate'
+              type: DEPENDENT
+              key: 'zfs.pool.errors.read.rate["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              value_type: FLOAT
+              units: eps
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["read_errors"]'
+                - type: CHANGE_PER_SECOND
+                  parameters:
+                    - ''
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: errors
+            - uuid: 7dacbe31202349dbbbef9ce9ed09ab14
+              name: 'Pool {#POOL.NAME}: Write error rate'
+              type: DEPENDENT
+              key: 'zfs.pool.errors.write.rate["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              value_type: FLOAT
+              units: eps
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["write_errors"]'
+                - type: CHANGE_PER_SECOND
+                  parameters:
+                    - ''
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: errors
+            - uuid: 0957fccadbd5433f808e0e1d90a6f58f
+              name: 'Pool {#POOL.NAME}: Checksum error rate'
+              type: DEPENDENT
+              key: 'zfs.pool.errors.checksum.rate["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              value_type: FLOAT
+              units: eps
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["checksum_errors"]'
+                - type: CHANGE_PER_SECOND
+                  parameters:
+                    - ''
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: errors
             - uuid: b6430bfe1f684279b7867ffeb7113813
               name: 'Pool {#POOL.NAME}: Permanent errors present'
               type: DEPENDENT
@@ -577,6 +1163,11 @@ zabbix_export:
               tags:
                 - tag: component
                   value: scrub
+              trigger_prototypes:
+                - uuid: 3f481609fd1d43678c2f5d113b88682a
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.scrub.repaired["{#POOL.NAME}"])>0 and last(/ZFS by Zabbix agent active/zfs.pool.scrub.errors["{#POOL.NAME}"])=0 and last(/ZFS by Zabbix agent active/zfs.pool.errors.permanent["{#POOL.NAME}"])=0'
+                  name: 'ZFS pool {#POOL.NAME} scrub repaired damaged data'
+                  priority: WARNING
             - uuid: 970efb0b7ce749c0ae076b0e0b0a68ac
               name: 'Pool {#POOL.NAME}: Last scrub completion'
               type: DEPENDENT
@@ -595,6 +1186,91 @@ zabbix_export:
               tags:
                 - tag: component
                   value: scrub
+            - uuid: de4fc5aa437e485a9df4c1b2be79dc22
+              name: 'Pool {#POOL.NAME}: Last scrub age'
+              type: DEPENDENT
+              key: 'zfs.pool.scrub.age["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              units: s
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["last_scrub_age"]'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '0'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: scrub
+              trigger_prototypes:
+                - uuid: 1ef8daafffcc4525adbc1081e0d13291
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.scrub.age["{#POOL.NAME}"])>{$ZFS.POOL.SCRUB.MAX_AGE}'
+                  name: 'ZFS pool {#POOL.NAME} has not completed a scrub recently'
+                  priority: WARNING
+            - uuid: 04a30b9f49da47dcbf4d57b5bd7ee4bc
+              name: 'Pool {#POOL.NAME}: Last scrub duration'
+              type: DEPENDENT
+              key: 'zfs.pool.scrub.duration["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              units: s
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["last_scrub_duration"]'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '0'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: scrub
+            - uuid: eda628bf52f44ca7ae7dd1944a316f0d
+              name: 'Pool {#POOL.NAME}: Last scrub errors'
+              type: DEPENDENT
+              key: 'zfs.pool.scrub.errors["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["last_scrub_errors"]'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '0'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: scrub
+              trigger_prototypes:
+                - uuid: 41d2acf7c5834f7eb6daa37307259718
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.scrub.errors["{#POOL.NAME}"])>0'
+                  name: 'ZFS pool {#POOL.NAME} scrub completed with errors'
+                  priority: HIGH
+            - uuid: b8e680f378dd4ab3b25882b1fc233178
+              name: 'Pool {#POOL.NAME}: Autotrim enabled'
+              type: DEPENDENT
+              key: 'zfs.pool.autotrim["{#POOL.NAME}"]'
+              delay: '0'
+              history: 90d
+              valuemap:
+                name: 'ZFS yes/no'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$["pools"]["{#POOL.NAME}"]["autotrim"]'
+              master_item:
+                key: zfs.metrics
+              tags:
+                - tag: component
+                  value: pool
+              trigger_prototypes:
+                - uuid: a6d78f75d6f64e3aa6b15c042e52e8d3
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.pool.autotrim["{#POOL.NAME}"])<>1'
+                  name: 'ZFS pool {#POOL.NAME} autotrim is disabled'
+                  priority: WARNING
             - uuid: c41517f8b22149f5ba1810bd9e923f46
               name: 'Pool {#POOL.NAME}: Resilver active'
               type: DEPENDENT
@@ -763,9 +1439,9 @@ zabbix_export:
                   value: errors
               trigger_prototypes:
                 - uuid: 0619996817fe4d568398851dd32770df
-                  expression: 'last(/ZFS by Zabbix agent active/zfs.vdev.errors.read["{#VDEV.ID}"])>0'
-                  name: 'ZFS vdev {#VDEV.NAME} has read errors'
-                  priority: HIGH
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.vdev.errors.read["{#VDEV.ID}"])>0 and last(/ZFS by Zabbix agent active/zfs.vdev.online["{#VDEV.ID}"])=1'
+                  name: 'ZFS vdev {#VDEV.NAME} has recorded read errors'
+                  priority: WARNING
             - uuid: 943085587ace4b78ae010af3ffc434b3
               name: 'Vdev {#VDEV.NAME}: Write errors'
               type: DEPENDENT
@@ -783,9 +1459,9 @@ zabbix_export:
                   value: errors
               trigger_prototypes:
                 - uuid: eb4a9a97bc3844da8d30f69aba873d3f
-                  expression: 'last(/ZFS by Zabbix agent active/zfs.vdev.errors.write["{#VDEV.ID}"])>0'
-                  name: 'ZFS vdev {#VDEV.NAME} has write errors'
-                  priority: HIGH
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.vdev.errors.write["{#VDEV.ID}"])>0 and last(/ZFS by Zabbix agent active/zfs.vdev.online["{#VDEV.ID}"])=1'
+                  name: 'ZFS vdev {#VDEV.NAME} has recorded write errors'
+                  priority: WARNING
             - uuid: 36d6f81627164eff8d1f41a36876ad71
               name: 'Vdev {#VDEV.NAME}: Checksum errors'
               type: DEPENDENT
@@ -803,9 +1479,9 @@ zabbix_export:
                   value: errors
               trigger_prototypes:
                 - uuid: bdc5b4cf79914e12be670de7b2b83628
-                  expression: 'last(/ZFS by Zabbix agent active/zfs.vdev.errors.checksum["{#VDEV.ID}"])>0'
-                  name: 'ZFS vdev {#VDEV.NAME} has checksum errors'
-                  priority: HIGH
+                  expression: 'last(/ZFS by Zabbix agent active/zfs.vdev.errors.checksum["{#VDEV.ID}"])>0 and last(/ZFS by Zabbix agent active/zfs.vdev.online["{#VDEV.ID}"])=1'
+                  name: 'ZFS vdev {#VDEV.NAME} has recorded checksum errors'
+                  priority: WARNING
           master_item:
             key: zfs.metrics
           lld_macro_paths:
@@ -819,329 +1495,22 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - $.vdevs.*
-        - uuid: 6f78cb5a55c34cde8c25f0a57f007c68
-          name: 'ZFS dataset discovery'
-          type: DEPENDENT
-          key: zfs.dataset.discovery
-          delay: '0'
-          lifetime: 7d
-          item_prototypes:
-            - uuid: 4aabde17a6f3444d87495bf37da88f14
-              name: 'Dataset {#DATASET.NAME}: Used'
-              type: DEPENDENT
-              key: 'zfs.dataset.used["{#DATASET.NAME}"]'
-              delay: '0'
-              history: 30d
-              units: B
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#DATASET.NAME}"]["used"]'
-              master_item:
-                key: zfs.metrics
-              tags:
-                - tag: component
-                  value: dataset
-            - uuid: 92d85aa4b1704548ae436885ac0850fe
-              name: 'Dataset {#DATASET.NAME}: Available'
-              type: DEPENDENT
-              key: 'zfs.dataset.available["{#DATASET.NAME}"]'
-              delay: '0'
-              history: 30d
-              units: B
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#DATASET.NAME}"]["available"]'
-              master_item:
-                key: zfs.metrics
-              tags:
-                - tag: component
-                  value: dataset
-            - uuid: d0a3ed767f3f486c99fd06a6f25a1a02
-              name: 'Dataset {#DATASET.NAME}: Referenced'
-              type: DEPENDENT
-              key: 'zfs.dataset.referenced["{#DATASET.NAME}"]'
-              delay: '0'
-              history: 30d
-              units: B
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#DATASET.NAME}"]["referenced"]'
-              master_item:
-                key: zfs.metrics
-              tags:
-                - tag: component
-                  value: dataset
-            - uuid: e6105b448af643e3b3537a9b14e94842
-              name: 'Dataset {#DATASET.NAME}: Logical used'
-              type: DEPENDENT
-              key: 'zfs.dataset.logicalused["{#DATASET.NAME}"]'
-              delay: '0'
-              history: 30d
-              units: B
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#DATASET.NAME}"]["logicalused"]'
-              master_item:
-                key: zfs.metrics
-              tags:
-                - tag: component
-                  value: dataset
-            - uuid: b8c028c703e441619517568bdd9c3cb7
-              name: 'Dataset {#DATASET.NAME}: Used by dataset'
-              type: DEPENDENT
-              key: 'zfs.dataset.usedbydataset["{#DATASET.NAME}"]'
-              delay: '0'
-              history: 30d
-              units: B
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#DATASET.NAME}"]["usedbydataset"]'
-              master_item:
-                key: zfs.metrics
-              tags:
-                - tag: component
-                  value: dataset
-            - uuid: 1d1a9118c7204ecf96710484d40c9982
-              name: 'Dataset {#DATASET.NAME}: Used by children'
-              type: DEPENDENT
-              key: 'zfs.dataset.usedbychildren["{#DATASET.NAME}"]'
-              delay: '0'
-              history: 30d
-              units: B
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#DATASET.NAME}"]["usedbychildren"]'
-              master_item:
-                key: zfs.metrics
-              tags:
-                - tag: component
-                  value: dataset
-            - uuid: bf4cae2e80404fe7b6f34c8a6d198c2d
-              name: 'Dataset {#DATASET.NAME}: Used by snapshots'
-              type: DEPENDENT
-              key: 'zfs.dataset.usedbysnapshots["{#DATASET.NAME}"]'
-              delay: '0'
-              history: 90d
-              units: B
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#DATASET.NAME}"]["usedbysnapshots"]'
-              master_item:
-                key: zfs.metrics
-              tags:
-                - tag: component
-                  value: snapshots
-            - uuid: a1ba7f541fa54387b054141588cb3d2e
-              name: 'Dataset {#DATASET.NAME}: Compression ratio'
-              type: DEPENDENT
-              key: 'zfs.dataset.compressratio["{#DATASET.NAME}"]'
-              delay: '0'
-              history: 30d
-              value_type: FLOAT
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#DATASET.NAME}"]["compressratio"]'
-              master_item:
-                key: zfs.metrics
-              tags:
-                - tag: component
-                  value: dataset
-            - uuid: 82de6bfed9fc4250ac47ac0b2df5b071
-              name: 'Dataset {#DATASET.NAME}: Quota'
-              type: DEPENDENT
-              key: 'zfs.dataset.quota["{#DATASET.NAME}"]'
-              delay: '0'
-              history: 30d
-              units: B
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#DATASET.NAME}"]["quota"]'
-                  error_handler: CUSTOM_VALUE
-                  error_handler_params: '0'
-              master_item:
-                key: zfs.metrics
-              tags:
-                - tag: component
-                  value: dataset
-            - uuid: 517c09463cd4488a872860bb0ec0cece
-              name: 'Dataset {#DATASET.NAME}: Reservation'
-              type: DEPENDENT
-              key: 'zfs.dataset.reservation["{#DATASET.NAME}"]'
-              delay: '0'
-              history: 30d
-              units: B
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#DATASET.NAME}"]["reservation"]'
-                  error_handler: CUSTOM_VALUE
-                  error_handler_params: '0'
-              master_item:
-                key: zfs.metrics
-              tags:
-                - tag: component
-                  value: dataset
-            - uuid: 0e71f96009dc4204850d10ad0c11bec7
-              name: 'Dataset {#DATASET.NAME}: Mounted'
-              type: DEPENDENT
-              key: 'zfs.dataset.mounted["{#DATASET.NAME}"]'
-              delay: '0'
-              history: 90d
-              valuemap:
-                name: 'ZFS yes/no'
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#DATASET.NAME}"]["mounted"]'
-              master_item:
-                key: zfs.metrics
-              tags:
-                - tag: component
-                  value: dataset
-            - uuid: 7b3695422a2a437a854b2b9a1e944e7e
-              name: 'Dataset {#DATASET.NAME}: Key status'
-              type: DEPENDENT
-              key: 'zfs.dataset.keystatus["{#DATASET.NAME}"]'
-              delay: '0'
-              history: 90d
-              value_type: CHAR
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#DATASET.NAME}"]["keystatus"]'
-              master_item:
-                key: zfs.metrics
-              tags:
-                - tag: component
-                  value: encryption
-            - uuid: f59926b1128f4afbb288c33e62c33f62
-              name: 'Dataset {#DATASET.NAME}: Encryption'
-              type: DEPENDENT
-              key: 'zfs.dataset.encryption["{#DATASET.NAME}"]'
-              delay: '0'
-              history: 90d
-              value_type: CHAR
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#DATASET.NAME}"]["encryption"]'
-              master_item:
-                key: zfs.metrics
-              tags:
-                - tag: component
-                  value: encryption
-          master_item:
-            key: zfs.metrics
-          lld_macro_paths:
-            - lld_macro: '{#DATASET.NAME}'
-              path: $.name
-          preprocessing:
-            - type: JSONPATH
-              parameters:
-                - $.datasets.*
-        - uuid: 2ea8a6675e924d2d8e150458f81bc33f
-          name: 'ZFS snapshot summary discovery'
-          type: DEPENDENT
-          key: zfs.snapshot.discovery
-          delay: '0'
-          lifetime: 7d
-          item_prototypes:
-            - uuid: 0842ce6d61694b10acbbf8c2720cb96b
-              name: 'Dataset {#SNAPSHOT.DATASET}: Snapshot count'
-              type: DEPENDENT
-              key: 'zfs.snapshot.count["{#SNAPSHOT.DATASET}"]'
-              delay: '0'
-              history: 90d
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#SNAPSHOT.DATASET}"]["count"]'
-              master_item:
-                key: zfs.snapshots
-              tags:
-                - tag: component
-                  value: snapshots
-            - uuid: d189f95d807b494bb160d6d7c08ed039
-              name: 'Dataset {#SNAPSHOT.DATASET}: Snapshot retained space'
-              type: DEPENDENT
-              key: 'zfs.snapshot.retained["{#SNAPSHOT.DATASET}"]'
-              delay: '0'
-              history: 90d
-              units: B
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#SNAPSHOT.DATASET}"]["retained_bytes"]'
-              master_item:
-                key: zfs.snapshots
-              tags:
-                - tag: component
-                  value: snapshots
-              trigger_prototypes:
-                - uuid: 169fe62466764b7ca09e8ee5b3c7121c
-                  expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.retained["{#SNAPSHOT.DATASET}"])>{$ZFS.SNAPSHOT.RETAINED.WARN}'
-                  name: 'ZFS dataset {#SNAPSHOT.DATASET} retains substantial snapshot space'
-                  priority: WARNING
-            - uuid: 14f89e5fe3dd4aa6946a17a5b387ee32
-              name: 'Dataset {#SNAPSHOT.DATASET}: Oldest snapshot age'
-              type: DEPENDENT
-              key: 'zfs.snapshot.oldest_age["{#SNAPSHOT.DATASET}"]'
-              delay: '0'
-              history: 90d
-              units: s
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#SNAPSHOT.DATASET}"]["oldest_age"]'
-              master_item:
-                key: zfs.snapshots
-              tags:
-                - tag: component
-                  value: snapshots
-            - uuid: 06051d06b0354d47be595508906c2434
-              name: 'Dataset {#SNAPSHOT.DATASET}: Newest snapshot age'
-              type: DEPENDENT
-              key: 'zfs.snapshot.newest_age["{#SNAPSHOT.DATASET}"]'
-              delay: '0'
-              history: 90d
-              units: s
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$["datasets"]["{#SNAPSHOT.DATASET}"]["newest_age"]'
-              master_item:
-                key: zfs.snapshots
-              tags:
-                - tag: component
-                  value: snapshots
-          master_item:
-            key: zfs.snapshots
-          lld_macro_paths:
-            - lld_macro: '{#SNAPSHOT.DATASET}'
-              path: $.name
-          preprocessing:
-            - type: JSONPATH
-              parameters:
-                - $.datasets.*
       macros:
+        - macro: '{$ZFS.DATASET.CAPACITY.HIGH}'
+          value: '90'
+          description: 'Leaf dataset quota utilization for a high-severity alert.'
         - macro: '{$ZFS.POOL.CAPACITY.HIGH}'
           value: '90'
           description: 'Pool capacity percentage for a high-severity alert.'
         - macro: '{$ZFS.POOL.CAPACITY.WARN}'
           value: '80'
           description: 'Pool capacity percentage for a warning.'
-        - macro: '{$ZFS.SNAPSHOT.RETAINED.WARN}'
-          value: '5368709120'
-          description: 'Snapshot-retained bytes per dataset for a warning; default is 5 GiB.'
+        - macro: '{$ZFS.POOL.SCRUB.MAX_AGE}'
+          value: '3456000'
+          description: 'Maximum age of the last completed scrub; default is 40 days.'
+        - macro: '{$ZFS.SNAPSHOT.MAX_AGE}'
+          value: '7776000'
+          description: 'Maximum oldest snapshot age; default is 90 days.'
       valuemaps:
         - uuid: c0e5ac7f684a4f0c879bd5cf057d22aa
           name: 'ZFS yes/no'

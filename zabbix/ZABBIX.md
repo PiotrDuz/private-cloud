@@ -27,7 +27,8 @@ sudo python3 ./python_setup/setup.py
 The Zabbix service stage prompts for the PostgreSQL role, database password,
 frontend administrator credentials. It creates the database,
 imports the custom templates, creates or updates the host, and
-links the Linux, SMART, ZFS, and memory ECC active templates. The host-agent
+links the Linux, SMART, ZFS, and memory ECC active templates. It also creates
+the `Private cloud ZFS storage` dashboard. The host-agent
 stage uses the fixed `private-cloud-zabbix` host name and defaults to `127.0.0.1:31051`.
 
 For a standalone agent installation:
@@ -89,10 +90,10 @@ in firmware. The installer makes a non-fatal attempt to load this driver before
 checking whether EDAC is available.
 
 The template records corrected and uncorrected error totals and discovers
-per-controller and per-DIMM counters. It warns on each counter increase and
-raises a disaster event when an uncorrected error is reported. The counters
-start at driver initialization and may return to zero after a reboot or driver
-reload.
+per-controller and per-DIMM counters. Corrected errors remain a warning and
+uncorrected errors remain a disaster until the kernel counters reset. The
+counters start at driver initialization and may return to zero after a reboot
+or driver reload.
 
 The service installer links the memory ECC template automatically.
 Its availability trigger reports when no EDAC memory controller is registered,
@@ -111,12 +112,18 @@ find /sys/devices/system/edac/mc -maxdepth 2 -type f
 
 `zfs.metrics` runs every minute through the template. It reports:
 
-- Pool health, capacity, fragmentation, errors, scrub/resilver state, and I/O
-  counters
+- Tank health, capacity, fragmentation, errors, scrub/resilver state, and I/O counters
 - Leaf-vdev state and read, write, and checksum errors
-- Dataset allocation breakdown, compression, quotas, encryption state, and
-  mount state
+- Used bytes, quotas, and utilization for the five fixed leaf datasets
+- Mount, encryption, and key state for `tank/secure`
 - ARC and L2ARC size, hit rate, and error counters
+
+Tank capacity warns above 80% and raises a high alert above 90%.
+Each fixed leaf dataset raises a high alert at 90% of its quota.
+The storage dashboard sorts leaf datasets by utilization and charts used bytes.
+Missing or unlimited leaf quotas are collector errors instead of inferred limits.
+Permanent ZFS data errors are disasters and unsuccessful scrub results are high alerts.
+Repaired scrub damage and recorded pool or vdev errors are persistent warnings.
 
 `zfs.snapshots` runs every 15 minutes. It reports per-dataset snapshot count,
 `usedbysnapshots`, and oldest/newest snapshot age. Snapshot names are not sent
@@ -126,6 +133,11 @@ to Zabbix, avoiding unbounded item discovery and unnecessary metadata exposure.
 `snapshot_unique_bytes_sum` field is diagnostic only: snapshot blocks can be
 shared, so summing individual snapshot `used` values does not necessarily equal
 the space freed by deleting every snapshot.
+
+Each fixed leaf reports retained snapshot bytes without a size alert.
+Each fixed leaf reports retained snapshot bytes as a percentage of total used space.
+Each fixed leaf warns when its oldest snapshot is older than 90 days.
+The age threshold uses `{$ZFS.SNAPSHOT.MAX_AGE}`.
 
 ## Local tests
 

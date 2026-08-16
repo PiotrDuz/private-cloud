@@ -64,6 +64,7 @@ Reruns use the requested credentials and tolerate Zabbix temporary login blocks.
 It imports the ZFS and memory ECC templates.
 It creates or updates the host in the `Private cloud` group.
 It links the Linux, SMART, ZFS, and memory ECC active templates.
+It creates or updates the `Private cloud ZFS storage` dashboard.
 It configures host connections as unencrypted.
 
 Point the host agent at `127.0.0.1:31051` on the same machine.

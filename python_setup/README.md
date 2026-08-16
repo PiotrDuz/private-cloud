@@ -14,6 +14,7 @@ Each stage requests an action and its required configuration.
 All storage stages use the fixed `tank/secure` root dataset without prompting.
 The Zabbix service and agent use the fixed `private-cloud-zabbix` host name.
 The k0s stage uses the pinned version without extra prompts.
+The k0s stage requests fixed quotas for its config, images, and ephemeral datasets.
 The ZFS stage gives `tank/secure` all available pool capacity without a size prompt.
 Service installers create their own datasets, PVs, and PVCs.
 The flow stops when an installer fails.
@@ -27,6 +28,7 @@ An interrupted stage remains selected as the resume point.
 The file stores non-secret setup values and never stores passwords or passphrases.
 The next run prompts to resume or reset the checkpoint.
 Reset the checkpoint after dismantling the installation externally.
+Reset saved progress, skip ZFS, and rerun k0s to apply quotas to an existing cluster.
 
 ## Local terminal
 

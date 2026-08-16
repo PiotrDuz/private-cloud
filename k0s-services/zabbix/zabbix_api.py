@@ -11,6 +11,7 @@ from typing import Any, Sequence
 from installer_helpers import InstallerError
 
 HOST_GROUP = "Private cloud"
+STORAGE_DASHBOARD = "Private cloud ZFS storage"
 DEFAULT_ADMIN_USERNAME = "Admin"
 DEFAULT_ADMIN_PASSWORD = "zabbix"
 LOGIN_BLOCK_SECONDS = 31
@@ -19,6 +20,21 @@ TEMPLATE_CHOICES = (
     ("SMART by Zabbix agent active 2", "SMART by Zabbix agent 2 active"),
     ("ZFS by Zabbix agent active",),
     ("Memory ECC by Zabbix agent active",),
+)
+LEAF_ITEMS = (
+    ("config", 'zfs.dataset.used["config"]', 'zfs.dataset.utilization["config"]'),
+    ("images", 'zfs.dataset.used["images"]', 'zfs.dataset.utilization["images"]'),
+    (
+        "ephemeral",
+        'zfs.dataset.used["ephemeral"]',
+        'zfs.dataset.utilization["ephemeral"]',
+    ),
+    (
+        "postgres",
+        'zfs.dataset.used["postgres"]',
+        'zfs.dataset.utilization["postgres"]',
+    ),
+    ("zabbix", 'zfs.dataset.used["zabbix"]', 'zfs.dataset.utilization["zabbix"]'),
 )
 
 
@@ -70,6 +86,7 @@ def configure_monitored_host(
         group_id = ensure_host_group(api, HOST_GROUP)
         templates = resolve_templates(api, TEMPLATE_CHOICES)
         host_id = ensure_host(api, hostname, group_id, templates)
+        dashboard_id = ensure_storage_dashboard(api, host_id)
     finally:
         api.logout()
 
@@ -78,6 +95,8 @@ def configure_monitored_host(
         "group": HOST_GROUP,
         "host": hostname,
         "host_id": host_id,
+        "dashboard": STORAGE_DASHBOARD,
+        "dashboard_id": dashboard_id,
         "templates": list(templates),
     }
 
@@ -151,13 +170,13 @@ def import_template(api: ZabbixApi, template_path: Path) -> None:
             "format": "yaml",
             "source": source,
             "rules": {
-                "discoveryRules": import_rule(),
-                "graphs": import_rule(),
-                "items": import_rule(),
+                "discoveryRules": managed_import_rule(),
+                "graphs": managed_import_rule(),
+                "items": managed_import_rule(),
                 "template_groups": import_rule(),
                 "templates": import_rule(),
-                "triggers": import_rule(),
-                "valueMaps": import_rule(),
+                "triggers": managed_import_rule(),
+                "valueMaps": managed_import_rule(),
             },
         },
     )
@@ -253,8 +272,171 @@ def ensure_host(
     return str(result["hostids"][0])
 
 
+def ensure_storage_dashboard(api: ZabbixApi, host_id: str) -> str:
+    items = resolve_host_items(api, host_id)
+    pages = [
+        {
+            "name": "Dataset capacity",
+            "widgets": [
+                dataset_utilization_widget(host_id),
+                dataset_allocation_widget(items),
+            ],
+        }
+    ]
+    dashboards = api.call(
+        "dashboard.get",
+        {
+            "output": ["dashboardid", "name"],
+            "filter": {"name": [STORAGE_DASHBOARD]},
+        },
+    )
+    if dashboards:
+        dashboard_id = str(dashboards[0]["dashboardid"])
+        api.call(
+            "dashboard.update",
+            {
+                "dashboardid": dashboard_id,
+                "name": STORAGE_DASHBOARD,
+                "display_period": 30,
+                "auto_start": 0,
+                "pages": pages,
+            },
+        )
+        return dashboard_id
+
+    result = api.call(
+        "dashboard.create",
+        {
+            "name": STORAGE_DASHBOARD,
+            "private": 0,
+            "display_period": 30,
+            "auto_start": 0,
+            "pages": pages,
+        },
+    )
+    return str(result["dashboardids"][0])
+
+
+def resolve_host_items(api: ZabbixApi, host_id: str) -> dict[str, str]:
+    required_keys = [
+        key
+        for _, used_key, percent_key in LEAF_ITEMS
+        for key in (used_key, percent_key)
+    ]
+    records = api.call(
+        "item.get",
+        {
+            "output": ["itemid", "key_", "name"],
+            "hostids": [host_id],
+            "filter": {"key_": required_keys},
+        },
+    )
+    items = {str(record["key_"]): str(record["itemid"]) for record in records}
+    missing = [key for key in required_keys if key not in items]
+    if missing:
+        raise InstallerError(
+            f"Dashboard items are unavailable on the monitored host: {', '.join(missing)}"
+        )
+    return items
+
+
+def dataset_utilization_widget(host_id: str) -> dict[str, Any]:
+    fields: list[dict[str, Any]] = [
+        {"type": 3, "name": "hostids.0", "value": host_id},
+        {"type": 0, "name": "layout", "value": 1},
+        {"type": 0, "name": "show_problems", "value": 1},
+        {"type": 0, "name": "item_ordering_order_by", "value": 3},
+        {"type": 0, "name": "item_ordering_order", "value": 2},
+        {"type": 0, "name": "item_ordering_limit", "value": len(LEAF_ITEMS)},
+        {"type": 0, "name": "columns.0.display", "value": 2},
+        {"type": 1, "name": "columns.0.min", "value": "0"},
+        {"type": 1, "name": "columns.0.max", "value": "100"},
+        {"type": 1, "name": "columns.0.base_color", "value": "42A5F5"},
+        {
+            "type": 1,
+            "name": "columns.0.thresholds.0.color",
+            "value": "FFB300",
+        },
+        {"type": 1, "name": "columns.0.thresholds.0.threshold", "value": "80"},
+        {
+            "type": 1,
+            "name": "columns.0.thresholds.1.color",
+            "value": "E53935",
+        },
+        {"type": 1, "name": "columns.0.thresholds.1.threshold", "value": "90"},
+        {"type": 0, "name": "columns.0.decimal_places", "value": 1},
+    ]
+    for index, (label, _, _) in enumerate(LEAF_ITEMS):
+        fields.append(
+            {
+                "type": 1,
+                "name": f"columns.0.items.{index}",
+                "value": f"Dataset {label}: Utilization",
+            }
+        )
+    return {
+        "type": "topitems",
+        "name": "Leaf datasets by quota utilization",
+        "x": 0,
+        "y": 0,
+        "width": 36,
+        "height": 8,
+        "view_mode": 0,
+        "fields": fields,
+    }
+
+
+def dataset_allocation_widget(items: dict[str, str]) -> dict[str, Any]:
+    colors = ("42A5F5", "66BB6A", "FFA726", "AB47BC", "EF5350")
+    fields: list[dict[str, Any]] = [
+        {"type": 0, "name": "ds.0.dataset_type", "value": 0},
+        {"type": 0, "name": "draw_type", "value": 0},
+        {"type": 0, "name": "legend", "value": 1},
+        {"type": 0, "name": "legend_value", "value": 1},
+        {"type": 0, "name": "legend_lines_mode", "value": 1},
+        {"type": 0, "name": "legend_lines", "value": len(LEAF_ITEMS)},
+    ]
+    for index, (_, used_key, _) in enumerate(LEAF_ITEMS):
+        fields.extend(
+            (
+                {
+                    "type": 4,
+                    "name": f"ds.0.itemids.{index}",
+                    "value": items[used_key],
+                },
+                {
+                    "type": 1,
+                    "name": f"ds.0.color.{index}",
+                    "value": colors[index],
+                },
+                {"type": 0, "name": f"ds.0.type.{index}", "value": 0},
+            )
+        )
+    return {
+        "type": "piechart",
+        "name": "Current leaf dataset allocation",
+        "x": 36,
+        "y": 0,
+        "width": 36,
+        "height": 8,
+        "view_mode": 0,
+        "fields": fields,
+    }
+
+
 def import_rule() -> dict[str, bool]:
-    return {"createMissing": True, "updateExisting": True}
+    return {
+        "createMissing": True,
+        "updateExisting": True,
+    }
+
+
+def managed_import_rule() -> dict[str, bool]:
+    return {
+        "createMissing": True,
+        "updateExisting": True,
+        "deleteMissing": True,
+    }
 
 
 class ZabbixApi:
