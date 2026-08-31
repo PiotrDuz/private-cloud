@@ -3,6 +3,8 @@ private_cloud:
     zfs: true
     k0s: true
     postgres: true
+    meilisearch: true
+    stalwart: true
     zabbix_server: true
     zabbix_agent: true
   storage:
@@ -17,6 +19,29 @@ private_cloud:
   postgres:
     volume_size: 20G
     max_ram: 2Gi
+  meilisearch:
+    storage_size: 20G
+    max_ram: 1Gi
+  stalwart:
+    storage_size: 100G
+    max_ram: 2Gi
+    database_name: stalwart
+    database_username: stalwart
+    domain: example.com
+    forwarding_domain: inbound.example.com
+    hostname: mail.example.com
+    acme_contact: postmaster@example.com
+    admin_username: admin
+    mailbox_username: user
+    relay_host: mail.inbox.eu
+    relay_port: 465
+    relay_implicit_tls: true
+    relay_username: user@example.com
+    https_node_port: 30443
+    smtp_node_port: 30025
+    submissions_node_port: 30465
+    submission_node_port: 30587
+    imaps_node_port: 30993
   zabbix:
     storage_size: 5G
     database_name: zabbix

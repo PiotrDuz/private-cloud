@@ -38,6 +38,9 @@ MODES = ("create", "update", "reapply", "rotate")
 QUOTA_PATTERN = re.compile(r"[1-9][0-9]*[KMGTPE]")
 RAM_PATTERN = re.compile(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)")
 IDENTIFIER_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+DOMAIN_PATTERN = re.compile(r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}")
+EMAIL_PATTERN = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}")
+MAILBOX_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._+-]{0,62}[A-Za-z0-9])?")
 
 
 def require_root() -> None:
@@ -165,11 +168,11 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if set(configuration) != {"private_cloud"} or not isinstance(configuration["private_cloud"], dict):
         raise InstallerError("Public configuration must contain only private_cloud")
     cloud = configuration["private_cloud"]
-    expected = {"stages", "storage", "k0s", "postgres", "zabbix"}
+    expected = {"stages", "storage", "k0s", "postgres", "meilisearch", "stalwart", "zabbix"}
     if set(cloud) != expected:
         raise InstallerError("Public configuration has missing or unknown sections")
     stages = cloud["stages"]
-    if not isinstance(stages, dict) or set(stages) != {"zfs", "k0s", "postgres", "zabbix_server", "zabbix_agent"}:
+    if not isinstance(stages, dict) or set(stages) != {"zfs", "k0s", "postgres", "meilisearch", "stalwart", "zabbix_server", "zabbix_agent"}:
         raise InstallerError("Stage configuration is incomplete")
     if any(type(value) is not bool for value in stages.values()):
         raise InstallerError("Every stage flag must be Boolean")
@@ -198,6 +201,49 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("PostgreSQL configuration has missing or unknown keys")
     if not isinstance(postgres, dict) or not QUOTA_PATTERN.fullmatch(str(postgres.get("volume_size", ""))) or not RAM_PATTERN.fullmatch(str(postgres.get("max_ram", ""))):
         raise InstallerError("Invalid PostgreSQL size configuration")
+    if ram_to_bytes(postgres["max_ram"]) < 536870912:
+        raise InstallerError("PostgreSQL max_ram must be at least 512Mi")
+    meilisearch = cloud["meilisearch"]
+    if not isinstance(meilisearch, dict) or set(meilisearch) != {"storage_size", "max_ram"}:
+        raise InstallerError("Meilisearch configuration has missing or unknown keys")
+    if not QUOTA_PATTERN.fullmatch(str(meilisearch.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(meilisearch.get("max_ram", ""))):
+        raise InstallerError("Invalid Meilisearch size configuration")
+    stalwart = cloud["stalwart"]
+    expected_stalwart = {
+        "storage_size", "max_ram", "database_name", "database_username", "domain", "forwarding_domain", "hostname",
+        "acme_contact", "admin_username", "mailbox_username", "relay_host", "relay_port", "relay_implicit_tls", "relay_username",
+        "https_node_port", "smtp_node_port", "submissions_node_port", "submission_node_port", "imaps_node_port",
+    }
+    if not isinstance(stalwart, dict) or set(stalwart) != expected_stalwart:
+        raise InstallerError("Stalwart configuration has missing or unknown keys")
+    if not QUOTA_PATTERN.fullmatch(str(stalwart.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(stalwart.get("max_ram", ""))):
+        raise InstallerError("Invalid Stalwart size configuration")
+    if not IDENTIFIER_PATTERN.fullmatch(str(stalwart.get("database_name", ""))) or not IDENTIFIER_PATTERN.fullmatch(str(stalwart.get("database_username", ""))):
+        raise InstallerError("Stalwart database identifiers are invalid")
+    if stalwart["database_name"].lower() in {"postgres", "template0", "template1"} or stalwart["database_username"].lower() in {"postgres", "replication"} or stalwart["database_username"].lower().startswith("pg_"):
+        raise InstallerError("Stalwart cannot use a PostgreSQL system database or role")
+    for key in ("domain", "forwarding_domain", "hostname", "relay_host"):
+        if not isinstance(stalwart.get(key), str) or not DOMAIN_PATTERN.fullmatch(stalwart[key]):
+            raise InstallerError(f"Invalid stalwart.{key}")
+    if stalwart["forwarding_domain"] == stalwart["domain"] or not stalwart["forwarding_domain"].endswith("." + stalwart["domain"]):
+        raise InstallerError("Stalwart forwarding_domain must be a subdomain of domain")
+    if stalwart["hostname"] == stalwart["domain"] or not stalwart["hostname"].endswith("." + stalwart["domain"]):
+        raise InstallerError("Stalwart hostname must be a subdomain of domain")
+    if stalwart["hostname"] == stalwart["forwarding_domain"]:
+        raise InstallerError("Stalwart hostname and forwarding_domain must differ")
+    for key in ("acme_contact", "relay_username"):
+        if not isinstance(stalwart.get(key), str) or not EMAIL_PATTERN.fullmatch(stalwart[key]):
+            raise InstallerError(f"Invalid stalwart.{key}")
+    for key in ("admin_username", "mailbox_username"):
+        if not isinstance(stalwart.get(key), str) or not MAILBOX_PATTERN.fullmatch(stalwart[key]):
+            raise InstallerError(f"Invalid stalwart.{key}")
+    if stalwart["admin_username"] == stalwart["mailbox_username"]:
+        raise InstallerError("Stalwart administrator and mailbox usernames must differ")
+    if type(stalwart.get("relay_implicit_tls")) is not bool or type(stalwart.get("relay_port")) is not int or not 1 <= stalwart["relay_port"] <= 65535:
+        raise InstallerError("Invalid Stalwart relay configuration")
+    stalwart_node_ports = [stalwart[key] for key in ("https_node_port", "smtp_node_port", "submissions_node_port", "submission_node_port", "imaps_node_port")]
+    if any(type(port) is not int or not 30000 <= port <= 32767 for port in stalwart_node_ports) or len(set(stalwart_node_ports)) != len(stalwart_node_ports):
+        raise InstallerError("Stalwart NodePorts must be valid and unique")
     zabbix = cloud["zabbix"]
     expected_zabbix = {"storage_size", "database_name", "database_username", "server_node_port", "web_node_port", "hostname", "admin_username", "agent_server_active"}
     if not isinstance(zabbix, dict) or set(zabbix) != expected_zabbix:
@@ -221,24 +267,33 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
             raise InstallerError(f"Invalid zabbix.{key}")
     if zabbix["server_node_port"] == zabbix["web_node_port"]:
         raise InstallerError("Zabbix NodePorts must differ")
+    if set(stalwart_node_ports) & {zabbix["server_node_port"], zabbix["web_node_port"]}:
+        raise InstallerError("Stalwart and Zabbix NodePorts must differ")
 
 
 def validate_secrets_configuration(configuration: Mapping[str, Any]) -> None:
     expected = {
         "storage": "encryption_passphrase",
         "postgres": "admin_password",
+        "meilisearch": "master_key",
+        "stalwart": "database_password",
         "zabbix": "database_password",
     }
     secrets_root = configuration.get("private_cloud_secrets")
-    if not isinstance(secrets_root, dict) or set(secrets_root) != {"storage", "postgres", "zabbix"}:
+    if not isinstance(secrets_root, dict) or set(secrets_root) != {"storage", "postgres", "meilisearch", "stalwart", "zabbix"}:
         raise InstallerError("Encrypted configuration is incomplete")
-    if any(not isinstance(secrets_root.get(section), dict) for section in ("storage", "postgres", "zabbix")) or set(secrets_root["storage"]) != {"encryption_passphrase"} or set(secrets_root["postgres"]) != {"admin_password"} or set(secrets_root["zabbix"]) != {"database_password", "admin_password"}:
+    if any(not isinstance(secrets_root.get(section), dict) for section in ("storage", "postgres", "meilisearch", "stalwart", "zabbix")) or set(secrets_root["storage"]) != {"encryption_passphrase"} or set(secrets_root["postgres"]) != {"admin_password"} or set(secrets_root["meilisearch"]) != {"master_key"} or set(secrets_root["stalwart"]) != {"database_password", "admin_password", "mailbox_password", "relay_password"} or set(secrets_root["zabbix"]) != {"database_password", "admin_password"}:
         raise InstallerError("Encrypted configuration has missing or unknown keys")
     for section, key in expected.items():
         if not isinstance(secrets_root.get(section), dict) or not isinstance(secrets_root[section].get(key), str) or not secrets_root[section][key]:
             raise InstallerError(f"Encrypted configuration is missing {section}.{key}")
     if not isinstance(secrets_root.get("zabbix", {}).get("admin_password"), str) or not secrets_root["zabbix"]["admin_password"]:
         raise InstallerError("Encrypted configuration is missing zabbix.admin_password")
+    for key in ("admin_password", "mailbox_password", "relay_password"):
+        if not isinstance(secrets_root.get("stalwart", {}).get(key), str) or not secrets_root["stalwart"][key]:
+            raise InstallerError(f"Encrypted configuration is missing stalwart.{key}")
+    if len(secrets_root["meilisearch"]["master_key"].encode()) < 16:
+        raise InstallerError("The Meilisearch master key must contain at least 16 bytes")
     passphrase_length = len(secrets_root["storage"]["encryption_passphrase"].encode())
     if not 8 <= passphrase_length <= 512:
         raise InstallerError("The storage passphrase must contain 8 to 512 bytes")
@@ -335,6 +390,11 @@ def redact_secrets(configuration: Mapping[str, Any]) -> dict[str, Any]:
             for key in section:
                 section[key] = "configured"
     return result
+
+
+def ram_to_bytes(value: str) -> int:
+    units = {"Ki": 1024, "Mi": 1024 ** 2, "Gi": 1024 ** 3, "Ti": 1024 ** 4}
+    return int(value[:-2]) * units[value[-2:]]
 
 
 class InstallerError(RuntimeError):

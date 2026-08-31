@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ stalwart_pv_name }}
+  labels:
+    app.kubernetes.io/name: stalwart
+spec:
+  capacity:
+    storage: {{ stalwart_pv_capacity }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: {{ stalwart_namespace }}
+    name: {{ stalwart_pvc_name }}
+  local:
+    path: {{ stalwart_dataset_mountpoint }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ stalwart_node_name | quote }}

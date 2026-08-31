@@ -192,9 +192,9 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
         return existing
     source = existing or default_public_configuration()
     if mode == "update":
-        sections = prompt_line("Sections to change (stages, storage, k0s, postgres, zabbix)", "").split()
+        sections = prompt_line("Sections to change (stages, storage, k0s, postgres, meilisearch, stalwart, zabbix)", "").split()
     else:
-        sections = ["stages", "storage", "k0s", "postgres", "zabbix"]
+        sections = ["stages", "storage", "k0s", "postgres", "meilisearch", "stalwart", "zabbix"]
     result = _copy_mapping(source)
     stages = result["private_cloud"]["stages"]
     if "stages" in sections:
@@ -212,6 +212,16 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
     if "postgres" in sections:
         for key in ("volume_size", "max_ram"):
             cloud["postgres"][key] = prompt_line(f"PostgreSQL {key}", cloud["postgres"][key])
+    if "meilisearch" in sections:
+        for key in ("storage_size", "max_ram"):
+            cloud["meilisearch"][key] = prompt_line(f"Meilisearch {key}", cloud["meilisearch"][key])
+    if "stalwart" in sections:
+        for key in ("storage_size", "max_ram", "database_name", "database_username", "domain", "forwarding_domain", "hostname", "acme_contact", "admin_username", "mailbox_username", "relay_host", "relay_username"):
+            cloud["stalwart"][key] = prompt_line(f"Stalwart {key}", cloud["stalwart"][key])
+        cloud["stalwart"]["relay_port"] = prompt_int("Stalwart relay_port", cloud["stalwart"]["relay_port"])
+        cloud["stalwart"]["relay_implicit_tls"] = prompt_bool("Stalwart relay_implicit_tls", cloud["stalwart"]["relay_implicit_tls"])
+        for key in ("https_node_port", "smtp_node_port", "submissions_node_port", "submission_node_port", "imaps_node_port"):
+            cloud["stalwart"][key] = prompt_int(f"Stalwart {key}", cloud["stalwart"][key])
     if "zabbix" in sections:
         for key in ("storage_size", "database_name", "database_username", "hostname", "admin_username", "agent_server_active"):
             cloud["zabbix"][key] = prompt_line(f"Zabbix {key}", cloud["zabbix"][key])
@@ -261,6 +271,13 @@ def collect_secrets_configuration() -> dict[str, Any]:
         "private_cloud_secrets": {
             "storage": {"encryption_passphrase": prompt_secret("ZFS encryption passphrase")},
             "postgres": {"admin_password": prompt_secret("PostgreSQL administrator password")},
+            "meilisearch": {"master_key": prompt_secret("Meilisearch master key")},
+            "stalwart": {
+                "database_password": prompt_secret("Stalwart database password"),
+                "admin_password": prompt_secret("Stalwart administrator password"),
+                "mailbox_password": prompt_secret("Stalwart mailbox password"),
+                "relay_password": prompt_secret("inbox.eu SMTP password"),
+            },
             "zabbix": {
                 "database_password": prompt_secret("Zabbix database password"),
                 "admin_password": prompt_secret("Zabbix administrator password"),
@@ -271,7 +288,17 @@ def collect_secrets_configuration() -> dict[str, Any]:
 
 def update_secrets(configuration: dict[str, Any]) -> dict[str, Any]:
     result = _copy_mapping(configuration)
-    for section, key in (("storage", "encryption_passphrase"), ("postgres", "admin_password"), ("zabbix", "database_password"), ("zabbix", "admin_password")):
+    for section, key in (
+        ("storage", "encryption_passphrase"),
+        ("postgres", "admin_password"),
+        ("meilisearch", "master_key"),
+        ("stalwart", "database_password"),
+        ("stalwart", "admin_password"),
+        ("stalwart", "mailbox_password"),
+        ("stalwart", "relay_password"),
+        ("zabbix", "database_password"),
+        ("zabbix", "admin_password"),
+    ):
         if prompt_bool(f"Change {section}.{key}", False):
             result["private_cloud_secrets"][section][key] = prompt_secret(f"New {section}.{key}")
     return result
@@ -279,10 +306,20 @@ def update_secrets(configuration: dict[str, Any]) -> dict[str, Any]:
 
 def rotate_secrets(configuration: dict[str, Any]) -> dict[str, Any]:
     result = _copy_mapping(configuration)
-    selected = prompt_line("Secrets to rotate (storage postgres database admin)", "all").split()
+    selected = prompt_line("Secrets to rotate (storage postgres meilisearch stalwart_database stalwart_admin mailbox relay zabbix_database zabbix_admin)", "all").split()
     if "all" in selected:
-        selected = ["storage", "postgres", "database", "admin"]
-    mapping = {"storage": ("storage", "encryption_passphrase"), "postgres": ("postgres", "admin_password"), "database": ("zabbix", "database_password"), "admin": ("zabbix", "admin_password")}
+        selected = ["storage", "postgres", "meilisearch", "stalwart_database", "stalwart_admin", "mailbox", "relay", "zabbix_database", "zabbix_admin"]
+    mapping = {
+        "storage": ("storage", "encryption_passphrase"),
+        "postgres": ("postgres", "admin_password"),
+        "meilisearch": ("meilisearch", "master_key"),
+        "stalwart_database": ("stalwart", "database_password"),
+        "stalwart_admin": ("stalwart", "admin_password"),
+        "mailbox": ("stalwart", "mailbox_password"),
+        "relay": ("stalwart", "relay_password"),
+        "zabbix_database": ("zabbix", "database_password"),
+        "zabbix_admin": ("zabbix", "admin_password"),
+    }
     for name in selected:
         if name in mapping:
             section, key = mapping[name]
@@ -294,6 +331,8 @@ def configured_secret_markers() -> dict[str, Any]:
     return {
         "storage": {"encryption_passphrase": "configured"},
         "postgres": {"admin_password": "configured"},
+        "meilisearch": {"master_key": "configured"},
+        "stalwart": {"database_password": "configured", "admin_password": "configured", "mailbox_password": "configured", "relay_password": "configured"},
         "zabbix": {"database_password": "configured", "admin_password": "configured"},
     }
 

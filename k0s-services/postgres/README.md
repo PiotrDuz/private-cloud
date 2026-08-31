@@ -9,5 +9,5 @@ The PostgreSQL service is managed by `ansible/roles/postgres`.
 - The dataset quota and reservation use the configured volume size.
 - The local PV and PVC advertise a fixed `10Ti` capacity.
 - The container memory limit uses the configured maximum RAM.
-- PostgreSQL `shared_buffers` uses half of the configured maximum RAM.
+- PostgreSQL `shared_buffers` uses 25% of the configured maximum RAM.
 - The image remains `postgres:18.4-bookworm`.

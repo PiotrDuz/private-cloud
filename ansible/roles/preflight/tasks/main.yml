@@ -15,17 +15,19 @@
   ansible.builtin.assert:
     that:
       - private_cloud is mapping
-      - (private_cloud.keys() | list | difference(['stages', 'storage', 'k0s', 'postgres', 'zabbix']) | length) == 0
-      - (['stages', 'storage', 'k0s', 'postgres', 'zabbix'] | difference(private_cloud.keys() | list) | length) == 0
+      - (private_cloud.keys() | list | difference(['stages', 'storage', 'k0s', 'postgres', 'meilisearch', 'stalwart', 'zabbix']) | length) == 0
+      - (['stages', 'storage', 'k0s', 'postgres', 'meilisearch', 'stalwart', 'zabbix'] | difference(private_cloud.keys() | list) | length) == 0
     fail_msg: Public configuration has missing or unknown sections
 
 - name: Require exact nested public schema
   ansible.builtin.assert:
     that:
-      - (private_cloud.stages.keys() | list | sort) == ['k0s', 'postgres', 'zabbix_agent', 'zabbix_server', 'zfs']
+      - (private_cloud.stages.keys() | list | sort) == ['k0s', 'meilisearch', 'postgres', 'stalwart', 'zabbix_agent', 'zabbix_server', 'zfs']
       - (private_cloud.storage.keys() | list) == ['disks']
       - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'images_quota', 'version']
       - (private_cloud.postgres.keys() | list | sort) == ['max_ram', 'volume_size']
+      - (private_cloud.meilisearch.keys() | list | sort) == ['max_ram', 'storage_size']
+      - (private_cloud.stalwart.keys() | list | sort) == ['acme_contact', 'admin_username', 'database_name', 'database_username', 'domain', 'forwarding_domain', 'hostname', 'https_node_port', 'imaps_node_port', 'mailbox_username', 'max_ram', 'relay_host', 'relay_implicit_tls', 'relay_port', 'relay_username', 'smtp_node_port', 'storage_size', 'submission_node_port', 'submissions_node_port']
       - (private_cloud.zabbix.keys() | list | sort) == ['admin_username', 'agent_server_active', 'database_name', 'database_username', 'hostname', 'server_node_port', 'storage_size', 'web_node_port']
     fail_msg: Public configuration has missing or unknown nested keys
 
@@ -33,9 +35,11 @@
   ansible.builtin.assert:
     that:
       - private_cloud_secrets is mapping
-      - (private_cloud_secrets.keys() | list | sort) == ['postgres', 'storage', 'zabbix']
+      - (private_cloud_secrets.keys() | list | sort) == ['meilisearch', 'postgres', 'stalwart', 'storage', 'zabbix']
       - (private_cloud_secrets.storage.keys() | list) == ['encryption_passphrase']
       - (private_cloud_secrets.postgres.keys() | list) == ['admin_password']
+      - (private_cloud_secrets.meilisearch.keys() | list) == ['master_key']
+      - (private_cloud_secrets.stalwart.keys() | list | sort) == ['admin_password', 'database_password', 'mailbox_password', 'relay_password']
       - (private_cloud_secrets.zabbix.keys() | list | sort) == ['admin_password', 'database_password']
     fail_msg: Encrypted configuration has missing or unknown nested keys
     no_log: true
@@ -44,7 +48,7 @@
   ansible.builtin.assert:
     that:
       - private_cloud.stages[item] is boolean
-    loop: [zfs, k0s, postgres, zabbix_server, zabbix_agent]
+    loop: [zfs, k0s, postgres, meilisearch, stalwart, zabbix_server, zabbix_agent]
     fail_msg: Every stage flag must be Boolean
 
 - name: Require stage dependencies
@@ -52,6 +56,9 @@
     that:
       - not private_cloud.stages.k0s or private_cloud.stages.zfs
       - not private_cloud.stages.postgres or private_cloud.stages.k0s
+      - not private_cloud.stages.meilisearch or private_cloud.stages.k0s
+      - not private_cloud.stages.stalwart or private_cloud.stages.postgres
+      - not private_cloud.stages.stalwart or private_cloud.stages.meilisearch
       - not private_cloud.stages.zabbix_server or private_cloud.stages.postgres
       - not private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
     fail_msg: Enabled stages must follow the dependency chain
@@ -77,7 +84,56 @@
     that:
       - private_cloud.postgres.volume_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.postgres.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - (private_cloud.postgres.max_ram | human_to_bytes | int) >= 536870912
     fail_msg: PostgreSQL size configuration is invalid
+
+- name: Require Meilisearch values
+  ansible.builtin.assert:
+    that:
+      - private_cloud.meilisearch.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.meilisearch.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+    fail_msg: Meilisearch configuration is invalid
+
+- name: Require Stalwart values
+  ansible.builtin.assert:
+    that:
+      - private_cloud.stalwart.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.stalwart.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - private_cloud.stalwart.database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - private_cloud.stalwart.database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - private_cloud.stalwart.database_name | lower not in ['postgres', 'template0', 'template1']
+      - private_cloud.stalwart.database_username | lower not in ['postgres', 'replication']
+      - (private_cloud.stalwart.database_username | lower) is not match('^pg_')
+      - private_cloud.stalwart.domain is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
+      - private_cloud.stalwart.forwarding_domain is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
+      - private_cloud.stalwart.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
+      - private_cloud.stalwart.relay_host is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
+      - private_cloud.stalwart.forwarding_domain != private_cloud.stalwart.domain
+      - private_cloud.stalwart.forwarding_domain.endswith('.' ~ private_cloud.stalwart.domain)
+      - private_cloud.stalwart.hostname != private_cloud.stalwart.domain
+      - private_cloud.stalwart.hostname.endswith('.' ~ private_cloud.stalwart.domain)
+      - private_cloud.stalwart.hostname != private_cloud.stalwart.forwarding_domain
+      - private_cloud.stalwart.acme_contact is match("^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}$")
+      - private_cloud.stalwart.relay_username is match("^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}$")
+      - private_cloud.stalwart.admin_username is match('^[A-Za-z0-9](?:[A-Za-z0-9._+-]{0,62}[A-Za-z0-9])?$')
+      - private_cloud.stalwart.mailbox_username is match('^[A-Za-z0-9](?:[A-Za-z0-9._+-]{0,62}[A-Za-z0-9])?$')
+      - private_cloud.stalwart.admin_username != private_cloud.stalwart.mailbox_username
+      - private_cloud.stalwart.relay_port is integer
+      - private_cloud.stalwart.relay_port >= 1
+      - private_cloud.stalwart.relay_port <= 65535
+      - private_cloud.stalwart.relay_implicit_tls is boolean
+      - private_cloud.stalwart.https_node_port is integer
+      - private_cloud.stalwart.smtp_node_port is integer
+      - private_cloud.stalwart.submissions_node_port is integer
+      - private_cloud.stalwart.submission_node_port is integer
+      - private_cloud.stalwart.imaps_node_port is integer
+      - private_cloud.stalwart.https_node_port >= 30000 and private_cloud.stalwart.https_node_port <= 32767
+      - private_cloud.stalwart.smtp_node_port >= 30000 and private_cloud.stalwart.smtp_node_port <= 32767
+      - private_cloud.stalwart.submissions_node_port >= 30000 and private_cloud.stalwart.submissions_node_port <= 32767
+      - private_cloud.stalwart.submission_node_port >= 30000 and private_cloud.stalwart.submission_node_port <= 32767
+      - private_cloud.stalwart.imaps_node_port >= 30000 and private_cloud.stalwart.imaps_node_port <= 32767
+      - ([private_cloud.stalwart.https_node_port, private_cloud.stalwart.smtp_node_port, private_cloud.stalwart.submissions_node_port, private_cloud.stalwart.submission_node_port, private_cloud.stalwart.imaps_node_port] | unique | length) == 5
+    fail_msg: Stalwart configuration is invalid
 
 - name: Require Zabbix values
   ansible.builtin.assert:
@@ -103,6 +159,8 @@
       - private_cloud.zabbix.web_node_port >= 30000
       - private_cloud.zabbix.web_node_port <= 32767
       - private_cloud.zabbix.server_node_port != private_cloud.zabbix.web_node_port
+      - private_cloud.zabbix.server_node_port not in [private_cloud.stalwart.https_node_port, private_cloud.stalwart.smtp_node_port, private_cloud.stalwart.submissions_node_port, private_cloud.stalwart.submission_node_port, private_cloud.stalwart.imaps_node_port]
+      - private_cloud.zabbix.web_node_port not in [private_cloud.stalwart.https_node_port, private_cloud.stalwart.smtp_node_port, private_cloud.stalwart.submissions_node_port, private_cloud.stalwart.submission_node_port, private_cloud.stalwart.imaps_node_port]
     fail_msg: Zabbix configuration is invalid
 
 - name: Require storage disk contract when ZFS is enabled
@@ -139,6 +197,30 @@
       - private_cloud_secrets.postgres.admin_password is string
       - private_cloud_secrets.postgres.admin_password | length > 0
     when: private_cloud.stages.postgres | bool
+    no_log: true
+    fail_msg: Required encrypted secrets are missing
+
+- name: Require Meilisearch secret when Meilisearch is enabled
+  ansible.builtin.assert:
+    that:
+      - private_cloud_secrets.meilisearch.master_key is string
+      - private_cloud_secrets.meilisearch.master_key | length >= 16
+    when: private_cloud.stages.meilisearch | bool
+    no_log: true
+    fail_msg: Required encrypted secrets are missing
+
+- name: Require Stalwart secrets when Stalwart is enabled
+  ansible.builtin.assert:
+    that:
+      - private_cloud_secrets.stalwart.database_password is string
+      - private_cloud_secrets.stalwart.database_password | length > 0
+      - private_cloud_secrets.stalwart.admin_password is string
+      - private_cloud_secrets.stalwart.admin_password | length > 0
+      - private_cloud_secrets.stalwart.mailbox_password is string
+      - private_cloud_secrets.stalwart.mailbox_password | length > 0
+      - private_cloud_secrets.stalwart.relay_password is string
+      - private_cloud_secrets.stalwart.relay_password | length > 0
+    when: private_cloud.stages.stalwart | bool
     no_log: true
     fail_msg: Required encrypted secrets are missing
 
@@ -440,6 +522,8 @@
       kubernetes_namespace: private-cloud
       service_pv_capacity: 10Ti
       postgres_dataset: tank/secure/backup/k0s/services/postgres
+      meilisearch_dataset: tank/secure/backup/k0s/services/meilisearch
+      stalwart_dataset: tank/secure/backup/k0s/services/stalwart
       zabbix_dataset: tank/secure/backup/k0s/services/zabbix
 
 - name: Check existing quota-bearing datasets without requiring a fresh host layout
@@ -449,6 +533,8 @@
     - { dataset: 'tank/secure/no-backup/k0s/images', quota: '{{ private_cloud.k0s.images_quota }}' }
     - { dataset: 'tank/secure/no-backup/k0s/ephemeral', quota: '{{ private_cloud.k0s.ephemeral_quota }}' }
     - { dataset: 'tank/secure/backup/k0s/services/postgres', quota: '{{ private_cloud.postgres.volume_size }}' }
+    - { dataset: 'tank/secure/backup/k0s/services/meilisearch', quota: '{{ private_cloud.meilisearch.storage_size }}' }
+    - { dataset: 'tank/secure/backup/k0s/services/stalwart', quota: '{{ private_cloud.stalwart.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/zabbix', quota: '{{ private_cloud.zabbix.storage_size }}' }
   register: preflight_existing_usage
   changed_when: false
@@ -466,7 +552,7 @@
 - name: Calculate PostgreSQL derived memory value
   ansible.builtin.set_fact:
     private_cloud_shared_buffers: >-
-      {{ ((private_cloud.postgres.max_ram[:-2] | int) * {'Ki': 1, 'Mi': 1024, 'Gi': 1048576, 'Ti': 1073741824}[private_cloud.postgres.max_ram[-2:]] // 2 // 1024) }}MB
+      {{ ((private_cloud.postgres.max_ram[:-2] | int) * {'Ki': 1, 'Mi': 1024, 'Gi': 1048576, 'Ti': 1073741824}[private_cloud.postgres.max_ram[-2:]] // 4 // 1024) }}MB
 
 - name: Require minimum PostgreSQL shared buffers
   ansible.builtin.assert:
@@ -484,10 +570,17 @@
         volume_size: "{{ private_cloud.postgres.volume_size }}"
         max_ram: "{{ private_cloud.postgres.max_ram }}"
         shared_buffers: "{{ private_cloud_shared_buffers }}"
+      meilisearch: "{{ private_cloud.meilisearch }}"
+      stalwart: "{{ private_cloud.stalwart }}"
       zabbix: "{{ private_cloud.zabbix }}"
       secrets:
         storage_encryption_passphrase: configured
         postgres_admin_password: configured
+        meilisearch_master_key: configured
+        stalwart_database_password: configured
+        stalwart_admin_password: configured
+        stalwart_mailbox_password: configured
+        stalwart_relay_password: configured
         zabbix_database_password: configured
         zabbix_admin_password: configured
       layout: "{{ private_cloud_layout }}"

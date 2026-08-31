@@ -1,0 +1,1 @@
+ALTER ROLE "{{ private_cloud.stalwart.database_username }}" LOGIN PASSWORD '{{ private_cloud_secrets.stalwart.database_password | replace("'", "''") }}';

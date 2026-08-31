@@ -20,6 +20,10 @@
             - 'zfs.dataset.utilization["ephemeral"]'
             - 'zfs.dataset.used["postgres"]'
             - 'zfs.dataset.utilization["postgres"]'
+            - 'zfs.dataset.used["meilisearch"]'
+            - 'zfs.dataset.utilization["meilisearch"]'
+            - 'zfs.dataset.used["stalwart"]'
+            - 'zfs.dataset.utilization["stalwart"]'
             - 'zfs.dataset.used["zabbix"]'
             - 'zfs.dataset.utilization["zabbix"]'
       id: 17
@@ -53,7 +57,7 @@
       - {type: 0, name: show_problems, value: 1}
       - {type: 0, name: item_ordering_order_by, value: 3}
       - {type: 0, name: item_ordering_order, value: 2}
-      - {type: 0, name: item_ordering_limit, value: 5}
+      - {type: 0, name: item_ordering_limit, value: 7}
       - {type: 0, name: columns.0.display, value: 2}
       - {type: 1, name: columns.0.min, value: '0'}
       - {type: 1, name: columns.0.max, value: '100'}
@@ -79,7 +83,7 @@
       - {type: 0, name: legend, value: 1}
       - {type: 0, name: legend_value, value: 1}
       - {type: 0, name: legend_lines_mode, value: 1}
-      - {type: 0, name: legend_lines, value: 5}
+      - {type: 0, name: legend_lines, value: 7}
 
 - name: Add allocation fields for each leaf dataset
   ansible.builtin.set_fact:

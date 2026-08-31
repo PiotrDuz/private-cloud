@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ stalwart_service_name }}
+  namespace: {{ stalwart_namespace }}
+  labels:
+    app.kubernetes.io/name: stalwart
+spec:
+  serviceName: {{ stalwart_headless_service_name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stalwart
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: stalwart
+      annotations:
+        private-cloud.example/provisioning-restarted-at: {{ ansible_date_time.iso8601 | to_json }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 2000
+        runAsGroup: 2000
+        fsGroup: 2000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: stalwart
+          image: {{ stalwart_image }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config
+            - /etc/stalwart/config.json
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [NET_BIND_SERVICE]
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: STALWART_PUBLIC_URL
+              value: {{ ('https://' ~ private_cloud.stalwart.hostname) | to_json }}
+            - name: STALWART_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ stalwart_runtime_secret_name }}
+                  key: STALWART_DB_PASSWORD
+            - name: INBOX_EU_SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ stalwart_runtime_secret_name }}
+                  key: INBOX_EU_SMTP_PASSWORD
+            - name: MEILI_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: meilisearch-credentials
+                  key: MEILI_MASTER_KEY
+            - name: STALWART_RECOVERY_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ stalwart_recovery_secret_name }}
+                  key: STALWART_RECOVERY_ADMIN
+                  optional: true
+          ports:
+            - {name: management, containerPort: 8080, protocol: TCP}
+            - {name: https, containerPort: 443, protocol: TCP}
+            - {name: smtp, containerPort: 25, protocol: TCP}
+            - {name: submissions, containerPort: 465, protocol: TCP}
+            - {name: submission, containerPort: 587, protocol: TCP}
+            - {name: imaps, containerPort: 993, protocol: TCP}
+          resources:
+            requests:
+              memory: {{ private_cloud.stalwart.max_ram }}
+            limits:
+              memory: {{ private_cloud.stalwart.max_ram }}
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: management
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 24
+          livenessProbe:
+            httpGet:
+              path: /healthz/live
+              port: management
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          volumeMounts:
+            - name: config
+              mountPath: /etc/stalwart/config.json
+              subPath: config.json
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/stalwart
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ stalwart_config_name }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ stalwart_pvc_name }}
+        - name: temporary
+          emptyDir: {}

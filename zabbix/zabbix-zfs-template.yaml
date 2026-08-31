@@ -348,6 +348,114 @@ zabbix_export:
               expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["postgres"])>{$ZFS.SNAPSHOT.MAX_AGE}'
               name: 'ZFS dataset postgres has an old snapshot'
               priority: WARNING
+        - uuid: 02de132233b041f6a2f4e682d3e61886
+          name: 'Dataset meilisearch: Snapshot retained space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained["meilisearch"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/meilisearch"]["retained_bytes"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 0d92e429be274b2191d0fab46196afb6
+          name: 'Dataset meilisearch: Snapshot share of used space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained_percent["meilisearch"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/meilisearch"]["retained_percent"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 05eb911461554b74b460f7550f3d5d4f
+          name: 'Dataset meilisearch: Oldest snapshot age'
+          type: DEPENDENT
+          key: 'zfs.snapshot.oldest_age["meilisearch"]'
+          delay: '0'
+          history: 90d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/meilisearch"]["oldest_age"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+          triggers:
+            - uuid: dae67593d84d4563a37543f40b63efe0
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["meilisearch"])>{$ZFS.SNAPSHOT.MAX_AGE}'
+              name: 'ZFS dataset meilisearch has an old snapshot'
+              priority: WARNING
+        - uuid: 095f5d9175f148a288d9323c2294c5b8
+          name: 'Dataset stalwart: Snapshot retained space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained["stalwart"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/stalwart"]["retained_bytes"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 02b41ab1e5294bedb554b1dd31821e65
+          name: 'Dataset stalwart: Snapshot share of used space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained_percent["stalwart"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/stalwart"]["retained_percent"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: cb7526fce68340b7876d19ea670c62a2
+          name: 'Dataset stalwart: Oldest snapshot age'
+          type: DEPENDENT
+          key: 'zfs.snapshot.oldest_age["stalwart"]'
+          delay: '0'
+          history: 90d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/stalwart"]["oldest_age"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+          triggers:
+            - uuid: e13b8d9925b84aaeb9891d483d300477
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["stalwart"])>{$ZFS.SNAPSHOT.MAX_AGE}'
+              name: 'ZFS dataset stalwart has an old snapshot'
+              priority: WARNING
         - uuid: 24a3dd8c12c84a0c81f399a08f54034a
           name: 'Dataset zabbix: Snapshot retained space'
           type: DEPENDENT
@@ -723,6 +831,82 @@ zabbix_export:
             - uuid: dbc32cae536b4483b38212eee047f6ed
               expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["postgres"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
               name: 'ZFS dataset postgres is over 90% utilized'
+              priority: HIGH
+        - uuid: 939454bc4a4340afbcdbe254909561fd
+          name: 'Dataset meilisearch: Used'
+          type: DEPENDENT
+          key: 'zfs.dataset.used["meilisearch"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/meilisearch"]["used"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: 41f81ad4a5ee454c924050885fdbb756
+          name: 'Dataset meilisearch: Utilization'
+          type: DEPENDENT
+          key: 'zfs.dataset.utilization["meilisearch"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/meilisearch"]["utilization"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset-capacity
+          triggers:
+            - uuid: 8b05ae6ff0974fe2a831b53bb9b376be
+              expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["meilisearch"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
+              name: 'ZFS dataset meilisearch is over 90% utilized'
+              priority: HIGH
+        - uuid: 72250c2d7cc34e45913c2e4ceec601b8
+          name: 'Dataset stalwart: Used'
+          type: DEPENDENT
+          key: 'zfs.dataset.used["stalwart"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/stalwart"]["used"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: 593861404d4b42819df9284eb4d736a2
+          name: 'Dataset stalwart: Utilization'
+          type: DEPENDENT
+          key: 'zfs.dataset.utilization["stalwart"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/stalwart"]["utilization"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset-capacity
+          triggers:
+            - uuid: b878f23eb61b47649c6c8565eb48981f
+              expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["stalwart"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
+              name: 'ZFS dataset stalwart is over 90% utilized'
               priority: HIGH
         - uuid: 482f7fa0d34642e0a7924f8320778984
           name: 'Dataset zabbix: Used'

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ meilisearch_pvc_name }}
+  namespace: {{ meilisearch_namespace }}
+  labels:
+    app.kubernetes.io/name: meilisearch
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ meilisearch_pv_capacity }}
+  storageClassName: ""
+  volumeName: {{ meilisearch_pv_name }}

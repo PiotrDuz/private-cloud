@@ -1,0 +1,11 @@
+---
+meilisearch_namespace: private-cloud
+meilisearch_service_name: meilisearch
+meilisearch_secret_name: meilisearch-credentials
+meilisearch_dataset: tank/secure/backup/k0s/services/meilisearch
+meilisearch_dataset_mountpoint: /tank/secure/backup/k0s/services/meilisearch
+meilisearch_pv_name: meilisearch-data
+meilisearch_pvc_name: meilisearch-data
+meilisearch_pv_capacity: 10Ti
+meilisearch_image: getmeili/meilisearch:v1.53.1
+meilisearch_kubeconfig: /run/private-cloud/kubeconfig

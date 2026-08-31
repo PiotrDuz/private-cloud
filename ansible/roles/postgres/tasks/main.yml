@@ -10,8 +10,8 @@
 
 - name: Calculate PostgreSQL shared buffers
   ansible.builtin.set_fact:
-    postgres_shared_buffers_bytes: "{{ (((private_cloud.postgres.max_ram | human_to_bytes) / 2) | int) }}"
-    postgres_shared_buffers: "{{ ((((private_cloud.postgres.max_ram | human_to_bytes) / 2) / 1048576) | int) }}MB"
+    postgres_shared_buffers_bytes: "{{ (((private_cloud.postgres.max_ram | human_to_bytes) / 4) | int) }}"
+    postgres_shared_buffers: "{{ ((((private_cloud.postgres.max_ram | human_to_bytes) / 4) / 1048576) | int) }}MB"
 
 - name: Validate PostgreSQL shared buffers minimum
   ansible.builtin.assert:

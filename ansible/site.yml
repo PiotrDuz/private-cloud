@@ -49,6 +49,22 @@
           when: private_cloud.stages.postgres | bool
           tags: [postgres]
 
+        - name: Deploy Meilisearch
+          ansible.builtin.include_role:
+            name: meilisearch
+            apply:
+              tags: [meilisearch]
+          when: private_cloud.stages.meilisearch | bool
+          tags: [meilisearch]
+
+        - name: Deploy Stalwart
+          ansible.builtin.include_role:
+            name: stalwart
+            apply:
+              tags: [stalwart]
+          when: private_cloud.stages.stalwart | bool
+          tags: [stalwart]
+
         - name: Deploy Zabbix server
           ansible.builtin.include_role:
             name: zabbix_server

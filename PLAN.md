@@ -21,7 +21,7 @@
         - Setting recordsize to 8k
         - Enable compression
         - Reducing read-ahead
-        - Tuning primarycache: ram limits aggressive, so primarycache=all, shared_buffers= user provided postgres max ram + 50%
+        - Tuning primarycache: ram limits aggressive, so primarycache=all, shared_buffers=25% of user-provided maximum postgres container memory
         Postgres side:
         - Setting full_page_writes=off
         - Disable postgres checksumming
@@ -51,7 +51,18 @@
         - warning on zfs error that has been fixed (scrub or normal operation)
         - alert on unfixed ECC error
         - warning on ECC error that has been fixed
-5. Setup 
 5. Setup STALWART email
-    1. another kubernetess service, own dataset under tank/secure/backup/k0s/services and PV
+    1. Deploy Stalwart with its own dataset under tank/secure/backup/k0s/services/stalwart, 10Ti PV, and quota
+    2. Create a Stalwart database, login role, and credentials Secret in the existing postgres service
+    3. Configure the data store to use the Stalwart postgres database
+    4. Configure the blob store as filesystem storage on the Stalwart PV
+    5. Deploy Meilisearch with its own dataset under tank/secure/backup/k0s/services/meilisearch, 10Ti PV, and quota
+    6. Configure the search store to use Meilisearch
+    7. Configure the Default in-memory store to use the postgres data store
+    8. Configure Stalwart as the authoritative mailbox and submission service for the user-provided domain
+    9. Expose a public mail subdomain with SMTP, IMAPS, authenticated submission, and valid TLS
+    10. Configure the Gmail mobile client to use Stalwart IMAPS and SMTP submission
+    11. Map forwarding-subdomain recipients to primary-domain Stalwart accounts
+    12. Store inbox.eu credentials in a Secret and relay non-local outbound mail through its SMTP service over TLS
+    13. Verify client access, local delivery, external delivery, and inbound redirects
     

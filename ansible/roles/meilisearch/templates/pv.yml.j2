@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ meilisearch_pv_name }}
+  labels:
+    app.kubernetes.io/name: meilisearch
+spec:
+  capacity:
+    storage: {{ meilisearch_pv_capacity }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: {{ meilisearch_namespace }}
+    name: {{ meilisearch_pvc_name }}
+  local:
+    path: {{ meilisearch_dataset_mountpoint }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ meilisearch_node_name | quote }}

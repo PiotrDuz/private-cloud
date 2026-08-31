@@ -17,17 +17,21 @@ zabbix_template_choices:
   - [SMART by Zabbix agent active 2, SMART by Zabbix agent 2 active]
   - [ZFS by Zabbix agent active]
   - [Memory ECC by Zabbix agent active]
-zabbix_storage_leaf_names: [config, images, ephemeral, postgres, zabbix]
-zabbix_storage_colors: [42A5F5, 66BB6A, FFA726, AB47BC, EF5350]
+zabbix_storage_leaf_names: [config, images, ephemeral, postgres, meilisearch, stalwart, zabbix]
+zabbix_storage_colors: [42A5F5, 66BB6A, FFA726, AB47BC, 26A69A, 5C6BC0, EF5350]
 zabbix_storage_used_keys:
   - 'zfs.dataset.used["config"]'
   - 'zfs.dataset.used["images"]'
   - 'zfs.dataset.used["ephemeral"]'
   - 'zfs.dataset.used["postgres"]'
+  - 'zfs.dataset.used["meilisearch"]'
+  - 'zfs.dataset.used["stalwart"]'
   - 'zfs.dataset.used["zabbix"]'
 zabbix_storage_utilization_keys:
   - 'zfs.dataset.utilization["config"]'
   - 'zfs.dataset.utilization["images"]'
   - 'zfs.dataset.utilization["ephemeral"]'
   - 'zfs.dataset.utilization["postgres"]'
+  - 'zfs.dataset.utilization["meilisearch"]'
+  - 'zfs.dataset.utilization["stalwart"]'
   - 'zfs.dataset.utilization["zabbix"]'

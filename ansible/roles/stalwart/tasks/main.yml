@@ -1,0 +1,410 @@
+---
+- name: Validate Stalwart inputs
+  ansible.builtin.assert:
+    that:
+      - private_cloud.stalwart.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.stalwart.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - private_cloud.stalwart.database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - private_cloud.stalwart.database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - private_cloud_secrets.stalwart.database_password | length > 0
+      - private_cloud_secrets.stalwart.admin_password | length > 0
+      - private_cloud_secrets.stalwart.mailbox_password | length > 0
+      - private_cloud_secrets.stalwart.relay_password | length > 0
+    fail_msg: Stalwart configuration is invalid.
+  no_log: true
+
+- name: Ensure the installer runtime directory exists
+  ansible.builtin.file:
+    path: "{{ stalwart_kubeconfig | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Inspect the k0s kubeconfig
+  ansible.builtin.stat:
+    path: "{{ stalwart_kubeconfig }}"
+  register: stalwart_kubeconfig_stat
+
+- name: Generate a missing k0s kubeconfig for tagged Stalwart reruns
+  ansible.builtin.command: k0s kubeconfig admin
+  register: stalwart_generated_kubeconfig
+  when: not stalwart_kubeconfig_stat.stat.exists
+  changed_when: true
+  no_log: true
+
+- name: Install the generated Stalwart kubeconfig
+  ansible.builtin.copy:
+    content: "{{ stalwart_generated_kubeconfig.stdout }}"
+    dest: "{{ stalwart_kubeconfig }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when: not stalwart_kubeconfig_stat.stat.exists
+  no_log: true
+
+- name: Resolve a Ready Kubernetes node
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    api_version: v1
+    kind: Node
+  register: stalwart_nodes
+  changed_when: false
+
+- name: Initialize Stalwart node selection
+  ansible.builtin.set_fact:
+    stalwart_node_name: ''
+
+- name: Select the Ready Kubernetes node
+  ansible.builtin.set_fact:
+    stalwart_node_name: "{{ item.metadata.name }}"
+  loop: "{{ stalwart_nodes.resources }}"
+  when:
+    - item.status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    - stalwart_node_name | length == 0
+
+- name: Require a Ready Kubernetes node
+  ansible.builtin.assert:
+    that: stalwart_node_name | length > 0
+    fail_msg: No Ready Kubernetes node is available for Stalwart.
+
+- name: Check Stalwart service dataset
+  ansible.builtin.command: zfs list -H -p -o name {{ stalwart_dataset }}
+  register: stalwart_dataset_check
+  changed_when: false
+  failed_when: false
+
+- name: Read Stalwart dataset usage
+  ansible.builtin.command: zfs get -H -p -o value used {{ stalwart_dataset }}
+  register: stalwart_dataset_used
+  changed_when: false
+  when: stalwart_dataset_check.rc == 0
+
+- name: Reject a Stalwart quota below existing usage
+  ansible.builtin.assert:
+    that: (private_cloud.stalwart.storage_size | human_to_bytes) | int >= (stalwart_dataset_used.stdout | int)
+    fail_msg: Stalwart storage_size cannot be smaller than existing dataset usage.
+  when: stalwart_dataset_check.rc == 0
+
+- name: Create Stalwart service dataset
+  ansible.builtin.command: zfs create {{ stalwart_dataset }}
+  when: stalwart_dataset_check.rc != 0
+  changed_when: true
+
+- name: Read Stalwart dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ stalwart_dataset }}
+  register: stalwart_current_quota
+  changed_when: false
+
+- name: Apply Stalwart dataset quota
+  ansible.builtin.command: zfs set quota={{ private_cloud.stalwart.storage_size }} {{ stalwart_dataset }}
+  when: stalwart_current_quota.stdout | int != (private_cloud.stalwart.storage_size | human_to_bytes | int)
+  changed_when: true
+
+- name: Verify Stalwart dataset is mounted
+  ansible.builtin.command: mountpoint -q {{ stalwart_dataset_mountpoint }}
+  changed_when: false
+
+- name: Verify Stalwart dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ stalwart_dataset }}
+  register: stalwart_effective_quota
+  changed_when: false
+
+- name: Assert Stalwart dataset quota
+  ansible.builtin.assert:
+    that: stalwart_effective_quota.stdout | int == (private_cloud.stalwart.storage_size | human_to_bytes | int)
+    fail_msg: Stalwart dataset quota does not match storage_size.
+
+- name: Inspect existing Stalwart storage and credentials
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ item.namespace | default(omit) }}"
+  loop:
+    - {api_version: v1, kind: PersistentVolume, name: stalwart-data}
+    - {api_version: v1, kind: PersistentVolumeClaim, name: stalwart-data, namespace: private-cloud}
+    - {api_version: v1, kind: Secret, name: stalwart-runtime-credentials, namespace: private-cloud}
+  register: stalwart_existing
+  changed_when: false
+  no_log: true
+
+- name: Reject incompatible Stalwart persistent storage
+  ansible.builtin.assert:
+    that:
+      - stalwart_existing.results[0].resources | length == 0 or stalwart_existing.results[0].resources[0].spec.local.path == stalwart_dataset_mountpoint
+      - stalwart_existing.results[0].resources | length == 0 or stalwart_existing.results[0].resources[0].spec.capacity.storage == stalwart_pv_capacity
+      - stalwart_existing.results[0].resources | length == 0 or stalwart_node_name in stalwart_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - stalwart_existing.results[1].resources | length == 0 or stalwart_existing.results[1].resources[0].spec.resources.requests.storage == stalwart_pv_capacity
+      - stalwart_existing.results[1].resources | length == 0 or stalwart_existing.results[1].resources[0].spec.volumeName == stalwart_pv_name
+    fail_msg: Existing Stalwart persistent storage conflicts with the configured local storage.
+
+- name: Classify the existing Stalwart runtime credentials
+  ansible.builtin.set_fact:
+    stalwart_runtime_secret_present: "{{ stalwart_existing.results[2].resources | length > 0 }}"
+    stalwart_runtime_secret_managed: >-
+      {{ stalwart_existing.results[2].resources | length > 0 and
+         ((stalwart_existing.results[2].resources[0].metadata.annotations | default({})).get('private-cloud.example/managed-by', '') == 'ansible') }}
+    stalwart_database_password_matches: >-
+      {{ stalwart_existing.results[2].resources | length > 0 and
+         stalwart_existing.results[2].resources[0].data.STALWART_DB_PASSWORD is defined and
+         (stalwart_existing.results[2].resources[0].data.STALWART_DB_PASSWORD | b64decode == private_cloud_secrets.stalwart.database_password) }}
+    stalwart_relay_password_matches: >-
+      {{ stalwart_existing.results[2].resources | length > 0 and
+         stalwart_existing.results[2].resources[0].data.INBOX_EU_SMTP_PASSWORD is defined and
+         (stalwart_existing.results[2].resources[0].data.INBOX_EU_SMTP_PASSWORD | b64decode == private_cloud_secrets.stalwart.relay_password) }}
+  no_log: true
+
+- name: Reject incompatible unmanaged Stalwart runtime credentials
+  ansible.builtin.assert:
+    that:
+      - not stalwart_runtime_secret_present | bool or stalwart_runtime_secret_managed | bool or stalwart_database_password_matches | bool
+      - not stalwart_runtime_secret_present | bool or stalwart_runtime_secret_managed | bool or stalwart_relay_password_matches | bool
+    fail_msg: Existing Stalwart runtime credentials conflict with the configured credentials.
+  no_log: true
+
+- name: Locate PostgreSQL pod for Stalwart database bootstrap
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ stalwart_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=postgres
+  register: stalwart_postgres_pods
+  until:
+    - stalwart_postgres_pods.resources | length > 0
+    - stalwart_postgres_pods.resources[0].status.containerStatuses | default([]) | selectattr('ready', 'equalto', true) | list | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Check Stalwart PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    namespace: "{{ stalwart_namespace }}"
+    pod: "{{ stalwart_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT rolcanlogin FROM pg_roles WHERE rolname = '{{ private_cloud.stalwart.database_username | replace("'", "''") }}';"
+  register: stalwart_role_exists
+  changed_when: false
+  no_log: true
+
+- name: Create the Stalwart PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    namespace: "{{ stalwart_namespace }}"
+    pod: "{{ stalwart_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'printf %s {{ lookup('template', 'create-role.sql.j2') | b64encode }} |
+      base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
+  when: stalwart_role_exists.stdout | trim == ''
+  changed_when: true
+  no_log: true
+
+- name: Update the Stalwart PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    namespace: "{{ stalwart_namespace }}"
+    pod: "{{ stalwart_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'printf %s {{ lookup('template', 'alter-role.sql.j2') | b64encode }} |
+      base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
+  when:
+    - stalwart_role_exists.stdout | trim != ''
+    - stalwart_role_exists.stdout | trim == 'f' or not stalwart_database_password_matches | bool
+  changed_when: true
+  no_log: true
+
+- name: Check Stalwart PostgreSQL database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    namespace: "{{ stalwart_namespace }}"
+    pod: "{{ stalwart_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '{{ private_cloud.stalwart.database_name | replace("'", "''") }}';"
+  register: stalwart_database_exists
+  changed_when: false
+  no_log: true
+
+- name: Create Stalwart PostgreSQL database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    namespace: "{{ stalwart_namespace }}"
+    pod: "{{ stalwart_postgres_pods.resources[0].metadata.name }}"
+    command: createdb -U postgres -O {{ private_cloud.stalwart.database_username }} {{ private_cloud.stalwart.database_name }}
+  when: stalwart_database_exists.stdout | trim == ''
+  changed_when: true
+  no_log: true
+
+- name: Set Stalwart database owner when needed
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    namespace: "{{ stalwart_namespace }}"
+    pod: "{{ stalwart_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "ALTER DATABASE \"{{ private_cloud.stalwart.database_name }}\" OWNER TO \"{{ private_cloud.stalwart.database_username }}\";"
+  when:
+    - stalwart_database_exists.stdout | trim != ''
+    - stalwart_database_exists.stdout | trim != private_cloud.stalwart.database_username
+  changed_when: true
+  no_log: true
+
+- name: Apply Stalwart runtime credentials
+  kubernetes.core.k8s:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'runtime-secret.yml.j2') | from_yaml }}"
+  no_log: true
+
+- name: Apply Stalwart storage and services
+  kubernetes.core.k8s:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - pv.yml.j2
+    - pvc.yml.j2
+    - config.yml.j2
+    - headless-service.yml.j2
+    - service.yml.j2
+    - public-service.yml.j2
+  no_log: true
+
+- name: Apply Stalwart configuration with temporary recovery access
+  block:
+    - name: Apply temporary Stalwart recovery credentials and configuration plan
+      kubernetes.core.k8s:
+        kubeconfig: "{{ stalwart_kubeconfig }}"
+        state: present
+        definition: "{{ lookup('template', item) | from_yaml }}"
+      loop:
+        - recovery-secret.yml.j2
+        - plan-secret.yml.j2
+      no_log: true
+
+    - name: Apply Stalwart StatefulSet
+      kubernetes.core.k8s:
+        kubeconfig: "{{ stalwart_kubeconfig }}"
+        state: present
+        definition: "{{ lookup('template', 'statefulset.yml.j2') | from_yaml }}"
+      no_log: true
+
+    - name: Wait for Stalwart recovery access
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ stalwart_kubeconfig }}"
+        api_version: apps/v1
+        kind: StatefulSet
+        name: "{{ stalwart_service_name }}"
+        namespace: "{{ stalwart_namespace }}"
+      register: stalwart_statefulset
+      until:
+        - stalwart_statefulset.resources | length > 0
+        - stalwart_statefulset.resources[0].status.readyReplicas | default(0) | int == 1
+        - stalwart_statefulset.resources[0].status.currentRevision | default('') == stalwart_statefulset.resources[0].status.updateRevision | default('pending')
+      retries: 60
+      delay: 5
+      changed_when: false
+
+    - name: Remove a completed Stalwart configuration job
+      kubernetes.core.k8s:
+        kubeconfig: "{{ stalwart_kubeconfig }}"
+        state: absent
+        api_version: batch/v1
+        kind: Job
+        name: "{{ stalwart_plan_job_name }}"
+        namespace: "{{ stalwart_namespace }}"
+        wait: true
+      no_log: true
+
+    - name: Apply Stalwart configuration job
+      kubernetes.core.k8s:
+        kubeconfig: "{{ stalwart_kubeconfig }}"
+        state: present
+        definition: "{{ lookup('template', 'job.yml.j2') | from_yaml }}"
+      no_log: true
+
+    - name: Wait for Stalwart configuration job
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ stalwart_kubeconfig }}"
+        api_version: batch/v1
+        kind: Job
+        name: "{{ stalwart_plan_job_name }}"
+        namespace: "{{ stalwart_namespace }}"
+      register: stalwart_plan_job
+      until:
+        - stalwart_plan_job.resources | length > 0
+        - stalwart_plan_job.resources[0].status.succeeded | default(0) | int == 1 or stalwart_plan_job.resources[0].status.failed | default(0) | int > 0
+      retries: 60
+      delay: 5
+      changed_when: false
+      failed_when: stalwart_plan_job.resources | length > 0 and stalwart_plan_job.resources[0].status.failed | default(0) | int > 0
+  always:
+    - name: Remove temporary Stalwart configuration resources
+      kubernetes.core.k8s:
+        kubeconfig: "{{ stalwart_kubeconfig }}"
+        state: absent
+        api_version: "{{ item.api_version }}"
+        kind: "{{ item.kind }}"
+        name: "{{ item.name }}"
+        namespace: "{{ stalwart_namespace }}"
+        wait: true
+      loop:
+        - {api_version: batch/v1, kind: Job, name: stalwart-configure}
+        - {api_version: v1, kind: Secret, name: stalwart-configuration-plan}
+        - {api_version: v1, kind: Secret, name: stalwart-recovery-credentials}
+      no_log: true
+
+    - name: Restart Stalwart without recovery access
+      kubernetes.core.k8s:
+        kubeconfig: "{{ stalwart_kubeconfig }}"
+        state: patched
+        definition:
+          apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: "{{ stalwart_service_name }}"
+            namespace: "{{ stalwart_namespace }}"
+          spec:
+            template:
+              metadata:
+                annotations:
+                  private-cloud.example/recovery-removed-at: "{{ ansible_date_time.iso8601 }}"
+      no_log: true
+
+    - name: Wait for Stalwart without recovery access
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ stalwart_kubeconfig }}"
+        api_version: apps/v1
+        kind: StatefulSet
+        name: "{{ stalwart_service_name }}"
+        namespace: "{{ stalwart_namespace }}"
+      register: stalwart_final_statefulset
+      until:
+        - stalwart_final_statefulset.resources | length > 0
+        - stalwart_final_statefulset.resources[0].status.readyReplicas | default(0) | int == 1
+        - stalwart_final_statefulset.resources[0].status.currentRevision | default('') == stalwart_final_statefulset.resources[0].status.updateRevision | default('pending')
+      retries: 60
+      delay: 5
+      changed_when: false
+      when:
+        - stalwart_plan_job is defined
+        - stalwart_plan_job.resources | default([]) | length > 0
+        - stalwart_plan_job.resources[0].status.succeeded | default(0) | int == 1
+
+- name: Wait for Stalwart public service endpoint
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    name: "{{ stalwart_public_service_name }}"
+    namespace: "{{ stalwart_namespace }}"
+  register: stalwart_endpoint
+  until: stalwart_endpoint.resources | length > 0 and (stalwart_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0)
+  retries: 60
+  delay: 5
+  changed_when: false

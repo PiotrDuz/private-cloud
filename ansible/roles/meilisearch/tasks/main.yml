@@ -1,0 +1,222 @@
+---
+- name: Validate Meilisearch inputs
+  ansible.builtin.assert:
+    that:
+      - private_cloud.meilisearch.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.meilisearch.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - private_cloud_secrets.meilisearch.master_key | length >= 16
+    fail_msg: Meilisearch configuration is invalid.
+  no_log: true
+
+- name: Ensure the installer runtime directory exists
+  ansible.builtin.file:
+    path: "{{ meilisearch_kubeconfig | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Inspect the k0s kubeconfig
+  ansible.builtin.stat:
+    path: "{{ meilisearch_kubeconfig }}"
+  register: meilisearch_kubeconfig_stat
+
+- name: Generate a missing k0s kubeconfig for tagged Meilisearch reruns
+  ansible.builtin.command: k0s kubeconfig admin
+  register: meilisearch_generated_kubeconfig
+  when: not meilisearch_kubeconfig_stat.stat.exists
+  changed_when: true
+  no_log: true
+
+- name: Install the generated Meilisearch kubeconfig
+  ansible.builtin.copy:
+    content: "{{ meilisearch_generated_kubeconfig.stdout }}"
+    dest: "{{ meilisearch_kubeconfig }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when: not meilisearch_kubeconfig_stat.stat.exists
+  no_log: true
+
+- name: Resolve a Ready Kubernetes node
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ meilisearch_kubeconfig }}"
+    api_version: v1
+    kind: Node
+  register: meilisearch_nodes
+  changed_when: false
+
+- name: Initialize Meilisearch node selection
+  ansible.builtin.set_fact:
+    meilisearch_node_name: ''
+
+- name: Select the Ready Kubernetes node
+  ansible.builtin.set_fact:
+    meilisearch_node_name: "{{ item.metadata.name }}"
+  loop: "{{ meilisearch_nodes.resources }}"
+  when:
+    - item.status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    - meilisearch_node_name | length == 0
+
+- name: Require a Ready Kubernetes node
+  ansible.builtin.assert:
+    that: meilisearch_node_name | length > 0
+    fail_msg: No Ready Kubernetes node is available for Meilisearch.
+
+- name: Check Meilisearch service dataset
+  ansible.builtin.command: zfs list -H -p -o name {{ meilisearch_dataset }}
+  register: meilisearch_dataset_check
+  changed_when: false
+  failed_when: false
+
+- name: Read Meilisearch dataset usage
+  ansible.builtin.command: zfs get -H -p -o value used {{ meilisearch_dataset }}
+  register: meilisearch_dataset_used
+  changed_when: false
+  when: meilisearch_dataset_check.rc == 0
+
+- name: Reject a Meilisearch quota below existing usage
+  ansible.builtin.assert:
+    that: (private_cloud.meilisearch.storage_size | human_to_bytes) | int >= (meilisearch_dataset_used.stdout | int)
+    fail_msg: Meilisearch storage_size cannot be smaller than existing dataset usage.
+  when: meilisearch_dataset_check.rc == 0
+
+- name: Create Meilisearch service dataset
+  ansible.builtin.command: zfs create {{ meilisearch_dataset }}
+  when: meilisearch_dataset_check.rc != 0
+  changed_when: true
+
+- name: Read Meilisearch dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ meilisearch_dataset }}
+  register: meilisearch_current_quota
+  changed_when: false
+
+- name: Apply Meilisearch dataset quota
+  ansible.builtin.command: zfs set quota={{ private_cloud.meilisearch.storage_size }} {{ meilisearch_dataset }}
+  when: meilisearch_current_quota.stdout | int != (private_cloud.meilisearch.storage_size | human_to_bytes | int)
+  changed_when: true
+
+- name: Verify Meilisearch dataset is mounted
+  ansible.builtin.command: mountpoint -q {{ meilisearch_dataset_mountpoint }}
+  changed_when: false
+
+- name: Verify Meilisearch dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ meilisearch_dataset }}
+  register: meilisearch_effective_quota
+  changed_when: false
+
+- name: Assert Meilisearch dataset quota
+  ansible.builtin.assert:
+    that: meilisearch_effective_quota.stdout | int == (private_cloud.meilisearch.storage_size | human_to_bytes | int)
+    fail_msg: Meilisearch dataset quota does not match storage_size.
+
+- name: Inspect existing Meilisearch storage and credentials
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ meilisearch_kubeconfig }}"
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ item.namespace | default(omit) }}"
+  loop:
+    - {api_version: v1, kind: PersistentVolume, name: meilisearch-data}
+    - {api_version: v1, kind: PersistentVolumeClaim, name: meilisearch-data, namespace: private-cloud}
+    - {api_version: v1, kind: Secret, name: meilisearch-credentials, namespace: private-cloud}
+  register: meilisearch_existing
+  changed_when: false
+  no_log: true
+
+- name: Reject incompatible Meilisearch persistent storage
+  ansible.builtin.assert:
+    that:
+      - meilisearch_existing.results[0].resources | length == 0 or meilisearch_existing.results[0].resources[0].spec.local.path == meilisearch_dataset_mountpoint
+      - meilisearch_existing.results[0].resources | length == 0 or meilisearch_existing.results[0].resources[0].spec.capacity.storage == meilisearch_pv_capacity
+      - meilisearch_existing.results[0].resources | length == 0 or meilisearch_node_name in meilisearch_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - meilisearch_existing.results[1].resources | length == 0 or meilisearch_existing.results[1].resources[0].spec.resources.requests.storage == meilisearch_pv_capacity
+      - meilisearch_existing.results[1].resources | length == 0 or meilisearch_existing.results[1].resources[0].spec.volumeName == meilisearch_pv_name
+    fail_msg: Existing Meilisearch persistent storage conflicts with the configured local storage.
+
+- name: Classify the existing Meilisearch credentials
+  ansible.builtin.set_fact:
+    meilisearch_secret_present: "{{ meilisearch_existing.results[2].resources | length > 0 }}"
+    meilisearch_secret_managed: >-
+      {{ meilisearch_existing.results[2].resources | length > 0 and
+         ((meilisearch_existing.results[2].resources[0].metadata.annotations | default({})).get('private-cloud.example/managed-by', '') == 'ansible') }}
+    meilisearch_secret_matches: >-
+      {{ meilisearch_existing.results[2].resources | length > 0 and
+         meilisearch_existing.results[2].resources[0].data.MEILI_MASTER_KEY is defined and
+         (meilisearch_existing.results[2].resources[0].data.MEILI_MASTER_KEY | b64decode == private_cloud_secrets.meilisearch.master_key) }}
+  no_log: true
+
+- name: Reject incompatible unmanaged Meilisearch credentials
+  ansible.builtin.assert:
+    that: not meilisearch_secret_present | bool or meilisearch_secret_matches | bool or meilisearch_secret_managed | bool
+    fail_msg: Existing Meilisearch credentials conflict with the configured master key.
+  no_log: true
+
+- name: Apply Meilisearch credentials
+  kubernetes.core.k8s:
+    kubeconfig: "{{ meilisearch_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'secret.yml.j2') | from_yaml }}"
+  register: meilisearch_secret_apply
+  when: not meilisearch_secret_present | bool or not meilisearch_secret_matches | bool
+  no_log: true
+
+- name: Apply Meilisearch storage and workload
+  kubernetes.core.k8s:
+    kubeconfig: "{{ meilisearch_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - pv.yml.j2
+    - pvc.yml.j2
+    - deployment.yml.j2
+    - service.yml.j2
+  no_log: true
+
+- name: Restart Meilisearch after a credentials change
+  kubernetes.core.k8s:
+    kubeconfig: "{{ meilisearch_kubeconfig }}"
+    state: patched
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ meilisearch_service_name }}"
+        namespace: "{{ meilisearch_namespace }}"
+      spec:
+        template:
+          metadata:
+            annotations:
+              private-cloud.example/credentials-restarted-at: "{{ ansible_date_time.iso8601 }}"
+  when: meilisearch_secret_apply.changed | default(false)
+  no_log: true
+
+- name: Wait for Meilisearch deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ meilisearch_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ meilisearch_service_name }}"
+    namespace: "{{ meilisearch_namespace }}"
+  register: meilisearch_deployment
+  until:
+    - meilisearch_deployment.resources | length > 0
+    - meilisearch_deployment.resources[0].status.updatedReplicas | default(0) | int == 1
+    - meilisearch_deployment.resources[0].status.availableReplicas | default(0) | int == 1
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Wait for Meilisearch service endpoint
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ meilisearch_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    name: "{{ meilisearch_service_name }}"
+    namespace: "{{ meilisearch_namespace }}"
+  register: meilisearch_endpoint
+  until: meilisearch_endpoint.resources | length > 0 and (meilisearch_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0)
+  retries: 60
+  delay: 5
+  changed_when: false

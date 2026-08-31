@@ -32,6 +32,8 @@ LEAF_DATASETS = (
     "tank/secure/no-backup/k0s/images",
     "tank/secure/no-backup/k0s/ephemeral",
     "tank/secure/backup/k0s/services/postgres",
+    "tank/secure/backup/k0s/services/meilisearch",
+    "tank/secure/backup/k0s/services/stalwart",
     "tank/secure/backup/k0s/services/zabbix",
 )
 

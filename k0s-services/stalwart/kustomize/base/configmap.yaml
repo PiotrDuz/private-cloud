@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stalwart-config
+  namespace: private-cloud
+  labels:
+    app.kubernetes.io/name: stalwart
+data:
+  config.json: |
+    {
+      "@type": "PostgreSql",
+      "host": "postgres",
+      "port": 5432,
+      "database": "stalwart",
+      "authUsername": "stalwart",
+      "authSecret": {
+        "@type": "EnvironmentVariable",
+        "variableName": "STALWART_DB_PASSWORD"
+      },
+      "poolMaxConnections": 10,
+      "useTls": false
+    }

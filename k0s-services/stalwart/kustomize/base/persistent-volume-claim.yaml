@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: stalwart-data
+  namespace: private-cloud
+  labels:
+    app.kubernetes.io/name: stalwart
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Ti
+  storageClassName: ""
+  volumeName: stalwart-data

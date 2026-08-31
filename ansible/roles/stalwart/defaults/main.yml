@@ -1,0 +1,20 @@
+---
+stalwart_namespace: private-cloud
+stalwart_service_name: stalwart
+stalwart_headless_service_name: stalwart-headless
+stalwart_public_service_name: stalwart-public
+stalwart_runtime_secret_name: stalwart-runtime-credentials
+stalwart_recovery_secret_name: stalwart-recovery-credentials
+stalwart_plan_secret_name: stalwart-configuration-plan
+stalwart_config_name: stalwart-config
+stalwart_dataset: tank/secure/backup/k0s/services/stalwart
+stalwart_dataset_mountpoint: /tank/secure/backup/k0s/services/stalwart
+stalwart_pv_name: stalwart-data
+stalwart_pvc_name: stalwart-data
+stalwart_pv_capacity: 10Ti
+stalwart_image: stalwartlabs/stalwart:v0.16
+stalwart_cli_image: ghcr.io/stalwartlabs/cli:latest
+stalwart_kubeconfig: /run/private-cloud/kubeconfig
+stalwart_postgres_service: postgres
+stalwart_meilisearch_service: meilisearch
+stalwart_plan_job_name: stalwart-configure
