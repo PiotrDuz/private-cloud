@@ -1,0 +1,94 @@
+- name: Find the monitored Zabbix host
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body: {jsonrpc: '2.0', method: host.get, params: {output: [hostid, host, status, tls_accept, tls_connect], selectGroups: [groupid], selectParentTemplates: [templateid], filter: {host: ["{{ private_cloud.zabbix.hostname }}"]}}, id: 14}
+    status_code: 200
+    return_content: true
+  register: zabbix_host_get
+  changed_when: false
+  no_log: true
+  failed_when: zabbix_host_get.json.error is defined or zabbix_host_get.json.result is not defined
+
+- name: Determine whether the existing monitored host needs updates
+  ansible.builtin.set_fact:
+    zabbix_host_needs_update: "{{ zabbix_host_get.json.result | length > 0 and (zabbix_host_get.json.result[0].status | string != '0' or zabbix_host_get.json.result[0].tls_accept | string != '1' or zabbix_host_get.json.result[0].tls_connect | string != '1') }}"
+    zabbix_host_needs_link: "{{ zabbix_host_get.json.result | length > 0 and ((zabbix_host_get.json.result[0].groups | default([]) | map(attribute='groupid') | list | map('string') | list | intersect([zabbix_group_id | string]) | length == 0) or (zabbix_template_ids | map('string') | list | difference(zabbix_host_get.json.result[0].parentTemplates | default([]) | map(attribute='templateid') | list | map('string') | list) | length > 0)) }}"
+
+- name: Create the monitored Zabbix host
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body:
+      jsonrpc: '2.0'
+      method: host.create
+      params:
+        groups: [{groupid: "{{ zabbix_group_id }}"}]
+        host: "{{ private_cloud.zabbix.hostname }}"
+        name: "{{ private_cloud.zabbix.hostname }}"
+        status: 0
+        templates: "{{ zabbix_template_objects }}"
+        tls_accept: 1
+        tls_connect: 1
+      id: 15
+    status_code: 200
+    return_content: true
+  register: zabbix_host_create
+  when: zabbix_host_get.json.result | length == 0
+  changed_when: true
+  no_log: true
+  failed_when: zabbix_host_create.json.error is defined or zabbix_host_create.json.result is not defined
+
+- name: Set the monitored Zabbix host ID
+  ansible.builtin.set_fact:
+    zabbix_host_id: "{{ zabbix_host_get.json.result[0].hostid if zabbix_host_get.json.result | length > 0 else zabbix_host_create.json.result.hostids[0] }}"
+  no_log: true
+
+- name: Update an existing monitored Zabbix host
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body:
+      jsonrpc: '2.0'
+      method: host.update
+      params:
+        hostid: "{{ zabbix_host_id }}"
+        host: "{{ private_cloud.zabbix.hostname }}"
+        name: "{{ private_cloud.zabbix.hostname }}"
+        status: 0
+        tls_accept: 1
+        tls_connect: 1
+      id: 151
+    status_code: 200
+  when: zabbix_host_needs_update | bool
+  changed_when: true
+  no_log: true
+  register: zabbix_host_update
+  failed_when: zabbix_host_update.json.error is defined or zabbix_host_update.json.result is not defined
+
+- name: Link templates and host group to the monitored host
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body:
+      jsonrpc: '2.0'
+      method: host.massadd
+      params:
+        groups: [{groupid: "{{ zabbix_group_id }}"}]
+        hosts: [{hostid: "{{ zabbix_host_id }}"}]
+        templates: "{{ zabbix_template_objects }}"
+      id: 16
+    status_code: 200
+  changed_when: true
+  no_log: true
+  register: zabbix_host_massadd
+  failed_when: zabbix_host_massadd.json.error is defined or zabbix_host_massadd.json.result is not defined
+  when: zabbix_host_needs_link | bool

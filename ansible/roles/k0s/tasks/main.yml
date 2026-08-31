@@ -1,0 +1,307 @@
+---
+- name: Require k0s configuration from private_cloud
+  ansible.builtin.assert:
+    that:
+      - private_cloud.k0s.version is defined
+      - private_cloud.k0s.config_quota is defined
+      - private_cloud.k0s.images_quota is defined
+      - private_cloud.k0s.ephemeral_quota is defined
+    fail_msg: k0s desired state was not supplied by preflight.
+
+- name: Install Python Kubernetes bindings for subsequent API roles
+  ansible.builtin.apt:
+    name: python3-kubernetes
+    state: present
+
+- name: Verify the encrypted storage root is available
+  ansible.builtin.command: zfs get -H -o value keystatus {{ k0s_root_dataset }}
+  register: k0s_key_status
+  changed_when: false
+
+- name: Require unlocked k0s storage
+  ansible.builtin.assert:
+    that: k0s_key_status.stdout | trim == 'available'
+    fail_msg: The encrypted ZFS root must be unlocked before k0s configuration.
+
+- name: Ensure the backup hierarchy exists
+  ansible.builtin.command: zfs list -H -o name {{ item.name }}
+  loop:
+    - { name: 'tank/secure/backup', mountpoint: '/tank/secure/backup' }
+    - { name: 'tank/secure/backup/k0s', mountpoint: '/tank/secure/backup/k0s' }
+    - { name: 'tank/secure/backup/k0s/services', mountpoint: '/tank/secure/backup/k0s/services' }
+  register: k0s_backup_checks
+  changed_when: false
+  failed_when: false
+
+- name: Create missing backup hierarchy datasets
+  ansible.builtin.command: zfs create -o mountpoint={{ item.item.mountpoint }} {{ item.item.name }}
+  loop: "{{ k0s_backup_checks.results }}"
+  when: item.rc != 0
+
+- name: Ensure the no-backup hierarchy exists
+  ansible.builtin.command: zfs list -H -o name {{ item.name }}
+  loop:
+    - { name: 'tank/secure/no-backup', mountpoint: '/tank/secure/no-backup' }
+    - { name: 'tank/secure/no-backup/k0s', mountpoint: '/tank/secure/no-backup/k0s' }
+    - { name: 'tank/secure/no-backup/k0s/services', mountpoint: '/tank/secure/no-backup/k0s/services' }
+  register: k0s_no_backup_checks
+  changed_when: false
+  failed_when: false
+
+- name: Create missing no-backup hierarchy datasets
+  ansible.builtin.command: zfs create -o mountpoint={{ item.item.mountpoint }} {{ item.item.name }}
+  loop: "{{ k0s_no_backup_checks.results }}"
+  when: item.rc != 0
+
+- name: Verify hierarchy mountpoints
+  ansible.builtin.command: zfs get -H -o value mountpoint {{ item.name }}
+  loop:
+    - { name: 'tank/secure/backup', mountpoint: '/tank/secure/backup' }
+    - { name: 'tank/secure/backup/k0s', mountpoint: '/tank/secure/backup/k0s' }
+    - { name: 'tank/secure/backup/k0s/services', mountpoint: '/tank/secure/backup/k0s/services' }
+    - { name: 'tank/secure/no-backup', mountpoint: '/tank/secure/no-backup' }
+    - { name: 'tank/secure/no-backup/k0s', mountpoint: '/tank/secure/no-backup/k0s' }
+    - { name: 'tank/secure/no-backup/k0s/services', mountpoint: '/tank/secure/no-backup/k0s/services' }
+  register: k0s_hierarchy_mountpoint_checks
+  changed_when: false
+
+- name: Require fixed hierarchy mountpoints
+  ansible.builtin.assert:
+    that: item.stdout | trim == item.item.mountpoint
+    fail_msg: "Unexpected mountpoint for {{ item.item.name }}."
+  loop: "{{ k0s_hierarchy_mountpoint_checks.results }}"
+
+- name: Check k0s leaf datasets
+  ansible.builtin.command: zfs list -H -o name {{ item.name }}
+  loop:
+    - { name: '{{ k0s_config_dataset }}', mountpoint: '{{ k0s_config_mountpoint }}' }
+    - { name: '{{ k0s_images_dataset }}', mountpoint: '{{ k0s_images_mountpoint }}' }
+    - { name: '{{ k0s_ephemeral_dataset }}', mountpoint: '{{ k0s_ephemeral_mountpoint }}' }
+  register: k0s_leaf_checks
+  changed_when: false
+  failed_when: false
+
+- name: Create missing k0s leaf datasets with fixed mountpoints
+  ansible.builtin.command: zfs create -o mountpoint={{ item.item.mountpoint }} {{ item.item.name }}
+  loop: "{{ k0s_leaf_checks.results }}"
+  when: item.rc != 0
+
+- name: Verify k0s leaf mountpoints
+  ansible.builtin.command: zfs get -H -o value mountpoint {{ item.name }}
+  loop:
+    - { name: '{{ k0s_config_dataset }}', mountpoint: '{{ k0s_config_mountpoint }}' }
+    - { name: '{{ k0s_images_dataset }}', mountpoint: '{{ k0s_images_mountpoint }}' }
+    - { name: '{{ k0s_ephemeral_dataset }}', mountpoint: '{{ k0s_ephemeral_mountpoint }}' }
+  register: k0s_mountpoint_checks
+  changed_when: false
+
+- name: Require fixed k0s leaf mountpoints
+  ansible.builtin.assert:
+    that: item.stdout | trim == item.item.mountpoint
+    fail_msg: "Unexpected mountpoint for {{ item.item.name }}."
+  loop: "{{ k0s_mountpoint_checks.results }}"
+
+- name: Read leaf used space and current quotas
+  ansible.builtin.command: zfs get -Hp -o value used,quota {{ item.name }}
+  loop:
+    - { name: '{{ k0s_config_dataset }}', quota: '{{ private_cloud.k0s.config_quota }}' }
+    - { name: '{{ k0s_images_dataset }}', quota: '{{ private_cloud.k0s.images_quota }}' }
+    - { name: '{{ k0s_ephemeral_dataset }}', quota: '{{ private_cloud.k0s.ephemeral_quota }}' }
+  register: k0s_quota_state
+  changed_when: false
+
+- name: Ensure configured quotas cannot truncate used space
+  ansible.builtin.assert:
+    that: (item.item.quota | human_to_bytes) >= (item.stdout_lines[0] | int)
+    fail_msg: "Configured quota for {{ item.item.name }} is below used space."
+  loop: "{{ k0s_quota_state.results }}"
+
+- name: Apply only changed configured leaf quotas
+  ansible.builtin.command: zfs set quota={{ item.item.quota }} {{ item.item.name }}
+  loop: "{{ k0s_quota_state.results }}"
+  when: item.stdout_lines[1] | int != (item.item.quota | human_to_bytes)
+
+- name: Verify configured leaf quotas
+  ansible.builtin.command: zfs get -Hp -o value quota {{ item.name }}
+  loop:
+    - { name: '{{ k0s_config_dataset }}', quota: '{{ private_cloud.k0s.config_quota }}' }
+    - { name: '{{ k0s_images_dataset }}', quota: '{{ private_cloud.k0s.images_quota }}' }
+    - { name: '{{ k0s_ephemeral_dataset }}', quota: '{{ private_cloud.k0s.ephemeral_quota }}' }
+  register: k0s_quota_checks
+  changed_when: false
+
+- name: Require every k0s leaf quota to be set
+  ansible.builtin.assert:
+    that: item.stdout | trim | int == (item.item.quota | human_to_bytes)
+    fail_msg: "Quota is not set for {{ item.item.name }}."
+  loop: "{{ k0s_quota_checks.results }}"
+
+- name: Check whether the configured k0s binary is present
+  ansible.builtin.stat:
+    path: "{{ k0s_binary_path }}"
+  register: k0s_binary_stat
+
+- name: Download the k0s installer only when the binary is absent
+  ansible.builtin.get_url:
+    url: "{{ k0s_installer_url }}"
+    dest: /run/private-cloud-k0s-installer
+    owner: root
+    group: root
+    mode: '0700'
+    force: true
+  when: not k0s_binary_stat.stat.exists
+
+- name: Install the configured k0s version once
+  ansible.builtin.command: /run/private-cloud-k0s-installer
+  environment:
+    K0S_VERSION: "{{ private_cloud.k0s.version }}"
+  when: not k0s_binary_stat.stat.exists
+
+- name: Remove the temporary k0s installer
+  ansible.builtin.file:
+    path: /run/private-cloud-k0s-installer
+    state: absent
+  when: not k0s_binary_stat.stat.exists
+
+- name: Require the k0s binary after installation
+  ansible.builtin.stat:
+    path: "{{ k0s_binary_path }}"
+  register: k0s_binary_final
+
+- name: Assert that k0s is installed
+  ansible.builtin.assert:
+    that: k0s_binary_final.stat.exists and k0s_binary_final.stat.executable
+    fail_msg: k0s was not installed at the configured path.
+
+- name: Check whether the initial k0s configuration exists
+  ansible.builtin.stat:
+    path: "{{ k0s_config_file }}"
+  register: k0s_config_stat
+
+- name: Generate the initial k0s configuration once
+  ansible.builtin.command: "{{ k0s_binary_path }} config create"
+  register: k0s_generated_config
+  changed_when: true
+  when: not k0s_config_stat.stat.exists
+
+- name: Install the generated k0s configuration
+  ansible.builtin.copy:
+    content: "{{ k0s_generated_config.stdout }}"
+    dest: "{{ k0s_config_file }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when: not k0s_config_stat.stat.exists
+
+- name: Check for the k0s controller service
+  ansible.builtin.command: systemctl list-unit-files --no-legend k0scontroller.service
+  register: k0s_controller_check
+  changed_when: false
+
+- name: Install the k0s controller and worker service once
+  ansible.builtin.command: >-
+    {{ k0s_binary_path }} install controller --enable-worker --no-taints
+    --config={{ k0s_config_file }} --data-dir={{ k0s_config_mountpoint }}
+    --kubelet-root-dir={{ k0s_ephemeral_mountpoint }}
+  when: k0s_controller_check.stdout | trim == ''
+
+- name: Inspect an existing k0s controller service
+  ansible.builtin.command: systemctl cat {{ k0s_controller_service }}
+  register: k0s_existing_controller
+  changed_when: false
+  when: k0s_controller_check.stdout | trim != ''
+
+- name: Require an existing controller to use the managed storage paths
+  ansible.builtin.assert:
+    that:
+      - "'--config={{ k0s_config_file }}' in k0s_existing_controller.stdout"
+      - "'--data-dir={{ k0s_config_mountpoint }}' in k0s_existing_controller.stdout"
+      - "'--kubelet-root-dir={{ k0s_ephemeral_mountpoint }}' in k0s_existing_controller.stdout"
+    fail_msg: The existing k0s controller uses a different storage layout.
+  when: k0s_controller_check.stdout | trim != ''
+
+- name: Ensure the k0s controller ZFS dependencies are managed
+  ansible.builtin.file:
+    path: "{{ k0s_controller_dropin | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Ensure the k0s controller ZFS dependency drop-in is managed
+  ansible.builtin.template:
+    src: controller-zfs.conf.j2
+    dest: "{{ k0s_controller_dropin }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Reload systemd for k0s
+    - Restart k0s controller
+
+- name: Enable and start the k0s controller
+  ansible.builtin.systemd:
+    name: "{{ k0s_controller_service }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply pending k0s service dependency changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify exact k0s mount-unit dependencies
+  ansible.builtin.shell: >-
+    set -eu;
+    requires=$(systemctl show --value -p Requires {{ k0s_controller_service }});
+    after=$(systemctl show --value -p After {{ k0s_controller_service }});
+    for path in {{ k0s_config_mountpoint }} {{ k0s_images_mountpoint }} {{ k0s_ephemeral_mountpoint }}; do
+      unit=$(systemd-escape --path --suffix=mount "$path");
+      grep -Eq "(^| )${unit}( |$)" <<<"$requires";
+      grep -Eq "(^| )${unit}( |$)" <<<"$after";
+    done
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Wait for a Ready k0s node
+  ansible.builtin.command: "{{ k0s_binary_path }} kubectl get nodes --no-headers"
+  register: k0s_node_status
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: k0s_node_status.rc == 0 and ' Ready ' in (' ' ~ k0s_node_status.stdout ~ ' ')
+
+- name: Ensure the runtime kubeconfig directory is root-only
+  ansible.builtin.file:
+    path: "{{ k0s_kubeconfig_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Generate the root-only runtime administrator kubeconfig
+  ansible.builtin.command: "{{ k0s_binary_path }} kubeconfig admin"
+  register: k0s_admin_kubeconfig
+  changed_when: false
+  no_log: true
+
+- name: Install the runtime kubeconfig for subsequent Kubernetes roles
+  ansible.builtin.copy:
+    content: "{{ k0s_admin_kubeconfig.stdout }}"
+    dest: "{{ k0s_kubeconfig_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+
+- name: Expose the runtime kubeconfig path to subsequent roles
+  ansible.builtin.set_fact:
+    private_cloud_kubeconfig_path: "{{ k0s_kubeconfig_path }}"
+
+- name: Verify every k0s runtime mountpoint
+  ansible.builtin.command: mountpoint -q {{ item }}
+  loop:
+    - "{{ k0s_config_mountpoint }}"
+    - "{{ k0s_images_mountpoint }}"
+    - "{{ k0s_ephemeral_mountpoint }}"
+  changed_when: false

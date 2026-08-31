@@ -1,0 +1,28 @@
+private_cloud:
+  stages:
+    zfs: true
+    k0s: true
+    postgres: true
+    zabbix_server: true
+    zabbix_agent: true
+  storage:
+    disks:
+      - /dev/disk/by-id/replace-with-first-disk
+      - /dev/disk/by-id/replace-with-second-disk
+  k0s:
+    version: v1.36.2+k0s.0
+    config_quota: 1G
+    images_quota: 10G
+    ephemeral_quota: 10G
+  postgres:
+    volume_size: 20G
+    max_ram: 2Gi
+  zabbix:
+    storage_size: 5G
+    database_name: zabbix
+    database_username: zabbix
+    server_node_port: 31051
+    web_node_port: 30080
+    hostname: private-cloud-zabbix
+    admin_username: Admin
+    agent_server_active: 127.0.0.1:31051

@@ -1,0 +1,164 @@
+- name: Set Zabbix API endpoint
+  ansible.builtin.set_fact:
+    zabbix_api_url: "http://127.0.0.1:{{ private_cloud.zabbix.web_node_port }}/api_jsonrpc.php"
+
+- name: Authenticate with configured Zabbix administrator
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    body:
+      jsonrpc: '2.0'
+      method: user.login
+      params:
+        username: "{{ private_cloud.zabbix.admin_username }}"
+        password: "{{ private_cloud_secrets.zabbix.admin_password }}"
+        userData: true
+      id: 2
+    status_code: 200
+    return_content: true
+  register: zabbix_configured_login
+  changed_when: false
+  no_log: true
+  failed_when: false
+
+- name: Authenticate with the initial Zabbix administrator
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    body:
+      jsonrpc: '2.0'
+      method: user.login
+      params: {username: Admin, password: zabbix, userData: true}
+      id: 3
+    status_code: 200
+    return_content: true
+  register: zabbix_bootstrap_login
+  when: zabbix_configured_login.json.result is not defined
+  changed_when: false
+  no_log: true
+  failed_when: false
+
+- name: Wait before retrying rejected Zabbix credentials
+  ansible.builtin.pause:
+    seconds: 31
+  when:
+    - zabbix_configured_login.json.result is not defined
+    - zabbix_bootstrap_login.json.result is not defined
+
+- name: Retry configured Zabbix administrator authentication
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    body:
+      jsonrpc: '2.0'
+      method: user.login
+      params:
+        username: "{{ private_cloud.zabbix.admin_username }}"
+        password: "{{ private_cloud_secrets.zabbix.admin_password }}"
+        userData: true
+      id: 6
+    status_code: 200
+    return_content: true
+  register: zabbix_configured_login_retry
+  when:
+    - zabbix_configured_login.json.result is not defined
+    - zabbix_bootstrap_login.json.result is not defined
+  changed_when: false
+  no_log: true
+  failed_when: false
+
+- name: Wait before retrying the initial Zabbix administrator
+  ansible.builtin.pause:
+    seconds: 31
+  when:
+    - zabbix_configured_login.json.result is not defined
+    - zabbix_bootstrap_login.json.result is not defined
+    - zabbix_configured_login_retry.json.result is not defined
+
+- name: Retry initial Zabbix administrator authentication
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    body:
+      jsonrpc: '2.0'
+      method: user.login
+      params: {username: Admin, password: zabbix, userData: true}
+      id: 7
+    status_code: 200
+    return_content: true
+  register: zabbix_bootstrap_login_retry
+  when:
+    - zabbix_configured_login.json.result is not defined
+    - zabbix_bootstrap_login.json.result is not defined
+    - zabbix_configured_login_retry.json.result is not defined
+  changed_when: false
+  no_log: true
+  failed_when: false
+
+- name: Select Zabbix API authentication token
+  ansible.builtin.set_fact:
+    zabbix_login_json: "{{ zabbix_configured_login.json if zabbix_configured_login.json.result is defined else (zabbix_bootstrap_login.json if zabbix_bootstrap_login.json.result is defined else (zabbix_configured_login_retry.json if zabbix_configured_login_retry.json.result is defined else zabbix_bootstrap_login_retry.json)) }}"
+    zabbix_bootstrap_used: "{{ zabbix_configured_login.json.result is not defined and zabbix_configured_login_retry.json.result is not defined }}"
+  no_log: true
+
+- name: Require successful Zabbix API authentication
+  ansible.builtin.assert:
+    that:
+      - zabbix_login_json.result is defined
+      - zabbix_login_json.result.sessionid is defined
+    fail_msg: Zabbix administrator authentication failed.
+  no_log: true
+
+- name: Update the initial administrator when configured credentials differ
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_login_json.result.sessionid }}"}
+    body:
+      jsonrpc: '2.0'
+      method: user.update
+      params:
+        userid: "{{ zabbix_login_json.result.userid }}"
+        username: "{{ private_cloud.zabbix.admin_username }}"
+        passwd: "{{ private_cloud_secrets.zabbix.admin_password }}"
+        current_passwd: zabbix
+      id: 4
+    status_code: 200
+    return_content: true
+  register: zabbix_admin_update
+  when:
+    - zabbix_bootstrap_used | bool
+    - not (private_cloud.zabbix.admin_username == 'Admin' and private_cloud_secrets.zabbix.admin_password == 'zabbix')
+  changed_when: true
+  no_log: true
+  failed_when: zabbix_admin_update.json.error is defined or zabbix_admin_update.json.result is not defined
+
+- name: Re-authenticate with the configured administrator
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    body:
+      jsonrpc: '2.0'
+      method: user.login
+      params: {username: "{{ private_cloud.zabbix.admin_username }}", password: "{{ private_cloud_secrets.zabbix.admin_password }}", userData: true}
+      id: 5
+    status_code: 200
+    return_content: true
+  register: zabbix_relogin
+  when:
+    - zabbix_bootstrap_used | bool
+    - not (private_cloud.zabbix.admin_username == 'Admin' and private_cloud_secrets.zabbix.admin_password == 'zabbix')
+  changed_when: false
+  no_log: true
+  failed_when: zabbix_relogin.json.error is defined or zabbix_relogin.json.result is not defined
+
+- name: Use the final configured API token
+  ansible.builtin.set_fact:
+    zabbix_api_token: "{{ zabbix_relogin.json.result.sessionid if zabbix_relogin is defined and zabbix_relogin.json.result is defined else zabbix_login_json.result.sessionid }}"
+  no_log: true

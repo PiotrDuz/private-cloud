@@ -1,0 +1,101 @@
+---
+- name: Install private cloud
+  hosts: all
+  gather_facts: true
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Remove stale transient cluster credentials
+      ansible.builtin.file:
+        path: /run/private-cloud/kubeconfig
+        state: absent
+      no_log: true
+      tags: [always]
+  tasks:
+    - name: Validate the complete installation contract
+      ansible.builtin.include_role:
+        name: preflight
+        apply:
+          tags: [always, preflight]
+      tags: [always, preflight]
+
+    - name: Run installation stages with credential cleanup
+      block:
+        - name: Show the sanitized installation summary
+          ansible.builtin.debug:
+            var: private_cloud_summary
+          tags: [always, summary]
+
+        - name: Configure OpenZFS storage
+          ansible.builtin.include_role:
+            name: zfs
+            apply:
+              tags: [zfs]
+          when: private_cloud.stages.zfs | bool
+          tags: [zfs]
+
+        - name: Configure k0s
+          ansible.builtin.include_role:
+            name: k0s
+            apply:
+              tags: [k0s]
+          when: private_cloud.stages.k0s | bool
+          tags: [k0s]
+
+        - name: Deploy PostgreSQL
+          ansible.builtin.include_role:
+            name: postgres
+            apply:
+              tags: [postgres]
+          when: private_cloud.stages.postgres | bool
+          tags: [postgres]
+
+        - name: Deploy Zabbix server
+          ansible.builtin.include_role:
+            name: zabbix_server
+            apply:
+              tags: [zabbix, zabbix_server]
+          when: private_cloud.stages.zabbix_server | bool
+          tags: [zabbix, zabbix_server]
+
+        - name: Configure Zabbix agent
+          ansible.builtin.include_role:
+            name: zabbix_agent
+            apply:
+              tags: [zabbix, zabbix_agent]
+          when: private_cloud.stages.zabbix_agent | bool
+          tags: [zabbix, zabbix_agent]
+
+        - name: Verify configured ZFS datasets read-only
+          ansible.builtin.command: zfs list -H -o name tank/secure
+          changed_when: false
+          when: private_cloud.stages.zfs | bool
+          tags: [always, verify]
+
+        - name: Verify the k0s node read-only
+          ansible.builtin.command: k0s kubectl get nodes
+          changed_when: false
+          when: private_cloud.stages.k0s | bool
+          tags: [always, verify]
+
+        - name: Verify the configured host remains reachable
+          ansible.builtin.assert:
+            that:
+              - ansible_facts.os_family in ['Debian', 'Ubuntu']
+              - ansible_facts.effective_user_id == 0
+            fail_msg: The final host verification failed
+          tags: [always, verify]
+
+        - name: Print the summarized Ansible result
+          ansible.builtin.debug:
+            msg:
+              status: completed
+              stages: "{{ private_cloud.stages }}"
+              summary: "{{ private_cloud_summary }}"
+          tags: [always, verify]
+      always:
+        - name: Remove transient cluster credentials
+          ansible.builtin.file:
+            path: /run/private-cloud/kubeconfig
+            state: absent
+          no_log: true
+          tags: [always]

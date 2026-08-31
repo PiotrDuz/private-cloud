@@ -1,0 +1,12 @@
+---
+- name: Run Zabbix API authentication tasks
+  ansible.builtin.import_tasks: api_auth.yml
+
+- name: Run Zabbix API template tasks
+  ansible.builtin.import_tasks: api_templates.yml
+
+- name: Run Zabbix API host tasks
+  ansible.builtin.import_tasks: api_hosts.yml
+
+- name: Run Zabbix API dashboard tasks
+  ansible.builtin.import_tasks: api_dashboard.yml

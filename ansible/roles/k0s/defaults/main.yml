@@ -1,0 +1,18 @@
+---
+# Implementation constants. Desired state is supplied by private_cloud.
+k0s_binary_path: /usr/local/bin/k0s
+k0s_installer_url: https://get.k0s.sh
+k0s_root_dataset: tank/secure
+k0s_config_dataset: tank/secure/backup/k0s/config
+k0s_images_dataset: tank/secure/no-backup/k0s/images
+k0s_ephemeral_dataset: tank/secure/no-backup/k0s/ephemeral
+k0s_services_dataset: tank/secure/backup/k0s/services
+k0s_no_backup_services_dataset: tank/secure/no-backup/k0s/services
+k0s_config_mountpoint: /tank/secure/k0s
+k0s_images_mountpoint: /tank/secure/k0s/containerd
+k0s_ephemeral_mountpoint: /tank/secure/k0s/kubelet
+k0s_config_file: /tank/secure/k0s/k0s.yaml
+k0s_controller_service: k0scontroller.service
+k0s_controller_dropin: /etc/systemd/system/k0scontroller.service.d/zfs.conf
+k0s_namespace: private-cloud
+k0s_kubeconfig_path: /run/private-cloud/kubeconfig

@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ postgres_service_name }}
+  namespace: {{ postgres_namespace }}
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: {{ postgres_image }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - -c
+            - shared_buffers={{ postgres_shared_buffers }}
+            - -c
+            - full_page_writes=off
+            - -c
+            - wal_compression=off
+            - -c
+            - wal_init_zero=off
+            - -c
+            - wal_recycle=off
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ postgres_secret_name }}
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ postgres_secret_name }}
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ postgres_secret_name }}
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_INITDB_ARGS
+              value: --no-data-checksums
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          resources:
+            requests:
+              memory: {{ private_cloud.postgres.max_ram }}
+            limits:
+              memory: {{ private_cloud.postgres.max_ram }}
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - {{ postgres_admin_username | quote }}
+                - -d
+                - {{ postgres_admin_database | quote }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - {{ postgres_admin_username | quote }}
+                - -d
+                - {{ postgres_admin_database | quote }}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: {{ postgres_pvc_name }}

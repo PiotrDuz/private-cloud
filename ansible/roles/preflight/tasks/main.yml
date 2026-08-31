@@ -1,0 +1,493 @@
+---
+- name: Require supported Debian-family target
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution in ['Ubuntu', 'Debian']
+    fail_msg: The target must be Ubuntu or Debian
+
+- name: Require root execution
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.effective_user_id | int == 0
+    fail_msg: Ansible must run with effective UID 0
+
+- name: Require the public contract sections
+  ansible.builtin.assert:
+    that:
+      - private_cloud is mapping
+      - (private_cloud.keys() | list | difference(['stages', 'storage', 'k0s', 'postgres', 'zabbix']) | length) == 0
+      - (['stages', 'storage', 'k0s', 'postgres', 'zabbix'] | difference(private_cloud.keys() | list) | length) == 0
+    fail_msg: Public configuration has missing or unknown sections
+
+- name: Require exact nested public schema
+  ansible.builtin.assert:
+    that:
+      - (private_cloud.stages.keys() | list | sort) == ['k0s', 'postgres', 'zabbix_agent', 'zabbix_server', 'zfs']
+      - (private_cloud.storage.keys() | list) == ['disks']
+      - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'images_quota', 'version']
+      - (private_cloud.postgres.keys() | list | sort) == ['max_ram', 'volume_size']
+      - (private_cloud.zabbix.keys() | list | sort) == ['admin_username', 'agent_server_active', 'database_name', 'database_username', 'hostname', 'server_node_port', 'storage_size', 'web_node_port']
+    fail_msg: Public configuration has missing or unknown nested keys
+
+- name: Require exact encrypted schema
+  ansible.builtin.assert:
+    that:
+      - private_cloud_secrets is mapping
+      - (private_cloud_secrets.keys() | list | sort) == ['postgres', 'storage', 'zabbix']
+      - (private_cloud_secrets.storage.keys() | list) == ['encryption_passphrase']
+      - (private_cloud_secrets.postgres.keys() | list) == ['admin_password']
+      - (private_cloud_secrets.zabbix.keys() | list | sort) == ['admin_password', 'database_password']
+    fail_msg: Encrypted configuration has missing or unknown nested keys
+    no_log: true
+
+- name: Require Boolean stage flags
+  ansible.builtin.assert:
+    that:
+      - private_cloud.stages[item] is boolean
+    loop: [zfs, k0s, postgres, zabbix_server, zabbix_agent]
+    fail_msg: Every stage flag must be Boolean
+
+- name: Require stage dependencies
+  ansible.builtin.assert:
+    that:
+      - not private_cloud.stages.k0s or private_cloud.stages.zfs
+      - not private_cloud.stages.postgres or private_cloud.stages.k0s
+      - not private_cloud.stages.zabbix_server or private_cloud.stages.postgres
+      - not private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
+    fail_msg: Enabled stages must follow the dependency chain
+
+- name: Require Ubuntu for the Zabbix Agent stage
+  ansible.builtin.assert:
+    that: ansible_facts.distribution == 'Ubuntu'
+    fail_msg: The Zabbix Agent stage requires Ubuntu
+  when: private_cloud.stages.zabbix_agent | bool
+
+- name: Require k0s values
+  ansible.builtin.assert:
+    that:
+      - private_cloud.k0s.version is string
+      - private_cloud.k0s.version | length > 0
+      - private_cloud.k0s.config_quota is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.k0s.images_quota is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.k0s.ephemeral_quota is match('^[1-9][0-9]*[KMGTPE]$')
+    fail_msg: k0s configuration is invalid
+
+- name: Require PostgreSQL values
+  ansible.builtin.assert:
+    that:
+      - private_cloud.postgres.volume_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.postgres.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+    fail_msg: PostgreSQL size configuration is invalid
+
+- name: Require Zabbix values
+  ansible.builtin.assert:
+    that:
+      - private_cloud.zabbix.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.zabbix.database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - private_cloud.zabbix.database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - private_cloud.zabbix.database_name | lower not in ['postgres', 'template0', 'template1']
+      - private_cloud.zabbix.database_username | lower not in ['postgres', 'replication']
+      - (private_cloud.zabbix.database_username | lower) is not match('^pg_')
+      - private_cloud.zabbix.hostname is string
+      - private_cloud.zabbix.hostname | length > 0
+      - private_cloud.zabbix.hostname | length <= 128
+      - private_cloud.zabbix.hostname is match('^[^\r\n]+$')
+      - private_cloud.zabbix.admin_username is string
+      - private_cloud.zabbix.admin_username | length > 0
+      - private_cloud.zabbix.admin_username is match('^[^\r\n]+$')
+      - private_cloud.zabbix.agent_server_active is match('^[^\s,:]+(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$')
+      - private_cloud.zabbix.server_node_port is integer
+      - private_cloud.zabbix.web_node_port is integer
+      - private_cloud.zabbix.server_node_port >= 30000
+      - private_cloud.zabbix.server_node_port <= 32767
+      - private_cloud.zabbix.web_node_port >= 30000
+      - private_cloud.zabbix.web_node_port <= 32767
+      - private_cloud.zabbix.server_node_port != private_cloud.zabbix.web_node_port
+    fail_msg: Zabbix configuration is invalid
+
+- name: Require storage disk contract when ZFS is enabled
+  ansible.builtin.set_fact:
+    preflight_unique_disks: "{{ private_cloud.storage.disks | unique | list }}"
+  when: private_cloud.stages.zfs | bool
+
+- name: Validate storage disk contract when ZFS is enabled
+  ansible.builtin.assert:
+    that:
+      - private_cloud.storage.disks is sequence
+      - private_cloud.storage.disks is not string
+      - private_cloud.storage.disks | length >= 2
+      - preflight_unique_disks | length == private_cloud.storage.disks | length
+      - item is string
+      - item is match('^/dev/disk/by-id/')
+    loop: "{{ private_cloud.storage.disks }}"
+    when: private_cloud.stages.zfs | bool
+    fail_msg: ZFS disks must be unique stable /dev/disk/by-id paths
+
+- name: Require storage secret when ZFS is enabled
+  ansible.builtin.assert:
+    that:
+      - private_cloud_secrets is mapping
+      - private_cloud_secrets.storage.encryption_passphrase is string
+      - private_cloud_secrets.storage.encryption_passphrase | length > 0
+    when: private_cloud.stages.zfs | bool
+    no_log: true
+    fail_msg: Required encrypted secrets are missing
+
+- name: Require PostgreSQL secret when PostgreSQL is enabled
+  ansible.builtin.assert:
+    that:
+      - private_cloud_secrets.postgres.admin_password is string
+      - private_cloud_secrets.postgres.admin_password | length > 0
+    when: private_cloud.stages.postgres | bool
+    no_log: true
+    fail_msg: Required encrypted secrets are missing
+
+- name: Require Zabbix secrets when Zabbix server is enabled
+  ansible.builtin.assert:
+    that:
+      - private_cloud_secrets.zabbix.database_password is string
+      - private_cloud_secrets.zabbix.database_password | length > 0
+      - private_cloud_secrets.zabbix.admin_password is string
+      - private_cloud_secrets.zabbix.admin_password | length > 0
+    when: private_cloud.stages.zabbix_server | bool
+    no_log: true
+    fail_msg: Required encrypted secrets are missing
+
+- name: Require a valid ZFS passphrase
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - import sys; print(len(sys.stdin.buffer.read()))
+    stdin: "{{ private_cloud_secrets.storage.encryption_passphrase }}"
+    stdin_add_newline: false
+  register: preflight_passphrase_bytes
+  changed_when: false
+  no_log: true
+  when: private_cloud.stages.zfs | bool
+
+- name: Require a valid ZFS passphrase byte length
+  ansible.builtin.assert:
+    that:
+      - preflight_passphrase_bytes.stdout | int >= 8
+      - preflight_passphrase_bytes.stdout | int <= 512
+    when: private_cloud.stages.zfs | bool
+    no_log: true
+
+- name: Check for an existing tank pool
+  ansible.builtin.command: zpool list -H -o name tank
+  register: preflight_tank
+  changed_when: false
+  failed_when: false
+
+- name: Check for the managed encrypted root dataset
+  ansible.builtin.command: zfs list -H -o name tank/secure
+  register: preflight_secure
+  changed_when: false
+  failed_when: false
+
+- name: Inspect the partial ZFS creation marker
+  ansible.builtin.stat:
+    path: /var/lib/private-cloud/zfs-create-intent.json
+    follow: false
+  register: preflight_create_intent_stat
+  when: private_cloud.stages.zfs | bool
+
+- name: Require a safe partial ZFS creation marker when present
+  ansible.builtin.assert:
+    that:
+      - not (preflight_create_intent_stat.stat.islnk | default(false))
+      - preflight_create_intent_stat.stat.isreg | default(false)
+      - preflight_create_intent_stat.stat.uid | int == 0
+      - preflight_create_intent_stat.stat.mode == '0600'
+    fail_msg: The partial ZFS creation marker must be a root-owned regular 0600 file.
+  when:
+    - private_cloud.stages.zfs | bool
+    - preflight_create_intent_stat.stat.exists | default(false) or preflight_create_intent_stat.stat.islnk | default(false)
+
+- name: Read the partial ZFS creation marker
+  ansible.builtin.slurp:
+    src: /var/lib/private-cloud/zfs-create-intent.json
+  register: preflight_create_intent_content
+  when:
+    - private_cloud.stages.zfs | bool
+    - preflight_create_intent_stat.stat.exists
+    - preflight_create_intent_stat.stat.isreg
+    - not preflight_create_intent_stat.stat.islnk
+
+- name: Parse the partial ZFS creation marker
+  ansible.builtin.set_fact:
+    preflight_create_intent: "{{ preflight_create_intent_content.content | b64decode | from_json }}"
+  when: preflight_create_intent_content is defined and preflight_create_intent_content.content is defined
+
+- name: Match the partial ZFS creation marker to the current contract
+  ansible.builtin.set_fact:
+    preflight_create_intent_matches: >-
+      {{ (preflight_create_intent | default({})) ==
+         {'pool': 'tank', 'topology': 'raidz1', 'disks': private_cloud.storage.disks} }}
+  when: private_cloud.stages.zfs | bool
+
+- name: Validate an existing tank pool layout read-only
+  ansible.builtin.shell: >-
+    set -eu;
+    status=$(zpool status -P -L tank);
+    vdevs=$(printf '%s\n' "$status" | awk '$1 ~ /^(mirror|raidz[0-9]+|draid|spares|logs|cache|special|dedup)/ {print $1}');
+    test "$(printf '%s\n' "$vdevs" | sed '/^$/d' | wc -l)" -eq 1;
+    printf '%s\n' "$vdevs" | grep -Eq '^raidz1(-[0-9]+)?$';
+    actual=$(printf '%s\n' "$status" | awk '$1 ~ /^\/dev\// && $2 == "ONLINE" {print $1}' | while read -r member; do readlink -f "$member"; done | sort);
+    expected=$(for disk in {{ private_cloud.storage.disks | map('quote') | join(' ') }}; do readlink -f "$disk"; done | sort);
+    test -n "$actual";
+    test "$actual" = "$expected"
+  args:
+    executable: /bin/bash
+  register: preflight_pool_layout
+  changed_when: false
+  failed_when: false
+  when:
+    - private_cloud.stages.zfs | bool
+    - preflight_tank.rc == 0
+    - preflight_secure.rc != 0
+    - preflight_create_intent_matches | default(false) | bool
+
+- name: Check native OpenZFS mount generator availability
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /usr/lib/systemd/system-generators/zfs-mount-generator
+    - /lib/systemd/system-generators/zfs-mount-generator
+  register: preflight_mount_generator
+  when: private_cloud.stages.zfs | bool
+
+- name: Inspect the OpenZFS candidate package for the native generator
+  ansible.builtin.shell: >-
+    set -eu;
+    if test -x /usr/lib/systemd/system-generators/zfs-mount-generator || test -x /lib/systemd/system-generators/zfs-mount-generator; then exit 0; fi;
+    work=$(mktemp -d /run/private-cloud/zfs-package.XXXXXX);
+    trap 'rm -rf "$work"' EXIT;
+    (cd "$work" && apt-get download zfsutils-linux >/dev/null 2>&1);
+    deb=$(find "$work" -maxdepth 1 -type f -name 'zfsutils-linux_*.deb' -print -quit);
+    test -n "$deb";
+    dpkg-deb --contents "$deb" | awk '$1 ~ /^-..x/ && $6 ~ /(^|\/)systemd\/system-generators\/zfs-mount-generator$/ { found=1 } END { exit found ? 0 : 1 }'
+  register: preflight_zfs_package
+  changed_when: false
+  failed_when: false
+  when: private_cloud.stages.zfs | bool
+
+- name: Require native OpenZFS mount generation
+  ansible.builtin.assert:
+    that:
+      - (preflight_mount_generator.results | selectattr('stat.executable') | list | length) > 0 or preflight_zfs_package.rc == 0
+    fail_msg: zfsutils-linux must provide an executable zfs-mount-generator
+  when: private_cloud.stages.zfs | bool
+
+- name: Check required repository assets on the controller
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ playbook_dir }}/../zabbix/zabbix-zfs-collector.py"
+    - "{{ playbook_dir }}/../zabbix/zabbix-memory-ecc-collector.py"
+    - "{{ playbook_dir }}/../zabbix/zabbix-smartctl-wrapper"
+    - "{{ playbook_dir }}/../zabbix/zabbix-zfs-template.yaml"
+    - "{{ playbook_dir }}/../zabbix/zabbix-memory-ecc-template.yaml"
+  delegate_to: localhost
+  register: preflight_assets
+  when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
+
+- name: Require repository assets
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+    loop: "{{ preflight_assets.results | default([]) }}"
+    when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
+    fail_msg: A required repository runtime asset is missing
+
+- name: Require executable collector assets
+  ansible.builtin.assert:
+    that:
+      - preflight_assets.results[0].stat.executable
+      - preflight_assets.results[1].stat.executable
+      - preflight_assets.results[2].stat.executable
+      - not preflight_assets.results[3].stat.executable
+      - not preflight_assets.results[4].stat.executable
+    when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
+    fail_msg: Repository asset modes do not match the runtime contract
+
+- name: Extract repository template UUID values
+  ansible.builtin.set_fact:
+    preflight_template_uuids: "{{ (preflight_template_uuids | default([])) + (lookup('file', item) | regex_findall('(?m)^\\s*-?\\s*uuid:\\s*([0-9a-fA-F-]+)\\s*$')) }}"
+  loop:
+    - "{{ playbook_dir }}/../zabbix/zabbix-zfs-template.yaml"
+    - "{{ playbook_dir }}/../zabbix/zabbix-memory-ecc-template.yaml"
+  delegate_to: localhost
+  when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
+
+- name: Require unique UUIDv4-compatible template identifiers
+  ansible.builtin.set_fact:
+    preflight_unique_template_uuids: "{{ preflight_template_uuids | unique | list }}"
+  when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
+
+- name: Validate unique UUIDv4-compatible template identifiers
+  ansible.builtin.assert:
+    that:
+      - preflight_unique_template_uuids | length == preflight_template_uuids | length
+      - item is match('^[0-9a-fA-F]{12}4[0-9a-fA-F]{3}[89abAB][0-9a-fA-F]{3}[0-9a-fA-F]{12}$') or item is match('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+    loop: "{{ preflight_template_uuids | default([]) }}"
+    when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
+    fail_msg: Repository template UUIDs must be unique UUIDv4-compatible values
+
+- name: Require initial destructive authorization when applicable
+  ansible.builtin.assert:
+    that:
+      - private_cloud_runtime.initial_install | default(false) | bool
+      - private_cloud_runtime.storage_create_confirmation | default('') == 'CREATE tank'
+    fail_msg: Initial pool creation requires the exact CREATE tank confirmation
+  when:
+    - private_cloud.stages.zfs | bool
+    - preflight_tank.rc != 0
+  no_log: true
+
+- name: Reject an existing pool during an initial installation
+  ansible.builtin.assert:
+    that:
+      - not (private_cloud_runtime.initial_install | default(false) | bool)
+      - >-
+        preflight_secure.rc == 0 or
+        ((preflight_create_intent_matches | default(false) | bool) and
+         (preflight_pool_layout.rc | default(1) | int == 0))
+    fail_msg: Existing tank must contain the managed tank/secure dataset and cannot be adopted during initial migration
+  when:
+    - private_cloud.stages.zfs | bool
+    - preflight_tank.rc == 0
+
+- name: Check ZFS command availability when storage is disabled
+  ansible.builtin.command: zfs version
+  register: preflight_zfs_version
+  changed_when: false
+  failed_when: false
+  when: not private_cloud.stages.zfs | bool
+
+- name: Check stable disks before initial pool creation
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: true
+  loop: "{{ private_cloud.storage.disks }}"
+  register: preflight_disk_stats
+  when:
+    - private_cloud.stages.zfs | bool
+    - private_cloud_runtime.initial_install | default(false) | bool
+
+- name: Require whole block devices
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isblk
+    loop: "{{ preflight_disk_stats.results | default([]) }}"
+    when:
+      - private_cloud.stages.zfs | bool
+      - private_cloud_runtime.initial_install | default(false) | bool
+    fail_msg: Every selected disk must resolve to a whole block device
+
+- name: Inspect selected disks recursively and read-only
+  ansible.builtin.shell: >-
+    set -eu;
+    test "$(lsblk -dnro TYPE {{ item | quote }})" = disk;
+    test -z "$(lsblk -nrpo MOUNTPOINT {{ item | quote }} | sed '/^$/d')";
+    test -z "$(lsblk -nrpo FSTYPE {{ item | quote }} | grep -Fx swap)";
+    for device in $(lsblk -nrpo NAME {{ item | quote }}); do
+      test -z "$(swapon --noheadings --raw --show=NAME | grep -Fx -- "$device")";
+      kname=$(basename "$device");
+      test -z "$(find /sys/class/block/$kname/holders -mindepth 1 -maxdepth 1 -print -quit)";
+      resolved_device=$(readlink -f "$device");
+      if command -v zpool >/dev/null 2>&1; then
+        for member in $(zpool status -LP 2>/dev/null | awk '$1 ~ /^\/dev\// {print $1}'); do
+          test "$(readlink -f "$member")" != "$resolved_device";
+        done;
+      fi;
+    done;
+  args:
+    executable: /bin/bash
+  loop: "{{ private_cloud.storage.disks }}"
+  register: preflight_disk_safety
+  changed_when: false
+  failed_when: false
+  when:
+    - private_cloud.stages.zfs | bool
+    - private_cloud_runtime.initial_install | default(false) | bool
+
+- name: Require selected disks to be inactive
+  ansible.builtin.assert:
+    that: item.rc == 0
+    fail_msg: A selected disk is mounted, active swap, held, or in an imported pool
+  loop: "{{ preflight_disk_safety.results | default([]) }}"
+  when:
+    - private_cloud.stages.zfs | bool
+    - private_cloud_runtime.initial_install | default(false) | bool
+
+- name: Build fixed derived layout
+  ansible.builtin.set_fact:
+    private_cloud_layout:
+      pool: tank
+      pool_mountpoint: /tank
+      secure_dataset: tank/secure
+      secure_mountpoint: /tank/secure
+      backup_dataset: tank/secure/backup
+      no_backup_dataset: tank/secure/no-backup
+      k0s_config_dataset: tank/secure/backup/k0s/config
+      k0s_images_dataset: tank/secure/no-backup/k0s/images
+      k0s_ephemeral_dataset: tank/secure/no-backup/k0s/ephemeral
+      service_dataset_parent: tank/secure/backup/k0s/services
+      kubernetes_namespace: private-cloud
+      service_pv_capacity: 10Ti
+      postgres_dataset: tank/secure/backup/k0s/services/postgres
+      zabbix_dataset: tank/secure/backup/k0s/services/zabbix
+
+- name: Check existing quota-bearing datasets without requiring a fresh host layout
+  ansible.builtin.command: zfs get -Hp -o value used {{ item.dataset }}
+  loop:
+    - { dataset: 'tank/secure/backup/k0s/config', quota: '{{ private_cloud.k0s.config_quota }}' }
+    - { dataset: 'tank/secure/no-backup/k0s/images', quota: '{{ private_cloud.k0s.images_quota }}' }
+    - { dataset: 'tank/secure/no-backup/k0s/ephemeral', quota: '{{ private_cloud.k0s.ephemeral_quota }}' }
+    - { dataset: 'tank/secure/backup/k0s/services/postgres', quota: '{{ private_cloud.postgres.volume_size }}' }
+    - { dataset: 'tank/secure/backup/k0s/services/zabbix', quota: '{{ private_cloud.zabbix.storage_size }}' }
+  register: preflight_existing_usage
+  changed_when: false
+  failed_when: false
+
+- name: Reject quota reductions below existing usage
+  ansible.builtin.assert:
+    that:
+      - >-
+        (item.item.quota[:-1] | int) * (1024 ** {'K': 1, 'M': 2, 'G': 3, 'T': 4, 'P': 5, 'E': 6}[item.item.quota[-1:]]) >= item.stdout | int
+    loop: "{{ preflight_existing_usage.results }}"
+    when: item.rc == 0 and item.stdout | trim != '-'
+    fail_msg: A configured dataset quota cannot be reduced below existing usage
+
+- name: Calculate PostgreSQL derived memory value
+  ansible.builtin.set_fact:
+    private_cloud_shared_buffers: >-
+      {{ ((private_cloud.postgres.max_ram[:-2] | int) * {'Ki': 1, 'Mi': 1024, 'Gi': 1048576, 'Ti': 1073741824}[private_cloud.postgres.max_ram[-2:]] // 2 // 1024) }}MB
+
+- name: Require minimum PostgreSQL shared buffers
+  ansible.builtin.assert:
+    that:
+      - private_cloud_shared_buffers[:-2] | int >= 128
+    fail_msg: PostgreSQL max_ram must provide at least 128 MiB shared buffers
+
+- name: Build sanitized installation summary
+  ansible.builtin.set_fact:
+    private_cloud_summary:
+      stages: "{{ private_cloud.stages }}"
+      disks: "{{ private_cloud.storage.disks }}"
+      k0s: "{{ private_cloud.k0s }}"
+      postgres:
+        volume_size: "{{ private_cloud.postgres.volume_size }}"
+        max_ram: "{{ private_cloud.postgres.max_ram }}"
+        shared_buffers: "{{ private_cloud_shared_buffers }}"
+      zabbix: "{{ private_cloud.zabbix }}"
+      secrets:
+        storage_encryption_passphrase: configured
+        postgres_admin_password: configured
+        zabbix_database_password: configured
+        zabbix_admin_password: configured
+      layout: "{{ private_cloud_layout }}"

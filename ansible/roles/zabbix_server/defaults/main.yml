@@ -1,0 +1,33 @@
+---
+zabbix_namespace: private-cloud
+zabbix_database_secret_name: zabbix-postgres-credentials
+zabbix_dataset: tank/secure/backup/k0s/services/zabbix
+zabbix_dataset_mountpoint: /tank/secure/backup/k0s/services/zabbix
+zabbix_pv_name: zabbix-server-data
+zabbix_pvc_name: zabbix-server-data
+zabbix_pv_capacity: 10Ti
+zabbix_postgres_service: postgres
+zabbix_kubeconfig: /run/private-cloud/kubeconfig
+zabbix_server_image: zabbix/zabbix-server-pgsql:ubuntu-7.4.12
+zabbix_web_image: zabbix/zabbix-web-nginx-pgsql:ubuntu-7.4.12
+zabbix_host_group: Private cloud
+zabbix_dashboard_name: Private cloud ZFS storage
+zabbix_template_choices:
+  - [Linux by Zabbix agent active]
+  - [SMART by Zabbix agent active 2, SMART by Zabbix agent 2 active]
+  - [ZFS by Zabbix agent active]
+  - [Memory ECC by Zabbix agent active]
+zabbix_storage_leaf_names: [config, images, ephemeral, postgres, zabbix]
+zabbix_storage_colors: [42A5F5, 66BB6A, FFA726, AB47BC, EF5350]
+zabbix_storage_used_keys:
+  - 'zfs.dataset.used["config"]'
+  - 'zfs.dataset.used["images"]'
+  - 'zfs.dataset.used["ephemeral"]'
+  - 'zfs.dataset.used["postgres"]'
+  - 'zfs.dataset.used["zabbix"]'
+zabbix_storage_utilization_keys:
+  - 'zfs.dataset.utilization["config"]'
+  - 'zfs.dataset.utilization["images"]'
+  - 'zfs.dataset.utilization["ephemeral"]'
+  - 'zfs.dataset.utilization["postgres"]'
+  - 'zfs.dataset.utilization["zabbix"]'

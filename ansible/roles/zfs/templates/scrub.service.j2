@@ -1,0 +1,8 @@
+[Unit]
+Description=Run monthly ZFS scrub for tank
+Requires=zfs-mount.service
+After=zfs-mount.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/zpool scrub tank

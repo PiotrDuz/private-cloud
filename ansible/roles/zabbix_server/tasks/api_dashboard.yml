@@ -1,0 +1,238 @@
+- name: Find monitored host storage items
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body:
+      jsonrpc: '2.0'
+      method: item.get
+      params:
+        output: [itemid, key_]
+        hostids: ["{{ zabbix_host_id }}"]
+        filter:
+          key_:
+            - 'zfs.dataset.used["config"]'
+            - 'zfs.dataset.utilization["config"]'
+            - 'zfs.dataset.used["images"]'
+            - 'zfs.dataset.utilization["images"]'
+            - 'zfs.dataset.used["ephemeral"]'
+            - 'zfs.dataset.utilization["ephemeral"]'
+            - 'zfs.dataset.used["postgres"]'
+            - 'zfs.dataset.utilization["postgres"]'
+            - 'zfs.dataset.used["zabbix"]'
+            - 'zfs.dataset.utilization["zabbix"]'
+      id: 17
+    status_code: 200
+    return_content: true
+  register: zabbix_storage_items
+  changed_when: false
+  no_log: true
+  failed_when: zabbix_storage_items.json.error is defined or zabbix_storage_items.json.result is not defined
+
+- name: Build the storage item lookup
+  ansible.builtin.set_fact:
+    zabbix_storage_item_map: "{{ (zabbix_storage_item_map | default({})) | combine({item.key_: item.itemid}) }}"
+  loop: "{{ zabbix_storage_items.json.result }}"
+
+- name: Require every storage item for the dashboard
+  ansible.builtin.assert:
+    that:
+      - zabbix_storage_item_map[zabbix_storage_used_keys[index]] is defined
+      - zabbix_storage_item_map[zabbix_storage_utilization_keys[index]] is defined
+    fail_msg: "Storage dashboard item keys are missing for {{ item }}."
+  loop: "{{ zabbix_storage_leaf_names }}"
+  loop_control:
+    index_var: index
+
+- name: Initialize the utilization widget fields
+  ansible.builtin.set_fact:
+    zabbix_utilization_fields:
+      - {type: 3, name: hostids.0, value: "{{ zabbix_host_id }}"}
+      - {type: 0, name: layout, value: 1}
+      - {type: 0, name: show_problems, value: 1}
+      - {type: 0, name: item_ordering_order_by, value: 3}
+      - {type: 0, name: item_ordering_order, value: 2}
+      - {type: 0, name: item_ordering_limit, value: 5}
+      - {type: 0, name: columns.0.display, value: 2}
+      - {type: 1, name: columns.0.min, value: '0'}
+      - {type: 1, name: columns.0.max, value: '100'}
+      - {type: 1, name: columns.0.base_color, value: 42A5F5}
+      - {type: 1, name: columns.0.thresholds.0.color, value: FFB300}
+      - {type: 1, name: columns.0.thresholds.0.threshold, value: '80'}
+      - {type: 1, name: columns.0.thresholds.1.color, value: E53935}
+      - {type: 1, name: columns.0.thresholds.1.threshold, value: '90'}
+      - {type: 0, name: columns.0.decimal_places, value: 1}
+
+- name: Add utilization fields for each leaf dataset
+  ansible.builtin.set_fact:
+    zabbix_utilization_fields: "{{ zabbix_utilization_fields + [{'type': 1, 'name': 'columns.0.items.' ~ index, 'value': 'Dataset ' ~ item ~ ': Utilization'}] }}"
+  loop: "{{ zabbix_storage_leaf_names }}"
+  loop_control:
+    index_var: index
+
+- name: Initialize the allocation widget fields
+  ansible.builtin.set_fact:
+    zabbix_allocation_fields:
+      - {type: 0, name: ds.0.dataset_type, value: 0}
+      - {type: 0, name: draw_type, value: 0}
+      - {type: 0, name: legend, value: 1}
+      - {type: 0, name: legend_value, value: 1}
+      - {type: 0, name: legend_lines_mode, value: 1}
+      - {type: 0, name: legend_lines, value: 5}
+
+- name: Add allocation fields for each leaf dataset
+  ansible.builtin.set_fact:
+    zabbix_allocation_fields: "{{ zabbix_allocation_fields + [{'type': 4, 'name': 'ds.0.itemids.' ~ index, 'value': zabbix_storage_item_map[zabbix_storage_used_keys[index]]}, {'type': 1, 'name': 'ds.0.color.' ~ index, 'value': zabbix_storage_colors[index]}, {'type': 0, 'name': 'ds.0.type.' ~ index, 'value': 0}] }}"
+  loop: "{{ zabbix_storage_leaf_names }}"
+  loop_control:
+    index_var: index
+
+- name: Build the legacy storage dashboard pages
+  ansible.builtin.set_fact:
+    zabbix_dashboard_pages:
+      - name: Dataset capacity
+        widgets:
+          - {type: topitems, name: Leaf datasets by quota utilization, x: 0, y: 0, width: 36, height: 8, view_mode: 0, fields: "{{ zabbix_utilization_fields }}"}
+          - {type: piechart, name: Current leaf dataset allocation, x: 36, y: 0, width: 36, height: 8, view_mode: 0, fields: "{{ zabbix_allocation_fields }}"}
+
+- name: Find the storage dashboard
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body: {jsonrpc: '2.0', method: dashboard.get, params: {output: [dashboardid, name], selectPages: extend, filter: {name: ["{{ zabbix_dashboard_name }}"]}}, id: 18}
+    status_code: 200
+    return_content: true
+  register: zabbix_dashboard_get
+  changed_when: false
+  no_log: true
+  failed_when: zabbix_dashboard_get.json.error is defined or zabbix_dashboard_get.json.result is not defined
+
+- name: Select the managed storage dashboard page
+  ansible.builtin.set_fact:
+    zabbix_existing_dashboard_page: >-
+      {{ (((zabbix_dashboard_get.json.result | first | default({})).get('pages', []))
+          | selectattr('name', 'equalto', 'Dataset capacity') | list | first) | default({}) }}
+
+- name: Select the managed storage dashboard widgets
+  ansible.builtin.set_fact:
+    zabbix_existing_dashboard_widgets: "{{ zabbix_existing_dashboard_page.widgets | default([]) }}"
+
+- name: Normalize managed dashboard state
+  ansible.builtin.set_fact:
+    zabbix_existing_utilization_widget: "{{ (zabbix_existing_dashboard_widgets | selectattr('name', 'equalto', 'Leaf datasets by quota utilization') | list | first) | default({}) }}"
+    zabbix_existing_allocation_widget: "{{ (zabbix_existing_dashboard_widgets | selectattr('name', 'equalto', 'Current leaf dataset allocation') | list | first) | default({}) }}"
+
+- name: Normalize desired utilization field scalars
+  ansible.builtin.set_fact:
+    zabbix_desired_utilization_semantic_fields: "{{ (zabbix_desired_utilization_semantic_fields | default([])) + [{'type': (item.type | string), 'name': (item.name | string), 'value': (item.value | string)}] }}"
+  loop: "{{ zabbix_utilization_fields }}"
+
+- name: Normalize desired allocation field scalars
+  ansible.builtin.set_fact:
+    zabbix_desired_allocation_semantic_fields: "{{ (zabbix_desired_allocation_semantic_fields | default([])) + [{'type': (item.type | string), 'name': (item.name | string), 'value': (item.value | string)}] }}"
+  loop: "{{ zabbix_allocation_fields }}"
+
+- name: Normalize existing utilization field scalars
+  ansible.builtin.set_fact:
+    zabbix_existing_utilization_semantic_fields: "{{ (zabbix_existing_utilization_semantic_fields | default([])) + [{'type': (item.type | default('') | string), 'name': (item.name | default('') | string), 'value': (item.value | default('') | string)}] }}"
+  loop: "{{ zabbix_existing_utilization_widget.fields | default([]) }}"
+
+- name: Normalize existing allocation field scalars
+  ansible.builtin.set_fact:
+    zabbix_existing_allocation_semantic_fields: "{{ (zabbix_existing_allocation_semantic_fields | default([])) + [{'type': (item.type | default('') | string), 'name': (item.name | default('') | string), 'value': (item.value | default('') | string)}] }}"
+  loop: "{{ zabbix_existing_allocation_widget.fields | default([]) }}"
+
+- name: Decide whether the storage dashboard needs an update
+  ansible.builtin.set_fact:
+    zabbix_dashboard_needs_update: >-
+      {{ zabbix_dashboard_get.json.result | length == 0 or
+         zabbix_existing_dashboard_page | length == 0 or
+         zabbix_existing_dashboard_widgets | length != 2 or
+         (zabbix_existing_utilization_widget.type | default('') | string) != 'topitems' or
+         (zabbix_existing_utilization_widget.name | default('') | string) != 'Leaf datasets by quota utilization' or
+         (zabbix_existing_utilization_widget.x | default('') | string) != '0' or
+         (zabbix_existing_utilization_widget.y | default('') | string) != '0' or
+         (zabbix_existing_utilization_widget.width | default('') | string) != '36' or
+         (zabbix_existing_utilization_widget.height | default('') | string) != '8' or
+         (zabbix_existing_utilization_widget.view_mode | default('') | string) != '0' or
+         (zabbix_existing_utilization_semantic_fields | sort(attribute='name')) != (zabbix_desired_utilization_semantic_fields | sort(attribute='name')) or
+         (zabbix_existing_allocation_widget.type | default('') | string) != 'piechart' or
+         (zabbix_existing_allocation_widget.name | default('') | string) != 'Current leaf dataset allocation' or
+         (zabbix_existing_allocation_widget.x | default('') | string) != '36' or
+         (zabbix_existing_allocation_widget.y | default('') | string) != '0' or
+         (zabbix_existing_allocation_widget.width | default('') | string) != '36' or
+         (zabbix_existing_allocation_widget.height | default('') | string) != '8' or
+         (zabbix_existing_allocation_widget.view_mode | default('') | string) != '0' or
+         (zabbix_existing_allocation_semantic_fields | sort(attribute='name')) != (zabbix_desired_allocation_semantic_fields | sort(attribute='name')) }}
+
+- name: Create the storage dashboard
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body:
+      jsonrpc: '2.0'
+      method: dashboard.create
+      params:
+        name: "{{ zabbix_dashboard_name }}"
+        private: 0
+        display_period: 30
+        auto_start: 0
+        pages: "{{ zabbix_dashboard_pages }}"
+      id: 19
+    status_code: 200
+  when: zabbix_dashboard_get.json.result | length == 0
+  changed_when: true
+  no_log: true
+  register: zabbix_dashboard_create
+  failed_when: zabbix_dashboard_create.json.error is defined or zabbix_dashboard_create.json.result is not defined
+
+- name: Update the storage dashboard
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body:
+      jsonrpc: '2.0'
+      method: dashboard.update
+      params:
+        dashboardid: "{{ zabbix_dashboard_get.json.result[0].dashboardid }}"
+        name: "{{ zabbix_dashboard_name }}"
+        private: 0
+        display_period: 30
+        auto_start: 0
+        pages: "{{ zabbix_dashboard_pages }}"
+      id: 19
+    status_code: 200
+  when:
+    - zabbix_dashboard_get.json.result | length > 0
+    - zabbix_dashboard_needs_update | bool
+  changed_when: true
+  no_log: true
+  register: zabbix_dashboard_update
+  failed_when: zabbix_dashboard_update.json.error is defined or zabbix_dashboard_update.json.result is not defined
+
+- name: Verify the storage dashboard mutation result
+  ansible.builtin.assert:
+    that:
+      - zabbix_dashboard_create.skipped | default(false) or zabbix_dashboard_create.json.result.dashboardids | length > 0
+      - zabbix_dashboard_update.skipped | default(false) or zabbix_dashboard_update.json.result is defined
+    fail_msg: Zabbix storage dashboard mutation returned no result.
+
+- name: Log out of the Zabbix API
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body: {jsonrpc: '2.0', method: user.logout, params: {}, id: 20}
+    status_code: 200
+  register: zabbix_logout
+  changed_when: false
+  no_log: true
+  failed_when: zabbix_logout.json.error is defined or zabbix_logout.json.result is not defined

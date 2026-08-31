@@ -1,25 +1,13 @@
 # PostgreSQL service
 
-This installer creates the PostgreSQL dataset and deploys one PostgreSQL pod.
+The PostgreSQL service is managed by `ansible/roles/postgres`.
 
-- Export `POSTGRES_ADMIN_PASSWORD` and `POSTGRES_MAX_RAM` from the repository root.
-- Run `sudo --preserve-env=POSTGRES_ADMIN_PASSWORD,POSTGRES_MAX_RAM python3 k0s-services/postgres/install.py`.
-- Unset both values after the installation.
-- The administrator database and role are both `postgres`.
-- `POSTGRES_MAX_RAM` is required and sets the pod memory limit.
-- `POSTGRES_VOLUME_SIZE` defaults to `20G`.
-- The dataset is `tank/secure/backup/k0s/services/postgres`.
-- The PV and PVC advertise a fixed `10Ti` capacity.
-- The ZFS dataset quota enforces `POSTGRES_VOLUME_SIZE`.
-- The image is `postgres:18.4-bookworm`.
-- Static Kubernetes resources are committed under `kustomize/base`.
-- Do not apply `kustomize/base` directly because the installer supplies validated runtime values.
-- The installer creates a temporary permission-restricted Kustomize overlay.
-- The administrator Secret is applied through stdin and is never written to disk.
-
-The installer creates `postgres-admin-credentials` for the PostgreSQL pod.
-It does not create application databases or roles.
-Each application installer owns its database, role, and credentials Secret.
-
-Changing `POSTGRES_ADMIN_PASSWORD` after initialization does not change the
-existing administrator role password. Change the role password first.
+- Configure `private_cloud.postgres` in the public configuration.
+- Store the administrator password in the encrypted configuration.
+- Run `sudo python3 ansible/install.py` from the repository root.
+- The service dataset is `tank/secure/backup/k0s/services/postgres`.
+- The dataset quota and reservation use the configured volume size.
+- The local PV and PVC advertise a fixed `10Ti` capacity.
+- The container memory limit uses the configured maximum RAM.
+- PostgreSQL `shared_buffers` uses half of the configured maximum RAM.
+- The image remains `postgres:18.4-bookworm`.

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ zabbix_pvc_name }}
+  namespace: {{ zabbix_namespace }}
+  labels:
+    app.kubernetes.io/name: zabbix
+    app.kubernetes.io/component: server
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ zabbix_pv_capacity }}
+  storageClassName: ""
+  volumeName: {{ zabbix_pv_name }}

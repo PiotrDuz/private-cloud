@@ -1,0 +1,95 @@
+- name: Import managed Zabbix templates
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body:
+      jsonrpc: '2.0'
+      method: configuration.import
+      params:
+        format: yaml
+        source: "{{ lookup('file', item) }}"
+        rules:
+          discoveryRules: {createMissing: true, updateExisting: true, deleteMissing: true}
+          graphs: {createMissing: true, updateExisting: true, deleteMissing: true}
+          items: {createMissing: true, updateExisting: true, deleteMissing: true}
+          template_groups: {createMissing: true, updateExisting: true}
+          templates: {createMissing: true, updateExisting: true}
+          triggers: {createMissing: true, updateExisting: true, deleteMissing: true}
+          valueMaps: {createMissing: true, updateExisting: true, deleteMissing: true}
+      id: 10
+    status_code: 200
+  loop: "{{ zabbix_template_paths }}"
+  register: zabbix_template_imports
+  changed_when: true
+  no_log: true
+  failed_when: zabbix_template_imports.json.error is defined or zabbix_template_imports.json.result is not defined
+
+- name: Find the Zabbix host group
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body: {jsonrpc: '2.0', method: hostgroup.get, params: {output: [groupid, name], filter: {name: ["{{ zabbix_host_group }}"]}}, id: 11}
+    status_code: 200
+    return_content: true
+  register: zabbix_group_get
+  changed_when: false
+  no_log: true
+  failed_when: zabbix_group_get.json.error is defined or zabbix_group_get.json.result is not defined
+
+- name: Create the Zabbix host group
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body: {jsonrpc: '2.0', method: hostgroup.create, params: {name: "{{ zabbix_host_group }}"}, id: 12}
+    status_code: 200
+    return_content: true
+  register: zabbix_group_create
+  when: zabbix_group_get.json.result | length == 0
+  changed_when: true
+  no_log: true
+  failed_when: zabbix_group_create.json.error is defined or zabbix_group_create.json.result is not defined
+
+- name: Set the Zabbix host group ID
+  ansible.builtin.set_fact:
+    zabbix_group_id: "{{ zabbix_group_get.json.result[0].groupid if zabbix_group_get.json.result | length > 0 else zabbix_group_create.json.result.groupids[0] }}"
+  no_log: true
+
+- name: Find required Zabbix templates
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body: {jsonrpc: '2.0', method: template.get, params: {output: [templateid, host], filter: {host: "{{ zabbix_template_choices | flatten }}"}}, id: 13}
+    status_code: 200
+    return_content: true
+  register: zabbix_template_get
+  changed_when: false
+  no_log: true
+  failed_when: zabbix_template_get.json.error is defined or zabbix_template_get.json.result is not defined
+
+- name: Initialize resolved Zabbix template IDs
+  ansible.builtin.set_fact:
+    zabbix_template_ids: []
+
+- name: Resolve one template from each required choice
+  ansible.builtin.set_fact:
+    zabbix_template_ids: "{{ zabbix_template_ids + [((zabbix_template_get.json.result | selectattr('host', 'in', item) | map(attribute='templateid') | list | first) | string)] }}"
+  loop: "{{ zabbix_template_choices }}"
+  when: zabbix_template_get.json.result | selectattr('host', 'in', item) | list | length > 0
+
+- name: Build template objects for host linkage
+  ansible.builtin.set_fact:
+    zabbix_template_objects: "{{ (zabbix_template_objects | default([])) + [{'templateid': item}] }}"
+  loop: "{{ zabbix_template_ids }}"
+
+- name: Require all Zabbix templates
+  ansible.builtin.assert:
+    that: zabbix_template_ids | length == zabbix_template_choices | length
+    fail_msg: One or more required Zabbix templates are unavailable.

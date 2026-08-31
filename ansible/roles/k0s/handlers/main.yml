@@ -1,0 +1,9 @@
+---
+- name: Reload systemd for k0s
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart k0s controller
+  ansible.builtin.systemd:
+    name: k0scontroller.service
+    state: restarted

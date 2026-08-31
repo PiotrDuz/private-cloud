@@ -1,0 +1,2 @@
+# Managed by private-cloud Ansible.
+zabbix ALL=(root) NOPASSWD: {{ zabbix_smart_wrapper }} -a *, {{ zabbix_smart_wrapper }} --scan *, {{ zabbix_smart_wrapper }} -j -V

@@ -1,0 +1,10 @@
+---
+- name: Reload systemd after zfs changes
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart ZED
+  ansible.builtin.systemd:
+    name: zfs-zed
+    enabled: true
+    state: restarted

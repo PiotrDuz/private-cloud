@@ -1,0 +1,226 @@
+---
+- name: Require Ubuntu for Zabbix Agent
+  ansible.builtin.assert:
+    that: ansible_facts.distribution | lower == 'ubuntu'
+    fail_msg: Zabbix Agent is supported only on Ubuntu.
+
+- name: Install the Zabbix repository keyring
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Download the Zabbix repository key
+  ansible.builtin.get_url:
+    url: "{{ zabbix_agent_repo_key_url }}"
+    dest: "{{ zabbix_agent_repo_keyring }}"
+    mode: '0644'
+    owner: root
+    group: root
+
+- name: Configure the Zabbix package repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by={{ zabbix_agent_repo_keyring }}] https://repo.zabbix.com/zabbix/7.0/ubuntu {{ ansible_distribution_release }} main"
+    filename: zabbix
+    state: present
+    update_cache: true
+
+- name: Install Zabbix Agent runtime packages
+  ansible.builtin.apt:
+    name:
+      - zabbix-agent2
+      - python3
+      - smartmontools
+      - sudo
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Load optional Intel ECC driver
+  ansible.builtin.command: modprobe igen6_edac
+  register: zabbix_ecc_modprobe
+  changed_when: false
+  failed_when: false
+
+- name: Ensure Zabbix runtime directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /usr/local/libexec/zabbix
+    - /etc/zabbix/zabbix_agent2.d
+    - /etc/zabbix/zabbix_agent2.d/plugins.d
+
+- name: Copy the retained ZFS collector
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../zabbix/zabbix-zfs-collector.py"
+    dest: "{{ zabbix_zfs_collector }}"
+    owner: root
+    group: root
+    mode: '0755'
+  notify: Restart Zabbix Agent 2
+
+- name: Copy the retained memory ECC collector
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../zabbix/zabbix-memory-ecc-collector.py"
+    dest: "{{ zabbix_ecc_collector }}"
+    owner: root
+    group: root
+    mode: '0755'
+  notify: Restart Zabbix Agent 2
+
+- name: Copy the retained SMART wrapper
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../zabbix/zabbix-smartctl-wrapper"
+    dest: "{{ zabbix_smart_wrapper }}"
+    owner: root
+    group: root
+    mode: '0755'
+  notify: Restart Zabbix Agent 2
+
+- name: Install ZFS user parameters
+  ansible.builtin.template:
+    src: zfs.conf.j2
+    dest: "{{ zabbix_zfs_config }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Zabbix Agent 2
+
+- name: Install memory ECC user parameters
+  ansible.builtin.template:
+    src: memory-ecc.conf.j2
+    dest: "{{ zabbix_ecc_config }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Zabbix Agent 2
+
+- name: Install SMART plugin configuration
+  ansible.builtin.template:
+    src: smart.conf.j2
+    dest: "{{ zabbix_smart_config }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Zabbix Agent 2
+
+- name: Validate SMART sudoers policy
+  ansible.builtin.template:
+    src: sudoers.j2
+    dest: "{{ zabbix_sudoers_config }}"
+    owner: root
+    group: root
+    mode: '0440'
+    validate: /usr/sbin/visudo -cf %s
+  notify: Restart Zabbix Agent 2
+
+- name: Inspect the packaged Agent configuration
+  ansible.builtin.stat:
+    path: "{{ zabbix_agent_config }}"
+  register: zabbix_agent_config_stat
+
+- name: Preserve the original Agent configuration once
+  ansible.builtin.copy:
+    src: "{{ zabbix_agent_config }}"
+    dest: "{{ zabbix_agent_backup }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0644'
+    force: false
+  when: zabbix_agent_config_stat.stat.exists
+
+- name: Read the current Agent configuration
+  ansible.builtin.slurp:
+    path: "{{ zabbix_agent_config }}"
+  register: zabbix_agent_config_content
+  when: zabbix_agent_config_stat.stat.exists
+
+- name: Capture the current Agent configuration text
+  ansible.builtin.set_fact:
+    zabbix_agent_original_content: "{{ (zabbix_agent_config_content.content | default('')) | b64decode }}"
+
+- name: Strip the old managed Agent block
+  ansible.builtin.set_fact:
+    zabbix_agent_without_block: "{{ zabbix_agent_original_content | regex_replace('(?ms)^[ \\t]*# BEGIN PRIVATE-CLOUD ZABBIX SETTINGS[ \\t]*$.*?^[ \\t]*# END PRIVATE-CLOUD ZABBIX SETTINGS[ \\t]*$[\\r\\n]?', '') }}"
+
+- name: Remove conflicting settings and duplicate managed includes
+  ansible.builtin.set_fact:
+    zabbix_agent_sanitized_content: "{{ zabbix_agent_without_block | regex_replace('(?m)^[ \\t]*(Server|ServerActive|Hostname|ListenIP|Timeout|TLSConnect|TLSAccept|TLSPSKIdentity|TLSPSKFile)[ \\t]*=[^\\r\\n]*(?:\\r?\\n|$)', '') | regex_replace('(?m)^[ \\t]*Include[ \\t]*=[ \\t]*/etc/zabbix/zabbix_agent2\\.d/\\*\\.conf[ \\t]*$[\\r\\n]?', '') | trim }}"
+
+- name: Build the desired Agent configuration
+  ansible.builtin.set_fact:
+    zabbix_agent_desired_content: "{{ zabbix_agent_sanitized_content + '\\n\\nInclude=' + zabbix_agent_include + '\\n\\n# BEGIN PRIVATE-CLOUD ZABBIX SETTINGS\\n' + (lookup('template', 'managed-settings.j2') | trim) + '\\n# END PRIVATE-CLOUD ZABBIX SETTINGS\\n' }}"
+
+- name: Converge the Agent configuration only when needed
+  ansible.builtin.copy:
+    content: "{{ zabbix_agent_desired_content }}"
+    dest: "{{ zabbix_agent_config }}"
+    owner: root
+    group: root
+    mode: '0644'
+  when: zabbix_agent_desired_content != zabbix_agent_original_content
+  notify: Restart Zabbix Agent 2
+  no_log: true
+
+- name: Enable and start Zabbix Agent 2
+  ansible.builtin.systemd:
+    name: zabbix-agent2.service
+    enabled: true
+    state: started
+
+- name: Apply pending Agent configuration changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify ZFS collector JSON
+  ansible.builtin.command: runuser -u zabbix -- {{ zabbix_zfs_collector }} metrics
+  register: zabbix_zfs_metrics
+  changed_when: false
+
+- name: Verify ZFS snapshot collector JSON
+  ansible.builtin.command: runuser -u zabbix -- {{ zabbix_zfs_collector }} snapshots
+  register: zabbix_zfs_snapshots
+  changed_when: false
+
+- name: Verify ZFS collector output
+  ansible.builtin.assert:
+    that:
+      - (zabbix_zfs_metrics.stdout | from_json).error_count | int == 0
+      - (zabbix_zfs_snapshots.stdout | from_json).error_count | int == 0
+    fail_msg: ZFS collector output is invalid or reports errors.
+
+- name: Verify memory ECC collector JSON
+  ansible.builtin.command: runuser -u zabbix -- {{ zabbix_ecc_collector }}
+  register: zabbix_ecc_metrics
+  changed_when: false
+
+- name: Verify memory ECC collector output
+  ansible.builtin.assert:
+    that: (zabbix_ecc_metrics.stdout | from_json).error_count | int == 0
+    fail_msg: Memory ECC collector output is invalid or reports errors.
+
+- name: Verify registered ZFS and ECC keys
+  ansible.builtin.command: "zabbix_agent2 -t {{ item }} -c {{ zabbix_agent_config }}"
+  loop:
+    - zfs.metrics
+    - zfs.snapshots
+    - memory.ecc.metrics
+  register: zabbix_agent_key_checks
+  changed_when: false
+  failed_when: zabbix_agent_key_checks.rc != 0 or 'ZBX_NOTSUPPORTED' in zabbix_agent_key_checks.stdout
+
+- name: Verify the SMART wrapper command form
+  ansible.builtin.command: runuser -u zabbix -- sudo -n {{ zabbix_smart_wrapper }} -j -V
+  changed_when: false
+
+- name: Verify registered SMART discovery key
+  ansible.builtin.command: "zabbix_agent2 -t smart.disk.discovery -c {{ zabbix_agent_config }}"
+  register: zabbix_smart_discovery
+  changed_when: false
+  failed_when: zabbix_smart_discovery.rc != 0 or 'ZBX_NOTSUPPORTED' in zabbix_smart_discovery.stdout

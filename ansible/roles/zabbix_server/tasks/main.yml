@@ -1,0 +1,389 @@
+---
+- name: Validate Zabbix server inputs
+  ansible.builtin.assert:
+    that:
+      - private_cloud.zabbix.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.zabbix.database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - private_cloud.zabbix.database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - private_cloud.zabbix.database_name | lower not in ['postgres', 'template0', 'template1']
+      - private_cloud.zabbix.database_username | lower not in ['postgres', 'replication']
+      - not (private_cloud.zabbix.database_username | lower).startswith('pg_')
+      - private_cloud.zabbix.server_node_port | int >= 30000
+      - private_cloud.zabbix.server_node_port | int <= 32767
+      - private_cloud.zabbix.web_node_port | int >= 30000
+      - private_cloud.zabbix.web_node_port | int <= 32767
+      - private_cloud.zabbix.server_node_port | int != private_cloud.zabbix.web_node_port | int
+      - private_cloud.zabbix.hostname | length > 0
+      - private_cloud.zabbix.hostname | length <= 128
+      - private_cloud.zabbix.hostname is match('^[^\r\n]+$')
+      - private_cloud.zabbix.admin_username is match('^[^\r\n]+$')
+      - private_cloud_secrets.zabbix.database_password | length > 0
+      - private_cloud_secrets.zabbix.admin_password | length > 0
+    fail_msg: Zabbix server configuration is invalid.
+  no_log: true
+
+- name: Resolve retained Zabbix template files
+  ansible.builtin.set_fact:
+    zabbix_template_paths:
+      - "{{ playbook_dir }}/../zabbix/zabbix-zfs-template.yaml"
+      - "{{ playbook_dir }}/../zabbix/zabbix-memory-ecc-template.yaml"
+
+- name: Ensure the installer runtime directory exists
+  ansible.builtin.file:
+    path: "{{ zabbix_kubeconfig | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Inspect the k0s kubeconfig
+  ansible.builtin.stat:
+    path: "{{ zabbix_kubeconfig }}"
+  register: zabbix_kubeconfig_stat
+
+- name: Generate a missing k0s kubeconfig for tagged Zabbix reruns
+  ansible.builtin.command: k0s kubeconfig admin
+  register: zabbix_generated_kubeconfig
+  when: not zabbix_kubeconfig_stat.stat.exists
+  changed_when: true
+  no_log: true
+
+- name: Install the generated Zabbix kubeconfig
+  ansible.builtin.copy:
+    content: "{{ zabbix_generated_kubeconfig.stdout }}"
+    dest: "{{ zabbix_kubeconfig }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when: not zabbix_kubeconfig_stat.stat.exists
+  no_log: true
+
+- name: Refresh Zabbix kubeconfig metadata
+  ansible.builtin.stat:
+    path: "{{ zabbix_kubeconfig }}"
+  register: zabbix_kubeconfig_stat
+
+- name: Require the root-only k0s kubeconfig
+  ansible.builtin.assert:
+    that:
+      - zabbix_kubeconfig_stat.stat.exists
+      - zabbix_kubeconfig_stat.stat.mode == '0600'
+      - zabbix_kubeconfig_stat.stat.uid | int == 0
+    fail_msg: The k0s kubeconfig must exist as a root-owned 0600 file.
+
+- name: Resolve a Ready Kubernetes node
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    api_version: v1
+    kind: Node
+  register: zabbix_nodes
+  changed_when: false
+
+- name: Initialize Zabbix node selection
+  ansible.builtin.set_fact:
+    zabbix_node_name: ''
+
+- name: Select the Ready Kubernetes node
+  ansible.builtin.set_fact:
+    zabbix_node_name: "{{ item.metadata.name }}"
+  loop: "{{ zabbix_nodes.resources }}"
+  when:
+    - item.status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    - zabbix_node_name is not defined or zabbix_node_name | length == 0
+
+- name: Require a Ready Kubernetes node
+  ansible.builtin.assert:
+    that: zabbix_node_name is defined and zabbix_node_name | length > 0
+    fail_msg: No Ready Kubernetes node is available for Zabbix.
+
+- name: Check Zabbix service dataset
+  ansible.builtin.command: zfs list -H -p -o name {{ zabbix_dataset }}
+  register: zabbix_dataset_check
+  changed_when: false
+  failed_when: false
+
+- name: Read Zabbix dataset usage
+  ansible.builtin.command: zfs get -H -p -o value used {{ zabbix_dataset }}
+  register: zabbix_dataset_used
+  changed_when: false
+  when: zabbix_dataset_check.rc == 0
+
+- name: Reject a Zabbix quota below existing usage
+  ansible.builtin.assert:
+    that: (private_cloud.zabbix.storage_size | human_to_bytes) | int >= (zabbix_dataset_used.stdout | int)
+    fail_msg: Zabbix storage_size cannot be smaller than existing dataset usage.
+  when: zabbix_dataset_check.rc == 0
+
+- name: Create Zabbix service dataset
+  ansible.builtin.command: zfs create {{ zabbix_dataset }}
+  when: zabbix_dataset_check.rc != 0
+  changed_when: true
+
+- name: Read Zabbix dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ zabbix_dataset }}
+  register: zabbix_current_quota
+  changed_when: false
+
+- name: Apply Zabbix dataset quota
+  ansible.builtin.command: zfs set quota={{ private_cloud.zabbix.storage_size }} {{ zabbix_dataset }}
+  when: zabbix_current_quota.stdout | int != (private_cloud.zabbix.storage_size | human_to_bytes | int)
+  changed_when: true
+
+- name: Verify Zabbix dataset is mounted
+  ansible.builtin.command: mountpoint -q {{ zabbix_dataset_mountpoint }}
+  changed_when: false
+
+- name: Verify Zabbix dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ zabbix_dataset }}
+  register: zabbix_effective_quota
+  changed_when: false
+
+- name: Assert Zabbix dataset quota
+  ansible.builtin.assert:
+    that: zabbix_effective_quota.stdout | int == (private_cloud.zabbix.storage_size | human_to_bytes | int)
+    fail_msg: Zabbix dataset quota does not match storage_size.
+
+- name: Inspect existing Zabbix persistent volume and claim
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ item.namespace | default(omit) }}"
+  loop:
+    - {api_version: v1, kind: PersistentVolume, name: zabbix-server-data}
+    - {api_version: v1, kind: PersistentVolumeClaim, name: zabbix-server-data, namespace: private-cloud}
+    - {api_version: v1, kind: Secret, name: zabbix-postgres-credentials, namespace: private-cloud}
+  register: zabbix_existing_storage
+  changed_when: false
+  no_log: true
+
+- name: Reject incompatible Zabbix persistent volume
+  ansible.builtin.assert:
+    that:
+      - zabbix_existing_storage.results[0].resources | length == 0 or zabbix_existing_storage.results[0].resources[0].spec.local.path == zabbix_dataset_mountpoint
+      - zabbix_existing_storage.results[0].resources | length == 0 or zabbix_existing_storage.results[0].resources[0].spec.capacity.storage == zabbix_pv_capacity
+      - zabbix_existing_storage.results[0].resources | length == 0 or zabbix_node_name in zabbix_existing_storage.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+    fail_msg: Existing Zabbix PersistentVolume conflicts with the configured local storage.
+
+- name: Reject incompatible Zabbix persistent volume claim
+  ansible.builtin.assert:
+    that:
+      - zabbix_existing_storage.results[1].resources | length == 0 or zabbix_existing_storage.results[1].resources[0].spec.resources.requests.storage == zabbix_pv_capacity
+      - zabbix_existing_storage.results[1].resources | length == 0 or zabbix_existing_storage.results[1].resources[0].spec.volumeName == zabbix_pv_name
+    fail_msg: Existing Zabbix PersistentVolumeClaim conflicts with the fixed 10Ti volume.
+
+- name: Classify the existing Zabbix database secret
+  ansible.builtin.set_fact:
+    zabbix_database_secret_present: "{{ zabbix_existing_storage.results[2].resources | length > 0 }}"
+    zabbix_database_secret_managed: >-
+      {{ zabbix_existing_storage.results[2].resources | length > 0 and
+         ((zabbix_existing_storage.results[2].resources[0].metadata.annotations | default({})).get('private-cloud.example/managed-by', '') == 'ansible') }}
+    zabbix_database_secret_password_matches: >-
+      {{ zabbix_existing_storage.results[2].resources | length > 0 and
+         zabbix_existing_storage.results[2].resources[0].data.POSTGRES_PASSWORD is defined and
+         (zabbix_existing_storage.results[2].resources[0].data.POSTGRES_PASSWORD | b64decode == private_cloud_secrets.zabbix.database_password) }}
+  no_log: true
+
+- name: Reject incompatible unmanaged Zabbix database secret
+  ansible.builtin.assert:
+    that:
+      - zabbix_existing_storage.results[2].resources | length == 0 or (zabbix_existing_storage.results[2].resources[0].data.POSTGRES_DB is defined and zabbix_existing_storage.results[2].resources[0].data.POSTGRES_DB | b64decode == private_cloud.zabbix.database_name)
+      - zabbix_existing_storage.results[2].resources | length == 0 or (zabbix_existing_storage.results[2].resources[0].data.POSTGRES_USER is defined and zabbix_existing_storage.results[2].resources[0].data.POSTGRES_USER | b64decode == private_cloud.zabbix.database_username)
+      - not zabbix_database_secret_present | bool or zabbix_database_secret_password_matches | bool or zabbix_database_secret_managed | bool
+    fail_msg: Existing Zabbix database secret conflicts with the configured credentials.
+  no_log: true
+
+- name: Locate PostgreSQL pod for Zabbix database bootstrap
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ zabbix_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=postgres
+  register: zabbix_postgres_pods
+  until:
+    - zabbix_postgres_pods.resources | length > 0
+    - zabbix_postgres_pods.resources[0].status.containerStatuses | default([]) | selectattr('ready', 'equalto', true) | list | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Check Zabbix PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    namespace: "{{ zabbix_namespace }}"
+    pod: "{{ zabbix_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT rolcanlogin FROM pg_roles WHERE rolname = '{{ private_cloud.zabbix.database_username | replace("'", "''") }}';"
+  register: zabbix_role_exists
+  changed_when: false
+  no_log: true
+
+- name: Create the Zabbix PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    namespace: "{{ zabbix_namespace }}"
+    pod: "{{ zabbix_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'printf %s {{ lookup('template', 'create-role.sql.j2') | b64encode }} |
+      base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
+  when: zabbix_role_exists.stdout | trim == ''
+  changed_when: true
+  no_log: true
+
+- name: Enable an existing Zabbix PostgreSQL role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    namespace: "{{ zabbix_namespace }}"
+    pod: "{{ zabbix_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'printf %s {{ lookup('template', 'alter-role.sql.j2') | b64encode }} |
+      base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
+  when:
+    - zabbix_role_exists.stdout | trim != ''
+    - zabbix_role_exists.stdout | trim == 'f' or not zabbix_database_secret_password_matches | bool
+  changed_when: true
+  no_log: true
+
+- name: Check Zabbix PostgreSQL database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    namespace: "{{ zabbix_namespace }}"
+    pod: "{{ zabbix_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '{{ private_cloud.zabbix.database_name | replace("'", "''") }}';"
+  register: zabbix_database_exists
+  changed_when: false
+  no_log: true
+
+- name: Create Zabbix PostgreSQL database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    namespace: "{{ zabbix_namespace }}"
+    pod: "{{ zabbix_postgres_pods.resources[0].metadata.name }}"
+    command: createdb -U postgres -O {{ private_cloud.zabbix.database_username }} {{ private_cloud.zabbix.database_name }}
+  when: zabbix_database_exists.stdout | trim == ''
+  changed_when: true
+  no_log: true
+
+- name: Set Zabbix database owner when needed
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    namespace: "{{ zabbix_namespace }}"
+    pod: "{{ zabbix_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "ALTER DATABASE \"{{ private_cloud.zabbix.database_name }}\" OWNER TO \"{{ private_cloud.zabbix.database_username }}\";"
+  when:
+    - zabbix_database_exists.stdout | trim != ''
+    - zabbix_database_exists.stdout | trim != private_cloud.zabbix.database_username
+  changed_when: true
+  no_log: true
+
+- name: Apply Zabbix namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'namespace.yml.j2') | from_yaml }}"
+
+- name: Apply Zabbix database credentials secret
+  kubernetes.core.k8s:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'secret.yml.j2') | from_yaml }}"
+  register: zabbix_secret_apply
+  when: not zabbix_database_secret_present | bool or not zabbix_database_secret_managed | bool or not zabbix_database_secret_password_matches | bool
+  no_log: true
+
+- name: Apply Zabbix namespace, storage, and workloads
+  kubernetes.core.k8s:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - pv.yml.j2
+    - pvc.yml.j2
+    - server-deployment.yml.j2
+    - server-service.yml.j2
+    - web-deployment.yml.j2
+    - web-service.yml.j2
+  no_log: true
+
+- name: Restart Zabbix workloads after a database Secret change
+  kubernetes.core.k8s:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    state: patched
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ item }}"
+        namespace: "{{ zabbix_namespace }}"
+      spec:
+        template:
+          metadata:
+            annotations:
+              private-cloud.example/database-restarted-at: "{{ ansible_date_time.iso8601 }}"
+  loop:
+    - zabbix-server
+    - zabbix-web
+  when: zabbix_secret_apply.changed | default(false)
+  no_log: true
+
+- name: Wait for Zabbix deployments
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ item }}"
+    namespace: "{{ zabbix_namespace }}"
+  loop:
+    - zabbix-server
+    - zabbix-web
+  register: zabbix_deployments
+  until:
+    - zabbix_deployments.resources | length > 0
+    - zabbix_deployments.resources[0].status.updatedReplicas | default(0) | int == 1
+    - zabbix_deployments.resources[0].status.availableReplicas | default(0) | int == 1
+  retries: 120
+  delay: 5
+  changed_when: false
+
+- name: Wait for Zabbix service endpoints
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    name: "{{ item }}"
+    namespace: "{{ zabbix_namespace }}"
+  loop:
+    - zabbix-server
+    - zabbix-web
+  register: zabbix_endpoints
+  until: zabbix_endpoints.resources | length > 0 and (zabbix_endpoints.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0)
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Verify Zabbix API readiness
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ private_cloud.zabbix.web_node_port }}/api_jsonrpc.php"
+    method: POST
+    body_format: json
+    body: {jsonrpc: '2.0', method: apiinfo.version, params: {}, id: 1}
+    status_code: 200
+    return_content: true
+  register: zabbix_api_ready
+  until: zabbix_api_ready.json.result is defined
+  retries: 60
+  delay: 5
+  changed_when: false
+  no_log: true
+  failed_when: zabbix_api_ready.json.error is defined or zabbix_api_ready.json.result is not defined
+
+- name: Configure Zabbix API resources
+  ansible.builtin.import_tasks: api.yml

@@ -1,0 +1,13 @@
+---
+zabbix_agent_config: /etc/zabbix/zabbix_agent2.conf
+zabbix_agent_include: /etc/zabbix/zabbix_agent2.d/*.conf
+zabbix_agent_backup: /etc/zabbix/zabbix_agent2.conf.pre-private-cloud
+zabbix_zfs_collector: /usr/local/libexec/zabbix/zfs-collector.py
+zabbix_ecc_collector: /usr/local/libexec/zabbix/memory-ecc-collector.py
+zabbix_smart_wrapper: /usr/local/libexec/zabbix/smartctl-wrapper
+zabbix_zfs_config: /etc/zabbix/zabbix_agent2.d/zfs.conf
+zabbix_ecc_config: /etc/zabbix/zabbix_agent2.d/memory-ecc.conf
+zabbix_smart_config: /etc/zabbix/zabbix_agent2.d/plugins.d/smart.conf
+zabbix_sudoers_config: /etc/sudoers.d/zabbix-smartctl
+zabbix_agent_repo_key_url: https://repo.zabbix.com/zabbix-official-repo.key
+zabbix_agent_repo_keyring: /etc/apt/keyrings/zabbix.asc

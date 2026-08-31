@@ -1,0 +1,33 @@
+---
+# Implementation constants. Desired state is supplied by private_cloud.
+zfs_pool_name: tank
+zfs_pool_mountpoint: /tank
+zfs_secure_dataset: tank/secure
+zfs_secure_mountpoint: /tank/secure
+zfs_key_directory: /etc/zfs/keys
+zfs_key_file: /etc/zfs/keys/tank-secure.key
+zfs_backup_dataset: tank/secure/backup
+zfs_no_backup_dataset: tank/secure/no-backup
+zfs_zed_cache_directory: /etc/zfs/zfs-list.cache
+zfs_legacy_mount_service: /etc/systemd/system/zfs-unlock-mount.service
+zfs_legacy_mount_helper: /usr/local/sbin/zfs-unlock-mount
+zfs_fallback_scrub_service: /etc/systemd/system/zfs-scrub.service
+zfs_fallback_scrub_timer: /etc/systemd/system/zfs-scrub.timer
+zfs_generator_paths:
+  - /usr/lib/systemd/system-generators/zfs-mount-generator
+  - /lib/systemd/system-generators/zfs-mount-generator
+zfs_scrub_timer_candidates:
+  - zfs-scrub-monthly.timer
+  - zfs-scrub-monthly@.timer
+zfs_zed_list_cache_hook_candidates:
+  - /usr/lib/zfs/zed.d/history_event-zfs-list-cacher.sh
+  - /usr/lib/zfs-linux/zed.d/history_event-zfs-list-cacher.sh
+zfs_common_filesystem_properties:
+  - { name: acltype, value: posixacl }
+  - { name: atime, value: 'off' }
+  - { name: compression, value: zstd }
+  - { name: dnodesize, value: auto }
+  - { name: xattr, value: sa }
+zfs_boot_id_record: /var/lib/private-cloud/zfs-native-boot-id
+zfs_boot_verified_record: /var/lib/private-cloud/zfs-native-boot-verified
+zfs_create_intent_marker: /var/lib/private-cloud/zfs-create-intent.json

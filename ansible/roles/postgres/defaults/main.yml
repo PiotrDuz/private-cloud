@@ -1,0 +1,19 @@
+---
+postgres_namespace: private-cloud
+postgres_service_name: postgres
+postgres_secret_name: postgres-admin-credentials
+postgres_pv_name: postgres-local-pv
+postgres_pvc_name: postgres-data
+postgres_dataset: tank/secure/backup/k0s/services/postgres
+postgres_dataset_mountpoint: /tank/secure/backup/k0s/services/postgres
+postgres_pv_capacity: 10Ti
+postgres_admin_database: postgres
+postgres_admin_username: postgres
+postgres_image: postgres:18.4-bookworm
+postgres_kubeconfig: /run/private-cloud/kubeconfig
+postgres_zfs_properties:
+  recordsize: 8K
+  compression: zstd
+  prefetch: none
+  primarycache: all
+  logbias: latency

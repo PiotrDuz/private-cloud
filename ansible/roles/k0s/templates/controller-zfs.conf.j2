@@ -1,0 +1,4 @@
+[Unit]
+RequiresMountsFor=/tank/secure/k0s /tank/secure/k0s/containerd /tank/secure/k0s/kubelet
+After=zfs-mount.service zfs-load-key@tank-secure.service
+Requires=zfs-mount.service
