@@ -14,3 +14,12 @@ The OnlyOffice service is managed by `ansible/roles/onlyoffice`.
 - Forward the OnlyOffice hostname to the configured NodePort through the TLS proxy.
 - Preserve WebSockets and set `X-Forwarded-Proto` to `https` in the TLS proxy.
 - Both public hostnames must be reachable from the pods with trusted certificates.
+
+## Manifest review
+
+- The Kustomize base is the authoritative public workload definition.
+- Install Kustomize to render without root or a cluster.
+
+```bash
+python3 ansible/render_manifests.py onlyoffice --base k0s-services/onlyoffice/kustomize/base --values k0s-services/onlyoffice/site-values.example.yaml
+```

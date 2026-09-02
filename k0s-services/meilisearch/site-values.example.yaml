@@ -1,0 +1,4 @@
+dataset_path: /tank/secure/backup/k0s/services/meilisearch
+node_name: replace-with-k0s-node
+image: getmeili/meilisearch:v1.53.1
+memory: 1Gi

@@ -16,7 +16,7 @@ spec:
     namespace: private-cloud
     name: postgres-data
   local:
-    path: /var/lib/private-cloud/postgres
+    path: /tank/secure/backup/k0s/services/postgres
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -24,4 +24,4 @@ spec:
             - key: kubernetes.io/hostname
               operator: In
               values:
-                - private-cloud-node
+                - replace-with-k0s-node

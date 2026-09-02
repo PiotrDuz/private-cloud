@@ -18,107 +18,45 @@
     fail_msg: Grist configuration is invalid.
   no_log: true
 
-- name: Ensure the installer runtime directory exists
-  ansible.builtin.file:
-    path: "{{ grist_kubeconfig | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: '0700'
-
-- name: Inspect the k0s kubeconfig
-  ansible.builtin.stat:
-    path: "{{ grist_kubeconfig }}"
-  register: grist_kubeconfig_stat
-
-- name: Generate a missing k0s kubeconfig for tagged Grist reruns
-  ansible.builtin.command: k0s kubeconfig admin
-  register: grist_generated_kubeconfig
-  when: not grist_kubeconfig_stat.stat.exists
-  changed_when: true
-  no_log: true
-
-- name: Install the generated Grist kubeconfig
-  ansible.builtin.copy:
-    content: "{{ grist_generated_kubeconfig.stdout }}"
-    dest: "{{ grist_kubeconfig }}"
-    owner: root
-    group: root
-    mode: '0600'
-  when: not grist_kubeconfig_stat.stat.exists
-  no_log: true
+- name: Prepare the Grist kubeconfig
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"
+  vars:
+    private_cloud_kubeconfig: "{{ grist_kubeconfig }}"
 
 - name: Resolve a Ready Kubernetes node
   kubernetes.core.k8s_info:
     kubeconfig: "{{ grist_kubeconfig }}"
     api_version: v1
     kind: Node
+    name: "{{ ansible_hostname }}"
   register: grist_nodes
   changed_when: false
 
-- name: Initialize Grist node selection
+- name: Select the managed storage node
   ansible.builtin.set_fact:
-    grist_node_name: ''
+    grist_node_name: "{{ ansible_hostname }}"
 
-- name: Select the Ready Kubernetes node
-  ansible.builtin.set_fact:
-    grist_node_name: "{{ item.metadata.name }}"
-  loop: "{{ grist_nodes.resources }}"
-  when:
-    - item.status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
-    - grist_node_name | length == 0
-
-- name: Require a Ready Kubernetes node
+- name: Require the managed storage node to be Ready
   ansible.builtin.assert:
-    that: grist_node_name | length > 0
-    fail_msg: No Ready Kubernetes node is available for Grist.
+    that:
+      - grist_nodes.resources | length == 1
+      - grist_nodes.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    fail_msg: "Managed storage host {{ ansible_hostname }} is not a Ready Kubernetes node for Grist."
 
-- name: Check Grist service dataset
-  ansible.builtin.command: zfs list -H -p -o name {{ grist_dataset }}
-  register: grist_dataset_check
-  changed_when: false
-  failed_when: false
+- name: Prepare the Grist service dataset
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: Grist
+    private_cloud_service_dataset: "{{ grist_dataset }}"
+    private_cloud_service_dataset_mountpoint: "{{ grist_dataset_mountpoint }}"
+    private_cloud_service_storage_size: "{{ private_cloud.grist.storage_size }}"
 
-- name: Read Grist dataset usage
-  ansible.builtin.command: zfs get -H -p -o value used {{ grist_dataset }}
-  register: grist_dataset_used
-  changed_when: false
-  when: grist_dataset_check.rc == 0
-
-- name: Reject a Grist quota below existing usage
-  ansible.builtin.assert:
-    that: (private_cloud.grist.storage_size | human_to_bytes) | int >= (grist_dataset_used.stdout | int)
-    fail_msg: Grist storage_size cannot be smaller than existing dataset usage.
-  when: grist_dataset_check.rc == 0
-
-- name: Create Grist service dataset
-  ansible.builtin.command: zfs create {{ grist_dataset }}
-  when: grist_dataset_check.rc != 0
-  changed_when: true
-
-- name: Read Grist dataset quota
-  ansible.builtin.command: zfs get -H -p -o value quota {{ grist_dataset }}
-  register: grist_current_quota
-  changed_when: false
-
-- name: Apply Grist dataset quota
-  ansible.builtin.command: zfs set quota={{ private_cloud.grist.storage_size }} {{ grist_dataset }}
-  when: grist_current_quota.stdout | int != (private_cloud.grist.storage_size | human_to_bytes | int)
-  changed_when: true
-
-- name: Verify Grist dataset is mounted
-  ansible.builtin.command: mountpoint -q {{ grist_dataset_mountpoint }}
-  changed_when: false
-
-- name: Verify Grist dataset quota
-  ansible.builtin.command: zfs get -H -p -o value quota {{ grist_dataset }}
-  register: grist_effective_quota
-  changed_when: false
-
-- name: Assert Grist dataset quota
-  ansible.builtin.assert:
-    that: grist_effective_quota.stdout | int == (private_cloud.grist.storage_size | human_to_bytes | int)
-    fail_msg: Grist dataset quota does not match storage_size.
+- name: Verify the Grist service dataset quota
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_quota.yml"
+  vars:
+    private_cloud_service_name: Grist
+    private_cloud_service_dataset: "{{ grist_dataset }}"
+    private_cloud_service_storage_size: "{{ private_cloud.grist.storage_size }}"
 
 - name: Inspect existing Grist storage and credentials
   kubernetes.core.k8s_info:
@@ -270,18 +208,44 @@
   when: not grist_secret_present | bool or not grist_secret_matches | bool
   no_log: true
 
-- name: Apply Grist storage and workload
+- name: Render Grist manifests from the authoritative base
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: grist
+    manifest_base: "{{ role_path }}/../../../k0s-services/grist/kustomize/base"
+    manifest_kustomize_command: "{{ grist_kustomize_command }}"
+    manifest_values:
+      dataset_path: "{{ grist_dataset_mountpoint }}"
+      node_name: "{{ grist_node_name }}"
+      image: "{{ grist_image }}"
+      memory: "{{ private_cloud.grist.max_ram }}"
+      hostname: "{{ private_cloud.grist.hostname }}"
+      default_email: "{{ private_cloud.grist.default_email }}"
+      database_name: "{{ private_cloud.grist.database_name }}"
+      database_username: "{{ private_cloud.grist.database_username }}"
+      postgres_service: "{{ grist_postgres_service }}"
+      node_port: "{{ private_cloud.grist.node_port }}"
+
+- name: Select Grist manifest stages
+  ansible.builtin.set_fact:
+    grist_storage_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | selectattr("kind", "in", ["PersistentVolume", "PersistentVolumeClaim"]) | list }}
+    grist_workload_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | rejectattr("kind", "in", ["PersistentVolume", "PersistentVolumeClaim"]) | list }}
+
+- name: Apply Grist storage
   kubernetes.core.k8s:
     kubeconfig: "{{ grist_kubeconfig }}"
     state: present
-    definition: "{{ lookup('template', item) | from_yaml }}"
-  loop:
-    - pv.yml.j2
-    - pvc.yml.j2
-    - deployment.yml.j2
-    - service.yml.j2
-    - public-service.yml.j2
-  no_log: true
+    definition: "{{ grist_storage_manifests }}"
+
+- name: Apply Grist workload
+  kubernetes.core.k8s:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    state: present
+    definition: "{{ grist_workload_manifests }}"
 
 - name: Restart Grist after a credentials change
   kubernetes.core.k8s:
@@ -311,8 +275,10 @@
   register: grist_deployment
   until:
     - grist_deployment.resources | length > 0
-    - grist_deployment.resources[0].status.updatedReplicas | default(0) | int == 1
-    - grist_deployment.resources[0].status.availableReplicas | default(0) | int == 1
+    - grist_deployment.resources[0].status.observedGeneration | default(0) | int >= grist_deployment.resources[0].metadata.generation | int
+    - grist_deployment.resources[0].status.updatedReplicas | default(0) | int == grist_deployment.resources[0].spec.replicas | default(1) | int
+    - grist_deployment.resources[0].status.readyReplicas | default(0) | int == grist_deployment.resources[0].spec.replicas | default(1) | int
+    - grist_deployment.resources[0].status.availableReplicas | default(0) | int == grist_deployment.resources[0].spec.replicas | default(1) | int
   retries: 90
   delay: 5
   changed_when: false

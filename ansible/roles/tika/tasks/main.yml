@@ -6,107 +6,48 @@
       - private_cloud.tika.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
     fail_msg: Apache Tika configuration is invalid.
 
-- name: Ensure the installer runtime directory exists
-  ansible.builtin.file:
-    path: "{{ tika_kubeconfig | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: '0700'
-
-- name: Inspect the k0s kubeconfig
-  ansible.builtin.stat:
-    path: "{{ tika_kubeconfig }}"
-  register: tika_kubeconfig_stat
-
-- name: Generate a missing k0s kubeconfig for tagged Apache Tika reruns
-  ansible.builtin.command: k0s kubeconfig admin
-  register: tika_generated_kubeconfig
-  when: not tika_kubeconfig_stat.stat.exists
-  changed_when: true
-  no_log: true
-
-- name: Install the generated Apache Tika kubeconfig
-  ansible.builtin.copy:
-    content: "{{ tika_generated_kubeconfig.stdout }}"
-    dest: "{{ tika_kubeconfig }}"
-    owner: root
-    group: root
-    mode: '0600'
-  when: not tika_kubeconfig_stat.stat.exists
-  no_log: true
+- name: Prepare the Apache Tika kubeconfig
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"
+  vars:
+    private_cloud_kubeconfig: "{{ tika_kubeconfig }}"
 
 - name: Resolve a Ready Kubernetes node
   kubernetes.core.k8s_info:
     kubeconfig: "{{ tika_kubeconfig }}"
     api_version: v1
     kind: Node
+    name: "{{ ansible_hostname }}"
   register: tika_nodes
   changed_when: false
 
-- name: Initialize Apache Tika node selection
+- name: Select the managed storage node
   ansible.builtin.set_fact:
-    tika_node_name: ''
+    tika_node_name: "{{ ansible_hostname }}"
 
-- name: Select the Ready Kubernetes node
-  ansible.builtin.set_fact:
-    tika_node_name: "{{ item.metadata.name }}"
-  loop: "{{ tika_nodes.resources }}"
-  when:
-    - item.status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
-    - tika_node_name | length == 0
-
-- name: Require a Ready Kubernetes node
+- name: Require the managed storage node to be Ready
   ansible.builtin.assert:
-    that: tika_node_name | length > 0
-    fail_msg: No Ready Kubernetes node is available for Apache Tika.
+    that:
+      - tika_nodes.resources | length == 1
+      - >-
+        tika_nodes.resources[0].status.conditions | default([])
+        | selectattr('type', 'equalto', 'Ready')
+        | selectattr('status', 'equalto', 'True') | list | length > 0
+    fail_msg: "Managed storage host {{ ansible_hostname }} is not a Ready Kubernetes node for Apache Tika."
 
-- name: Check Apache Tika service dataset
-  ansible.builtin.command: zfs list -H -p -o name {{ tika_dataset }}
-  register: tika_dataset_check
-  changed_when: false
-  failed_when: false
+- name: Prepare the Apache Tika service dataset
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: Apache Tika
+    private_cloud_service_dataset: "{{ tika_dataset }}"
+    private_cloud_service_dataset_mountpoint: "{{ tika_dataset_mountpoint }}"
+    private_cloud_service_storage_size: "{{ private_cloud.tika.storage_size }}"
 
-- name: Read Apache Tika dataset usage
-  ansible.builtin.command: zfs get -H -p -o value used {{ tika_dataset }}
-  register: tika_dataset_used
-  changed_when: false
-  when: tika_dataset_check.rc == 0
-
-- name: Reject an Apache Tika quota below existing usage
-  ansible.builtin.assert:
-    that: (private_cloud.tika.storage_size | human_to_bytes) | int >= (tika_dataset_used.stdout | int)
-    fail_msg: Apache Tika storage_size cannot be smaller than existing dataset usage.
-  when: tika_dataset_check.rc == 0
-
-- name: Create Apache Tika service dataset
-  ansible.builtin.command: zfs create {{ tika_dataset }}
-  when: tika_dataset_check.rc != 0
-  changed_when: true
-
-- name: Read Apache Tika dataset quota
-  ansible.builtin.command: zfs get -H -p -o value quota {{ tika_dataset }}
-  register: tika_current_quota
-  changed_when: false
-
-- name: Apply Apache Tika dataset quota
-  ansible.builtin.command: zfs set quota={{ private_cloud.tika.storage_size }} {{ tika_dataset }}
-  when: tika_current_quota.stdout | int != (private_cloud.tika.storage_size | human_to_bytes | int)
-  changed_when: true
-
-- name: Verify Apache Tika dataset is mounted
-  ansible.builtin.command: mountpoint -q {{ tika_dataset_mountpoint }}
-  changed_when: false
-
-- name: Verify Apache Tika dataset quota
-  ansible.builtin.command: zfs get -H -p -o value quota {{ tika_dataset }}
-  register: tika_effective_quota
-  changed_when: false
-
-- name: Assert Apache Tika dataset quota
-  ansible.builtin.assert:
-    that: tika_effective_quota.stdout | int == (private_cloud.tika.storage_size | human_to_bytes | int)
-    fail_msg: Apache Tika dataset quota does not match storage_size.
+- name: Verify the Apache Tika service dataset quota
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_quota.yml"
+  vars:
+    private_cloud_service_name: Apache Tika
+    private_cloud_service_dataset: "{{ tika_dataset }}"
+    private_cloud_service_storage_size: "{{ private_cloud.tika.storage_size }}"
 
 - name: Inspect existing Apache Tika storage
   kubernetes.core.k8s_info:
@@ -124,23 +65,56 @@
 - name: Reject incompatible Apache Tika persistent storage
   ansible.builtin.assert:
     that:
-      - tika_existing_storage.results[0].resources | length == 0 or tika_existing_storage.results[0].resources[0].spec.local.path == tika_dataset_mountpoint
-      - tika_existing_storage.results[0].resources | length == 0 or tika_existing_storage.results[0].resources[0].spec.capacity.storage == tika_pv_capacity
-      - tika_existing_storage.results[0].resources | length == 0 or tika_node_name in tika_existing_storage.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
-      - tika_existing_storage.results[1].resources | length == 0 or tika_existing_storage.results[1].resources[0].spec.resources.requests.storage == tika_pv_capacity
-      - tika_existing_storage.results[1].resources | length == 0 or tika_existing_storage.results[1].resources[0].spec.volumeName == tika_pv_name
+      - >-
+        tika_existing_storage.results[0].resources | length == 0
+        or tika_existing_storage.results[0].resources[0].spec.local.path == tika_dataset_mountpoint
+      - >-
+        tika_existing_storage.results[0].resources | length == 0
+        or tika_existing_storage.results[0].resources[0].spec.capacity.storage == tika_pv_capacity
+      - >-
+        tika_existing_storage.results[0].resources | length == 0
+        or tika_node_name in
+        tika_existing_storage.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - >-
+        tika_existing_storage.results[1].resources | length == 0
+        or tika_existing_storage.results[1].resources[0].spec.resources.requests.storage == tika_pv_capacity
+      - >-
+        tika_existing_storage.results[1].resources | length == 0
+        or tika_existing_storage.results[1].resources[0].spec.volumeName == tika_pv_name
     fail_msg: Existing Apache Tika persistent storage conflicts with the configured local storage.
 
-- name: Apply Apache Tika storage and workload
+- name: Render Apache Tika manifests from the authoritative base
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: tika
+    manifest_base: "{{ role_path }}/../../../k0s-services/tika/kustomize/base"
+    manifest_kustomize_command: "{{ tika_kustomize_command }}"
+    manifest_values:
+      dataset_path: "{{ tika_dataset_mountpoint }}"
+      node_name: "{{ tika_node_name }}"
+      image: "{{ tika_image }}"
+      memory: "{{ private_cloud.tika.max_ram }}"
+
+- name: Select Apache Tika manifest stages
+  ansible.builtin.set_fact:
+    tika_storage_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | selectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim']) | list }}
+    tika_workload_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | rejectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim']) | list }}
+
+- name: Apply Apache Tika storage
   kubernetes.core.k8s:
     kubeconfig: "{{ tika_kubeconfig }}"
     state: present
-    definition: "{{ lookup('template', item) | from_yaml }}"
-  loop:
-    - pv.yml.j2
-    - pvc.yml.j2
-    - deployment.yml.j2
-    - service.yml.j2
+    definition: "{{ tika_storage_manifests }}"
+
+- name: Apply Apache Tika workload
+  kubernetes.core.k8s:
+    kubeconfig: "{{ tika_kubeconfig }}"
+    state: present
+    definition: "{{ tika_workload_manifests }}"
 
 - name: Wait for Apache Tika deployment
   kubernetes.core.k8s_info:
@@ -152,8 +126,10 @@
   register: tika_deployment
   until:
     - tika_deployment.resources | length > 0
-    - tika_deployment.resources[0].status.updatedReplicas | default(0) | int == 1
-    - tika_deployment.resources[0].status.availableReplicas | default(0) | int == 1
+    - tika_deployment.resources[0].status.observedGeneration | default(0) | int >= tika_deployment.resources[0].metadata.generation | int
+    - tika_deployment.resources[0].status.updatedReplicas | default(0) | int == tika_deployment.resources[0].spec.replicas | default(1) | int
+    - tika_deployment.resources[0].status.readyReplicas | default(0) | int == tika_deployment.resources[0].spec.replicas | default(1) | int
+    - tika_deployment.resources[0].status.availableReplicas | default(0) | int == tika_deployment.resources[0].spec.replicas | default(1) | int
   retries: 60
   delay: 5
   changed_when: false

@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tika-ingress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: tika
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opencloud
+      ports:
+        - {protocol: TCP, port: 9998}

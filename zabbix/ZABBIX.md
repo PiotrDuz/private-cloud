@@ -12,6 +12,7 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 ## Runtime assets
 
 - `zabbix-zfs-collector.py` collects pool, dataset, scrub, and snapshot metrics.
+- `/etc/zabbix/private-cloud-datasets.json` lists enabled datasets to collect.
 - `zabbix-memory-ecc-collector.py` collects Linux EDAC counters.
 - `zabbix-smartctl-wrapper` constrains privileged SMART commands.
 - `zabbix-zfs-template.yaml` defines ZFS items, discovery, and alerts.
@@ -27,8 +28,8 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 ## Local verification
 
 ```bash
-sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py metrics | python3 -m json.tool
-sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py snapshots | python3 -m json.tool
+sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py --inventory /etc/zabbix/private-cloud-datasets.json metrics | python3 -m json.tool
+sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py --inventory /etc/zabbix/private-cloud-datasets.json snapshots | python3 -m json.tool
 sudo -u zabbix /usr/local/libexec/zabbix/memory-ecc-collector.py | python3 -m json.tool
 sudo zabbix_agent2 -t zfs.metrics
 sudo zabbix_agent2 -t zfs.snapshots

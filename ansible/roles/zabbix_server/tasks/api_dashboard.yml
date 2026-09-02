@@ -11,33 +11,7 @@
         output: [itemid, key_]
         hostids: ["{{ zabbix_host_id }}"]
         filter:
-          key_:
-            - 'zfs.dataset.used["config"]'
-            - 'zfs.dataset.utilization["config"]'
-            - 'zfs.dataset.used["images"]'
-            - 'zfs.dataset.utilization["images"]'
-            - 'zfs.dataset.used["ephemeral"]'
-            - 'zfs.dataset.utilization["ephemeral"]'
-            - 'zfs.dataset.used["postgres"]'
-            - 'zfs.dataset.utilization["postgres"]'
-            - 'zfs.dataset.used["meilisearch"]'
-            - 'zfs.dataset.utilization["meilisearch"]'
-            - 'zfs.dataset.used["tika"]'
-            - 'zfs.dataset.utilization["tika"]'
-            - 'zfs.dataset.used["bleve"]'
-            - 'zfs.dataset.utilization["bleve"]'
-            - 'zfs.dataset.used["onlyoffice"]'
-            - 'zfs.dataset.utilization["onlyoffice"]'
-            - 'zfs.dataset.used["opencloud"]'
-            - 'zfs.dataset.utilization["opencloud"]'
-            - 'zfs.dataset.used["grist"]'
-            - 'zfs.dataset.utilization["grist"]'
-            - 'zfs.dataset.used["affine"]'
-            - 'zfs.dataset.utilization["affine"]'
-            - 'zfs.dataset.used["stalwart"]'
-            - 'zfs.dataset.utilization["stalwart"]'
-            - 'zfs.dataset.used["zabbix"]'
-            - 'zfs.dataset.utilization["zabbix"]'
+          key_: "{{ zabbix_monitored_storage_item_keys }}"
       id: 17
     status_code: 200
     return_content: true
@@ -54,12 +28,10 @@
 - name: Require every storage item for the dashboard
   ansible.builtin.assert:
     that:
-      - zabbix_storage_item_map[zabbix_storage_used_keys[index]] is defined
-      - zabbix_storage_item_map[zabbix_storage_utilization_keys[index]] is defined
+      - zabbix_storage_item_map['zfs.dataset.used["' ~ item ~ '"]'] is defined
+      - zabbix_storage_item_map['zfs.dataset.utilization["' ~ item ~ '"]'] is defined
     fail_msg: "Storage dashboard item keys are missing for {{ item }}."
-  loop: "{{ zabbix_storage_leaf_names }}"
-  loop_control:
-    index_var: index
+  loop: "{{ private_cloud_monitored_dataset_names }}"
 
 - name: Initialize the utilization widget fields
   ansible.builtin.set_fact:
@@ -83,7 +55,7 @@
 - name: Add utilization fields for each leaf dataset
   ansible.builtin.set_fact:
     zabbix_utilization_fields: "{{ zabbix_utilization_fields + [{'type': 1, 'name': 'columns.0.items.' ~ index, 'value': 'Dataset ' ~ item ~ ': Utilization'}] }}"
-  loop: "{{ zabbix_storage_leaf_names }}"
+  loop: "{{ private_cloud_monitored_dataset_names }}"
   loop_control:
     index_var: index
 
@@ -99,8 +71,14 @@
 
 - name: Add allocation fields for each leaf dataset
   ansible.builtin.set_fact:
-    zabbix_allocation_fields: "{{ zabbix_allocation_fields + [{'type': 4, 'name': 'ds.0.itemids.' ~ index, 'value': zabbix_storage_item_map[zabbix_storage_used_keys[index]]}, {'type': 1, 'name': 'ds.0.color.' ~ index, 'value': zabbix_storage_colors[index]}, {'type': 0, 'name': 'ds.0.type.' ~ index, 'value': 0}] }}"
-  loop: "{{ zabbix_storage_leaf_names }}"
+    zabbix_allocation_fields: >-
+      {{ zabbix_allocation_fields + [
+           {'type': 4, 'name': 'ds.0.itemids.' ~ index,
+            'value': zabbix_storage_item_map['zfs.dataset.used["' ~ item.name ~ '"]']},
+           {'type': 1, 'name': 'ds.0.color.' ~ index, 'value': item.color},
+           {'type': 0, 'name': 'ds.0.type.' ~ index, 'value': 0}
+         ] }}
+  loop: "{{ private_cloud_monitored_datasets }}"
   loop_control:
     index_var: index
 

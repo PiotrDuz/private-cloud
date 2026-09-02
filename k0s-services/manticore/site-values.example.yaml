@@ -1,0 +1,4 @@
+dataset_path: /tank/secure/backup/k0s/services/manticore
+node_name: replace-with-k0s-node
+image: manticoresearch/manticore:29.0.2
+memory: 1Gi

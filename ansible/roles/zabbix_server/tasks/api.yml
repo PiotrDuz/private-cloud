@@ -1,4 +1,48 @@
 ---
+- name: Resolve monitored datasets
+  ansible.builtin.include_tasks: ../../../tasks/monitoring_dataset_inventory.yml
+
+- name: Initialize monitored Zabbix item keys
+  ansible.builtin.set_fact:
+    zabbix_monitored_dataset_item_keys: []
+    zabbix_monitored_storage_item_keys: []
+    zabbix_all_dataset_item_keys: []
+    zabbix_dataset_item_key_prefixes:
+      - zfs.dataset.used
+      - zfs.dataset.utilization
+      - zfs.snapshot.retained
+      - zfs.snapshot.retained_percent
+      - zfs.snapshot.oldest_age
+    zabbix_storage_item_key_prefixes:
+      - zfs.dataset.used
+      - zfs.dataset.utilization
+
+- name: Build all catalog dataset item keys
+  ansible.builtin.set_fact:
+    zabbix_all_dataset_item_keys: >-
+      {{ zabbix_all_dataset_item_keys + [item.1 ~ '["' ~ item.0 ~ '"]'] }}
+  loop: >-
+    {{ private_cloud_all_dataset_names |
+       product(zabbix_dataset_item_key_prefixes) | list }}
+
+- name: Build enabled dataset item keys
+  ansible.builtin.set_fact:
+    zabbix_monitored_dataset_item_keys: >-
+      {{ zabbix_monitored_dataset_item_keys +
+         [item.1 ~ '["' ~ item.0 ~ '"]'] }}
+  loop: >-
+    {{ private_cloud_monitored_dataset_names |
+       product(zabbix_dataset_item_key_prefixes) | list }}
+
+- name: Build enabled storage item keys
+  ansible.builtin.set_fact:
+    zabbix_monitored_storage_item_keys: >-
+      {{ zabbix_monitored_storage_item_keys +
+         [item.1 ~ '["' ~ item.0 ~ '"]'] }}
+  loop: >-
+    {{ private_cloud_monitored_dataset_names |
+       product(zabbix_storage_item_key_prefixes) | list }}
+
 - name: Run Zabbix API authentication tasks
   ansible.builtin.import_tasks: api_auth.yml
 

@@ -1,0 +1,14 @@
+---
+manticore_namespace: private-cloud
+manticore_service_name: manticore
+manticore_dataset: tank/secure/backup/k0s/services/manticore
+manticore_dataset_mountpoint: /tank/secure/backup/k0s/services/manticore
+manticore_pv_name: manticore-data
+manticore_pvc_name: manticore-data
+manticore_pv_capacity: 10Ti
+manticore_image: manticoresearch/manticore:29.0.2
+manticore_kubeconfig: /run/private-cloud/kubeconfig
+manticore_kustomize_command:
+  - k0s
+  - kubectl
+  - kustomize

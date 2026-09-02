@@ -28,120 +28,45 @@
       - "{{ playbook_dir }}/../zabbix/zabbix-zfs-template.yaml"
       - "{{ playbook_dir }}/../zabbix/zabbix-memory-ecc-template.yaml"
 
-- name: Ensure the installer runtime directory exists
-  ansible.builtin.file:
-    path: "{{ zabbix_kubeconfig | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: '0700'
-
-- name: Inspect the k0s kubeconfig
-  ansible.builtin.stat:
-    path: "{{ zabbix_kubeconfig }}"
-  register: zabbix_kubeconfig_stat
-
-- name: Generate a missing k0s kubeconfig for tagged Zabbix reruns
-  ansible.builtin.command: k0s kubeconfig admin
-  register: zabbix_generated_kubeconfig
-  when: not zabbix_kubeconfig_stat.stat.exists
-  changed_when: true
-  no_log: true
-
-- name: Install the generated Zabbix kubeconfig
-  ansible.builtin.copy:
-    content: "{{ zabbix_generated_kubeconfig.stdout }}"
-    dest: "{{ zabbix_kubeconfig }}"
-    owner: root
-    group: root
-    mode: '0600'
-  when: not zabbix_kubeconfig_stat.stat.exists
-  no_log: true
-
-- name: Refresh Zabbix kubeconfig metadata
-  ansible.builtin.stat:
-    path: "{{ zabbix_kubeconfig }}"
-  register: zabbix_kubeconfig_stat
-
-- name: Require the root-only k0s kubeconfig
-  ansible.builtin.assert:
-    that:
-      - zabbix_kubeconfig_stat.stat.exists
-      - zabbix_kubeconfig_stat.stat.mode == '0600'
-      - zabbix_kubeconfig_stat.stat.uid | int == 0
-    fail_msg: The k0s kubeconfig must exist as a root-owned 0600 file.
+- name: Prepare the Zabbix kubeconfig
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"
+  vars:
+    private_cloud_kubeconfig: "{{ zabbix_kubeconfig }}"
 
 - name: Resolve a Ready Kubernetes node
   kubernetes.core.k8s_info:
     kubeconfig: "{{ zabbix_kubeconfig }}"
     api_version: v1
     kind: Node
+    name: "{{ ansible_hostname }}"
   register: zabbix_nodes
   changed_when: false
 
-- name: Initialize Zabbix node selection
+- name: Select the managed storage node
   ansible.builtin.set_fact:
-    zabbix_node_name: ''
+    zabbix_node_name: "{{ ansible_hostname }}"
 
-- name: Select the Ready Kubernetes node
-  ansible.builtin.set_fact:
-    zabbix_node_name: "{{ item.metadata.name }}"
-  loop: "{{ zabbix_nodes.resources }}"
-  when:
-    - item.status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
-    - zabbix_node_name is not defined or zabbix_node_name | length == 0
-
-- name: Require a Ready Kubernetes node
+- name: Require the managed storage node to be Ready
   ansible.builtin.assert:
-    that: zabbix_node_name is defined and zabbix_node_name | length > 0
-    fail_msg: No Ready Kubernetes node is available for Zabbix.
+    that:
+      - zabbix_nodes.resources | length == 1
+      - zabbix_nodes.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    fail_msg: "Managed storage host {{ ansible_hostname }} is not a Ready Kubernetes node for Zabbix."
 
-- name: Check Zabbix service dataset
-  ansible.builtin.command: zfs list -H -p -o name {{ zabbix_dataset }}
-  register: zabbix_dataset_check
-  changed_when: false
-  failed_when: false
+- name: Prepare the Zabbix service dataset
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: Zabbix
+    private_cloud_service_dataset: "{{ zabbix_dataset }}"
+    private_cloud_service_dataset_mountpoint: "{{ zabbix_dataset_mountpoint }}"
+    private_cloud_service_storage_size: "{{ private_cloud.zabbix.storage_size }}"
 
-- name: Read Zabbix dataset usage
-  ansible.builtin.command: zfs get -H -p -o value used {{ zabbix_dataset }}
-  register: zabbix_dataset_used
-  changed_when: false
-  when: zabbix_dataset_check.rc == 0
-
-- name: Reject a Zabbix quota below existing usage
-  ansible.builtin.assert:
-    that: (private_cloud.zabbix.storage_size | human_to_bytes) | int >= (zabbix_dataset_used.stdout | int)
-    fail_msg: Zabbix storage_size cannot be smaller than existing dataset usage.
-  when: zabbix_dataset_check.rc == 0
-
-- name: Create Zabbix service dataset
-  ansible.builtin.command: zfs create {{ zabbix_dataset }}
-  when: zabbix_dataset_check.rc != 0
-  changed_when: true
-
-- name: Read Zabbix dataset quota
-  ansible.builtin.command: zfs get -H -p -o value quota {{ zabbix_dataset }}
-  register: zabbix_current_quota
-  changed_when: false
-
-- name: Apply Zabbix dataset quota
-  ansible.builtin.command: zfs set quota={{ private_cloud.zabbix.storage_size }} {{ zabbix_dataset }}
-  when: zabbix_current_quota.stdout | int != (private_cloud.zabbix.storage_size | human_to_bytes | int)
-  changed_when: true
-
-- name: Verify Zabbix dataset is mounted
-  ansible.builtin.command: mountpoint -q {{ zabbix_dataset_mountpoint }}
-  changed_when: false
-
-- name: Verify Zabbix dataset quota
-  ansible.builtin.command: zfs get -H -p -o value quota {{ zabbix_dataset }}
-  register: zabbix_effective_quota
-  changed_when: false
-
-- name: Assert Zabbix dataset quota
-  ansible.builtin.assert:
-    that: zabbix_effective_quota.stdout | int == (private_cloud.zabbix.storage_size | human_to_bytes | int)
-    fail_msg: Zabbix dataset quota does not match storage_size.
+- name: Verify the Zabbix service dataset quota
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_quota.yml"
+  vars:
+    private_cloud_service_name: Zabbix
+    private_cloud_service_dataset: "{{ zabbix_dataset }}"
+    private_cloud_service_storage_size: "{{ private_cloud.zabbix.storage_size }}"
 
 - name: Inspect existing Zabbix persistent volume and claim
   kubernetes.core.k8s_info:
@@ -293,18 +218,40 @@
   when: not zabbix_database_secret_present | bool or not zabbix_database_secret_managed | bool or not zabbix_database_secret_password_matches | bool
   no_log: true
 
-- name: Apply Zabbix storage and workloads
+- name: Render Zabbix manifests from the authoritative base
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: zabbix
+    manifest_base: "{{ role_path }}/../../../k0s-services/zabbix/kustomize/base"
+    manifest_kustomize_command: "{{ zabbix_kustomize_command }}"
+    manifest_values:
+      dataset_path: "{{ zabbix_dataset_mountpoint }}"
+      node_name: "{{ zabbix_node_name }}"
+      server_image: "{{ zabbix_server_image }}"
+      web_image: "{{ zabbix_web_image }}"
+      server_node_port: "{{ private_cloud.zabbix.server_node_port | int }}"
+      web_node_port: "{{ private_cloud.zabbix.web_node_port | int }}"
+
+- name: Select Zabbix manifest stages
+  ansible.builtin.set_fact:
+    zabbix_storage_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | selectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim']) | list }}
+    zabbix_workload_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | rejectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim']) | list }}
+
+- name: Apply Zabbix storage
   kubernetes.core.k8s:
     kubeconfig: "{{ zabbix_kubeconfig }}"
     state: present
-    definition: "{{ lookup('template', item) | from_yaml }}"
-  loop:
-    - pv.yml.j2
-    - pvc.yml.j2
-    - server-deployment.yml.j2
-    - server-service.yml.j2
-    - web-deployment.yml.j2
-    - web-service.yml.j2
+    definition: "{{ zabbix_storage_manifests }}"
+
+- name: Apply Zabbix workloads
+  kubernetes.core.k8s:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    state: present
+    definition: "{{ zabbix_workload_manifests }}"
   no_log: true
 
 - name: Restart Zabbix workloads after a database Secret change
@@ -341,8 +288,10 @@
   register: zabbix_deployments
   until:
     - zabbix_deployments.resources | length > 0
-    - zabbix_deployments.resources[0].status.updatedReplicas | default(0) | int == 1
-    - zabbix_deployments.resources[0].status.availableReplicas | default(0) | int == 1
+    - zabbix_deployments.resources[0].status.observedGeneration | default(0) | int >= zabbix_deployments.resources[0].metadata.generation | int
+    - zabbix_deployments.resources[0].status.updatedReplicas | default(0) | int == zabbix_deployments.resources[0].spec.replicas | default(1) | int
+    - zabbix_deployments.resources[0].status.readyReplicas | default(0) | int == zabbix_deployments.resources[0].spec.replicas | default(1) | int
+    - zabbix_deployments.resources[0].status.availableReplicas | default(0) | int == zabbix_deployments.resources[0].spec.replicas | default(1) | int
   retries: 120
   delay: 5
   changed_when: false

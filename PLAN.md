@@ -96,10 +96,13 @@
 12. Setup MANTICORE SEARCH
     1. Create a Manticore Search dataset under tank/secure/backup/k0s/services/manticore with a quota
     2. Deploy Manticore Search in k0s with its own 10Ti PV
-13. Setup AFFINE
+13. Setup REDIS for AFFINE 
+    1. Doesnt need dataset, is just a cache
+14. Setup AFFINE
     1. Deploy AFFiNE with its own dataset under tank/secure/backup/k0s/services/affine, 10Ti PV, and quota
     2. Create an AFFiNE database with pgvector enabled in the shared PostgreSQL service
     3. Configure the server-side indexer to use Manticore Search
-    4. Deploy Redis and a versioned migration Job
-    5. Persist AFFiNE blobs and configuration on its PV
-    6. Expose AFFiNE for the user-provided domain through a valid TLS reverse proxy
+    4. Use Redis for Affine
+    5. deploy a versioned migration Job
+    6. Persist AFFiNE blobs and configuration on its PV
+    7. Expose AFFiNE for the user-provided domain through a valid TLS reverse proxy

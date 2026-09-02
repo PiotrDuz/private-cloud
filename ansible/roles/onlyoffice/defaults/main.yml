@@ -10,3 +10,7 @@ onlyoffice_pvc_name: onlyoffice-data
 onlyoffice_pv_capacity: 10Ti
 onlyoffice_image: onlyoffice/documentserver:9.4.0.1
 onlyoffice_kubeconfig: /run/private-cloud/kubeconfig
+onlyoffice_kustomize_command:
+  - k0s
+  - kubectl
+  - kustomize

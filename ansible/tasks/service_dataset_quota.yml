@@ -1,0 +1,10 @@
+---
+- name: Verify service dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ private_cloud_service_dataset }}
+  register: private_cloud_service_effective_quota
+  changed_when: false
+
+- name: Assert service dataset quota
+  ansible.builtin.assert:
+    that: private_cloud_service_effective_quota.stdout | int == (private_cloud_service_storage_size | human_to_bytes | int)
+    fail_msg: "{{ private_cloud_service_name }} dataset quota does not match storage_size."

@@ -3,6 +3,7 @@
   ansible.builtin.assert:
     that:
       - private_cloud.k0s.version is defined
+      - private_cloud.k0s.sha256 is defined
       - private_cloud.k0s.config_quota is defined
       - private_cloud.k0s.images_quota is defined
       - private_cloud.k0s.ephemeral_quota is defined
@@ -139,38 +140,49 @@
 - name: Check whether the configured k0s binary is present
   ansible.builtin.stat:
     path: "{{ k0s_binary_path }}"
+    checksum_algorithm: sha256
   register: k0s_binary_stat
 
-- name: Download the k0s installer only when the binary is absent
+- name: Read the installed k0s version
+  ansible.builtin.command: "{{ k0s_binary_path }} version"
+  register: k0s_installed_version
+  changed_when: false
+  when: k0s_binary_stat.stat.exists
+
+- name: Reject an unmanaged k0s version or checksum change
+  ansible.builtin.assert:
+    that:
+      - k0s_installed_version.stdout | trim == private_cloud.k0s.version
+      - k0s_binary_stat.stat.checksum == private_cloud.k0s.sha256
+    fail_msg: >-
+      Installed k0s does not match the configured version and checksum. Back up the cluster,
+      follow the k0s upgrade procedure to reach the configured release, verify node readiness,
+      and reapply.
+  when: k0s_binary_stat.stat.exists
+
+- name: Download the configured k0s release only when the binary is absent
   ansible.builtin.get_url:
-    url: "{{ k0s_installer_url }}"
-    dest: /run/private-cloud-k0s-installer
+    url: "{{ k0s_release_url }}/{{ private_cloud.k0s.version | urlencode }}/k0s-{{ private_cloud.k0s.version }}-amd64"
+    dest: "{{ k0s_binary_path }}"
     owner: root
     group: root
     mode: '0700'
+    checksum: "sha256:{{ private_cloud.k0s.sha256 }}"
     force: true
-  when: not k0s_binary_stat.stat.exists
-
-- name: Install the configured k0s version once
-  ansible.builtin.command: /run/private-cloud-k0s-installer
-  environment:
-    K0S_VERSION: "{{ private_cloud.k0s.version }}"
-  when: not k0s_binary_stat.stat.exists
-
-- name: Remove the temporary k0s installer
-  ansible.builtin.file:
-    path: /run/private-cloud-k0s-installer
-    state: absent
   when: not k0s_binary_stat.stat.exists
 
 - name: Require the k0s binary after installation
   ansible.builtin.stat:
     path: "{{ k0s_binary_path }}"
+    checksum_algorithm: sha256
   register: k0s_binary_final
 
 - name: Assert that k0s is installed
   ansible.builtin.assert:
-    that: k0s_binary_final.stat.exists and k0s_binary_final.stat.executable
+    that:
+      - k0s_binary_final.stat.exists
+      - k0s_binary_final.stat.executable
+      - k0s_binary_final.stat.checksum == private_cloud.k0s.sha256
     fail_msg: k0s was not installed at the configured path.
 
 - name: Check whether the initial k0s configuration exists
@@ -250,17 +262,17 @@
   ansible.builtin.meta: flush_handlers
 
 - name: Verify exact k0s mount-unit dependencies
-  ansible.builtin.shell: >-
-    set -eu;
-    requires=$(systemctl show --value -p Requires {{ k0s_controller_service }});
-    after=$(systemctl show --value -p After {{ k0s_controller_service }});
-    for path in {{ k0s_config_mountpoint }} {{ k0s_images_mountpoint }} {{ k0s_ephemeral_mountpoint }}; do
-      unit=$(systemd-escape --path --suffix=mount "$path");
-      grep -Eq "(^| )${unit}( |$)" <<<"$requires";
-      grep -Eq "(^| )${unit}( |$)" <<<"$after";
-    done
-  args:
-    executable: /bin/bash
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/storage_checks.py"
+      - k0s-mounts
+      - --service
+      - "{{ k0s_controller_service }}"
+      - --mountpoints
+      - "{{ k0s_config_mountpoint }}"
+      - "{{ k0s_images_mountpoint }}"
+      - "{{ k0s_ephemeral_mountpoint }}"
   changed_when: false
 
 - name: Wait for a Ready k0s node

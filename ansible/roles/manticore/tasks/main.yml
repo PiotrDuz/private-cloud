@@ -1,0 +1,142 @@
+---
+- name: Validate Manticore inputs
+  ansible.builtin.assert:
+    that:
+      - private_cloud.manticore.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.manticore.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+    fail_msg: Manticore configuration is invalid.
+
+- name: Prepare the Manticore kubeconfig
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"
+  vars:
+    private_cloud_kubeconfig: "{{ manticore_kubeconfig }}"
+
+- name: Resolve the managed storage node
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ manticore_kubeconfig }}"
+    api_version: v1
+    kind: Node
+    name: "{{ ansible_hostname }}"
+  register: manticore_nodes
+  changed_when: false
+
+- name: Select the managed storage node
+  ansible.builtin.set_fact:
+    manticore_node_name: "{{ ansible_hostname }}"
+
+- name: Require the managed storage node to be Ready
+  ansible.builtin.assert:
+    that:
+      - manticore_nodes.resources | length == 1
+      - manticore_nodes.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    fail_msg: "Managed storage host {{ ansible_hostname }} is not a Ready Kubernetes node for Manticore."
+
+- name: Prepare the Manticore service dataset
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: Manticore
+    private_cloud_service_dataset: "{{ manticore_dataset }}"
+    private_cloud_service_dataset_mountpoint: "{{ manticore_dataset_mountpoint }}"
+    private_cloud_service_storage_size: "{{ private_cloud.manticore.storage_size }}"
+
+- name: Ensure the Manticore data directory ownership
+  ansible.builtin.file:
+    path: "{{ manticore_dataset_mountpoint }}"
+    state: directory
+    owner: '999'
+    group: '999'
+    mode: '0750'
+
+- name: Verify the Manticore service dataset quota
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_quota.yml"
+  vars:
+    private_cloud_service_name: Manticore
+    private_cloud_service_dataset: "{{ manticore_dataset }}"
+    private_cloud_service_storage_size: "{{ private_cloud.manticore.storage_size }}"
+
+- name: Inspect existing Manticore storage
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ manticore_kubeconfig }}"
+    api_version: v1
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ item.namespace | default(omit) }}"
+  loop:
+    - {kind: PersistentVolume, name: manticore-data}
+    - {kind: PersistentVolumeClaim, name: manticore-data, namespace: private-cloud}
+  register: manticore_existing
+  changed_when: false
+
+- name: Reject incompatible Manticore persistent storage
+  ansible.builtin.assert:
+    that:
+      - manticore_existing.results[0].resources | length == 0 or manticore_existing.results[0].resources[0].spec.local.path == manticore_dataset_mountpoint
+      - manticore_existing.results[0].resources | length == 0 or manticore_existing.results[0].resources[0].spec.capacity.storage == manticore_pv_capacity
+      - manticore_existing.results[0].resources | length == 0 or manticore_node_name in manticore_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - manticore_existing.results[1].resources | length == 0 or manticore_existing.results[1].resources[0].spec.resources.requests.storage == manticore_pv_capacity
+      - manticore_existing.results[1].resources | length == 0 or manticore_existing.results[1].resources[0].spec.volumeName == manticore_pv_name
+    fail_msg: Existing Manticore persistent storage conflicts with the configured local storage.
+
+- name: Render Manticore manifests from the authoritative base
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: manticore
+    manifest_base: "{{ role_path }}/../../../k0s-services/manticore/kustomize/base"
+    manifest_kustomize_command: "{{ manticore_kustomize_command }}"
+    manifest_values:
+      dataset_path: "{{ manticore_dataset_mountpoint }}"
+      node_name: "{{ manticore_node_name }}"
+      image: "{{ manticore_image }}"
+      memory: "{{ private_cloud.manticore.max_ram }}"
+
+- name: Select Manticore manifest stages
+  ansible.builtin.set_fact:
+    manticore_storage_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | selectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim']) | list }}
+    manticore_workload_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | rejectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim']) | list }}
+
+- name: Apply Manticore storage
+  kubernetes.core.k8s:
+    kubeconfig: "{{ manticore_kubeconfig }}"
+    state: present
+    definition: "{{ manticore_storage_manifests }}"
+
+- name: Apply Manticore workload
+  kubernetes.core.k8s:
+    kubeconfig: "{{ manticore_kubeconfig }}"
+    state: present
+    definition: "{{ manticore_workload_manifests }}"
+
+- name: Wait for Manticore deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ manticore_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ manticore_service_name }}"
+    namespace: "{{ manticore_namespace }}"
+  register: manticore_deployment
+  until:
+    - manticore_deployment.resources | length > 0
+    - manticore_deployment.resources[0].status.observedGeneration | default(0) | int >= manticore_deployment.resources[0].metadata.generation | int
+    - manticore_deployment.resources[0].status.updatedReplicas | default(0) | int == manticore_deployment.resources[0].spec.replicas | default(1) | int
+    - manticore_deployment.resources[0].status.readyReplicas | default(0) | int == manticore_deployment.resources[0].spec.replicas | default(1) | int
+    - manticore_deployment.resources[0].status.availableReplicas | default(0) | int == manticore_deployment.resources[0].spec.replicas | default(1) | int
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Wait for Manticore service endpoint
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ manticore_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    name: "{{ manticore_service_name }}"
+    namespace: "{{ manticore_namespace }}"
+  register: manticore_endpoint
+  until: manticore_endpoint.resources | length > 0 and (manticore_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0)
+  retries: 60
+  delay: 5
+  changed_when: false

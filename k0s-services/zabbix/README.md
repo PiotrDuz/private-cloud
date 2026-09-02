@@ -2,6 +2,9 @@
 
 The Zabbix server and web frontend are managed by `ansible/roles/zabbix_server`.
 
+- The Kustomize base is the authoritative Kubernetes workload definition.
+- Render the public example with `python3 ansible/render_manifests.py zabbix --base k0s-services/zabbix/kustomize/base --values k0s-services/zabbix/site-values.example.yaml`.
+
 - Configure `private_cloud.zabbix` in the public configuration.
 - Store database and administrator passwords in the encrypted configuration.
 - Run `sudo python3 ansible/install.py` from the repository root.

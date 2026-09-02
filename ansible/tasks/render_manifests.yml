@@ -1,0 +1,19 @@
+---
+- name: Render Kubernetes manifests with Kustomize for {{ manifest_service }}
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/render_manifests.py"
+      - "{{ manifest_service }}"
+      - --base
+      - "{{ manifest_base }}"
+      - --kustomize-command
+      - "{{ manifest_kustomize_command | to_json }}"
+    stdin: "{{ manifest_values | to_nice_yaml }}"
+    stdin_add_newline: true
+  register: private_cloud_rendered_manifest_command
+  changed_when: false
+
+- name: Parse Kubernetes manifests for {{ manifest_service }}
+  ansible.builtin.set_fact:
+    private_cloud_rendered_manifests: "{{ private_cloud_rendered_manifest_command.stdout | from_yaml_all | list }}"

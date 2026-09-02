@@ -1,0 +1,17 @@
+---
+- name: Create the service dataset when needed
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/service_dataset_create.yml"
+
+- name: Read service dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ private_cloud_service_dataset }}
+  register: private_cloud_service_current_quota
+  changed_when: false
+
+- name: Apply service dataset quota
+  ansible.builtin.command: zfs set quota={{ private_cloud_service_storage_size }} {{ private_cloud_service_dataset }}
+  when: private_cloud_service_current_quota.stdout | int != (private_cloud_service_storage_size | human_to_bytes | int)
+  changed_when: true
+
+- name: Verify service dataset is mounted
+  ansible.builtin.command: mountpoint -q {{ private_cloud_service_dataset_mountpoint }}
+  changed_when: false

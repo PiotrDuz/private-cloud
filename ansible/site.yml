@@ -3,6 +3,8 @@
   hosts: all
   gather_facts: true
   any_errors_fatal: true
+  vars_files:
+    - service_catalog.yml
   pre_tasks:
     - name: Remove stale transient cluster credentials
       ansible.builtin.file:
@@ -104,6 +106,14 @@
               tags: [grist]
           when: private_cloud.stages.grist | bool
           tags: [grist]
+
+        - name: Deploy Manticore
+          ansible.builtin.include_role:
+            name: manticore
+            apply:
+              tags: [manticore]
+          when: private_cloud.stages.manticore | bool
+          tags: [manticore]
 
         - name: Deploy AFFiNE
           ansible.builtin.include_role:

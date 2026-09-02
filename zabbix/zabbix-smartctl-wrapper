@@ -1,19 +1,59 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import re
+import stat
 import subprocess
 import sys
+from pathlib import Path
 
 SMARTCTL_PATH = "/usr/sbin/smartctl"
 
 
 def main() -> int:
-    result = subprocess.run([SMARTCTL_PATH, *sys.argv[1:]], check=False)
+    arguments = sys.argv[1:]
+    if not command_is_allowed(arguments):
+        return 64
+    result = subprocess.run([SMARTCTL_PATH, *arguments], check=False)
     if result.returncode < 0:
         return 128 - result.returncode
     if result.returncode >= 128 or result.returncode & 7:
         return result.returncode
     return 0
+
+
+def command_is_allowed(arguments: list[str]) -> bool:
+    if arguments in (["-j", "-V"], ["--scan", "-j"], ["--scan", "-d", "sat", "-j"]):
+        return True
+    if len(arguments) == 3 and arguments[0] == "-a" and arguments[2] == "-j":
+        return device_is_allowed(arguments[1])
+    if (
+        len(arguments) == 5
+        and arguments[0] == "-a"
+        and arguments[2] == "-d"
+        and arguments[4] == "-j"
+    ):
+        return device_is_allowed(arguments[1]) and device_type_is_allowed(arguments[3])
+    return False
+
+
+def device_is_allowed(path: str) -> bool:
+    if not re.fullmatch(r"/dev/[A-Za-z0-9_.,+/-]+", path):
+        return False
+    try:
+        resolved = Path(path).resolve(strict=True)
+        mode = resolved.stat().st_mode
+    except (OSError, RuntimeError):
+        return False
+    return (
+        resolved.is_relative_to("/dev")
+        and resolved != Path("/dev")
+        and (stat.S_ISBLK(mode) or stat.S_ISCHR(mode))
+    )
+
+
+def device_type_is_allowed(device_type: str) -> bool:
+    return bool(re.fullmatch(r"[a-z0-9][a-z0-9,+/-]*", device_type))
 
 
 if __name__ == "__main__":

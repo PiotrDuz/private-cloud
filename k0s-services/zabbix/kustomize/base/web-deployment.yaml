@@ -18,6 +18,8 @@ spec:
         app.kubernetes.io/name: zabbix
         app.kubernetes.io/component: web
     spec:
+      serviceAccountName: zabbix-web
+      automountServiceAccountToken: false
       initContainers:
         - name: wait-for-postgres
           image: postgres:18.4-bookworm
@@ -31,6 +33,9 @@ spec:
             - $(DB_SERVER_PORT)
             - -U
             - $(POSTGRES_USER)
+          resources:
+            requests: {cpu: 100m, memory: 128Mi, ephemeral-storage: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi, ephemeral-storage: 512Mi}
           env:
             - name: DB_SERVER_HOST
               value: postgres
@@ -75,6 +80,14 @@ spec:
               value: "10051"
             - name: PHP_TZ
               value: Etc/UTC
+          resources:
+            requests: {cpu: 100m, memory: 512Mi, ephemeral-storage: 128Mi}
+            limits: {cpu: 1, memory: 512Mi, ephemeral-storage: 1Gi}
+          startupProbe:
+            httpGet: {path: /ping, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /ping

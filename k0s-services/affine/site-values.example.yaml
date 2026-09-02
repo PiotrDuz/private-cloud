@@ -1,0 +1,7 @@
+dataset_path: /tank/secure/backup/k0s/services/affine
+node_name: replace-with-k0s-node
+image: ghcr.io/toeverything/affine:0.27.3@sha256:d9d145f9f47b862d1fa96e2a887052b5762846237f75fbb077be990ef646e05c
+redis_image: redis:8.2.1-alpine
+memory: 4Gi
+redis_memory: 512Mi
+node_port: 30310

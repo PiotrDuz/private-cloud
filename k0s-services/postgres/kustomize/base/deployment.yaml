@@ -17,13 +17,15 @@ spec:
       labels:
         app.kubernetes.io/name: postgres
     spec:
+      serviceAccountName: postgres
+      automountServiceAccountToken: false
       containers:
         - name: postgres
           image: pgvector/pgvector:0.8.6-pg18-bookworm
           imagePullPolicy: IfNotPresent
           args:
             - -c
-            - shared_buffers=128MB
+            - shared_buffers=512MB
             - -c
             - full_page_writes=off
             - -c
@@ -55,10 +57,14 @@ spec:
               containerPort: 5432
               protocol: TCP
           resources:
-            requests:
-              memory: 512Mi
-            limits:
-              memory: 512Mi
+            requests: {cpu: 500m, memory: 2Gi, ephemeral-storage: 512Mi}
+            limits: {cpu: 4, memory: 2Gi, ephemeral-storage: 4Gi}
+          startupProbe:
+            exec:
+              command: [pg_isready, -U, postgres, -d, postgres]
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 30
           readinessProbe:
             exec:
               command:

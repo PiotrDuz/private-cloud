@@ -1,0 +1,31 @@
+---
+private_cloud_dataset_catalog:
+  - {name: config, stage: k0s, dataset: tank/secure/backup/k0s/config, color: 42A5F5}
+  - {name: images, stage: k0s, dataset: tank/secure/no-backup/k0s/images, color: 66BB6A}
+  - {name: ephemeral, stage: k0s, dataset: tank/secure/no-backup/k0s/ephemeral, color: FFA726}
+  - {name: postgres, stage: postgres, dataset: tank/secure/backup/k0s/services/postgres, color: AB47BC}
+  - {name: meilisearch, stage: meilisearch, dataset: tank/secure/backup/k0s/services/meilisearch, color: 26A69A}
+  - {name: tika, stage: tika, dataset: tank/secure/backup/k0s/services/tika, color: 8D6E63}
+  - {name: bleve, stage: bleve, dataset: tank/secure/backup/k0s/services/bleve, color: 26C6DA}
+  - {name: onlyoffice, stage: onlyoffice, dataset: tank/secure/backup/k0s/services/onlyoffice, color: D4E157}
+  - {name: opencloud, stage: opencloud, dataset: tank/secure/backup/k0s/services/opencloud, color: EC407A}
+  - {name: grist, stage: grist, dataset: tank/secure/backup/k0s/services/grist, color: 7E57C2}
+  - {name: manticore, stage: manticore, dataset: tank/secure/backup/k0s/services/manticore, color: FF7043}
+  - {name: affine, stage: affine, dataset: tank/secure/backup/k0s/services/affine, color: 29B6F6}
+  - {name: stalwart, stage: stalwart, dataset: tank/secure/backup/k0s/services/stalwart, color: 5C6BC0}
+  - {name: zabbix, stage: zabbix_server, dataset: tank/secure/backup/k0s/services/zabbix, color: EF5350}
+
+private_cloud_stage_dependencies:
+  k0s: [zfs]
+  postgres: [k0s]
+  meilisearch: [k0s]
+  stalwart: [postgres, meilisearch]
+  tika: [k0s]
+  bleve: [k0s]
+  onlyoffice: [k0s]
+  opencloud: [tika, bleve, onlyoffice]
+  grist: [postgres]
+  manticore: [k0s]
+  affine: [postgres, manticore]
+  zabbix_server: [postgres]
+  zabbix_agent: [zabbix_server]

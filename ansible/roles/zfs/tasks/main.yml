@@ -126,19 +126,13 @@
   when: zfs_supervised_reboot_detected
 
 - name: Verify every native encrypted mount dependency before convergence
-  ansible.builtin.shell: >-
-    set -eu;
-    while IFS=$'\t' read -r dataset mountpoint encroot; do
-      test -n "$dataset" || continue;
-      test "$encroot" != '-' || continue;
-      unit=$(systemd-escape --path --suffix=mount "$mountpoint");
-      requires=$(systemctl show --value -p Requires "$unit");
-      after=$(systemctl show --value -p After "$unit");
-      grep -Eq '(^| )zfs-load-key@tank-secure.service( |$)' <<<"$requires";
-      grep -Eq '(^| )zfs-load-key@tank-secure.service( |$)' <<<"$after";
-    done < <(zfs list -H -r -o name,mountpoint,encroot {{ zfs_secure_dataset }})
-  args:
-    executable: /bin/bash
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/storage_checks.py"
+      - encrypted-mounts
+      - --dataset
+      - "{{ zfs_secure_dataset }}"
   changed_when: false
   when: zfs_supervised_reboot_detected
 
@@ -181,10 +175,6 @@
     mode: '0600'
   when: zfs_supervised_reboot_detected
 
-- name: End the read-only post-reboot verification run
-  ansible.builtin.meta: end_play
-  when: zfs_supervised_reboot_detected
-
 - name: Require stable unique disk identities for a new pool
   ansible.builtin.assert:
     that:
@@ -204,6 +194,38 @@
 - name: Load the ZFS kernel module
   ansible.builtin.command: modprobe zfs
   changed_when: false
+
+- name: Read the installed OpenZFS userland version
+  ansible.builtin.command: zfs version
+  register: zfs_version_output
+  changed_when: false
+
+- name: Extract the installed OpenZFS component versions
+  ansible.builtin.set_fact:
+    zfs_userland_version: >-
+      {{ (zfs_version_output.stdout_lines
+          | select('match', '^zfs-[0-9]')
+          | first
+          | default('')
+          | regex_search('[0-9]+(?:[.][0-9]+){1,2}'))
+         | default('0', true) }}
+    zfs_kernel_version: >-
+      {{ (zfs_version_output.stdout_lines
+          | select('match', '^zfs-kmod-')
+          | first
+          | default('')
+          | regex_search('[0-9]+(?:[.][0-9]+){1,2}'))
+         | default('0', true) }}
+
+- name: Require OpenZFS dataset prefetch support before storage mutation
+  ansible.builtin.assert:
+    that:
+      - zfs_userland_version is version('2.3', '>=')
+      - zfs_kernel_version is version('2.3', '>=')
+    fail_msg: >-
+      OpenZFS 2.3 or newer userland and kernel modules are required for the
+      managed dataset properties; installed versions are userland
+      {{ zfs_userland_version }} and kernel {{ zfs_kernel_version }}.
 
 - name: Check native ZFS systemd generator capability
   ansible.builtin.stat:
@@ -279,16 +301,9 @@
   when: zfs_pool_check.rc == 0
 
 - name: Validate the partial pool topology before resuming creation
-  ansible.builtin.shell: >-
-    set -eu;
-    status=$(zpool status -LP {{ zfs_pool_name }});
-    grep -Eq 'raidz1' <<<"$status";
-    actual=$(awk '$1 ~ /^\/dev\// {print $1}' <<<"$status" | while read -r member; do readlink -f "$member"; done | sort);
-    expected=$(for member in {{ private_cloud.storage.disks | join(' ') }}; do readlink -f "$member"; done | sort);
-    test -n "$actual";
-    test "$actual" = "$expected"
-  args:
-    executable: /bin/bash
+  ansible.builtin.command: >-
+    python3 {{ playbook_dir }}/storage_checks.py pool-layout --pool {{ zfs_pool_name }} --disks
+    {{ private_cloud.storage.disks | map('quote') | join(' ') }}
   changed_when: false
   when: zfs_pool_check.rc == 0 and zfs_secure_check.rc != 0 and zfs_create_intent_matches
 
@@ -324,20 +339,16 @@
   when: zfs_pool_check.rc != 0
 
 - name: Recheck selected disks have no mounted filesystem, swap, or holders
-  ansible.builtin.shell: >-
-    set -eu;
-    test -L '{{ item }}';
-    test "$(lsblk -nr -o MOUNTPOINTS '{{ item }}' | sed '/^$/d' | head -n 1)" = "";
-    test "$(lsblk -nr -o FSTYPE '{{ item }}' | grep -Fx swap | head -n 1)" = "";
-    test "$(swapon --noheadings --raw --show=NAME | while read -r swapdev; do readlink -f "$swapdev"; done | grep -Fx "$(readlink -f '{{ item }}')" | head -n 1)" = "";
-    for child in $(lsblk -nr -o PATH '{{ item }}'); do
-      test -z "$(find /sys/class/block/$(basename $(readlink -f "$child"))/holders -mindepth 1 -maxdepth 1 -print -quit)";
-      for member in $(zpool status -LP 2>/dev/null | awk '$1 ~ /^\/dev\// {print $1}'); do
-        test "$(readlink -f "$child")" != "$(readlink -f "$member")";
-      done;
-    done
-  args:
-    executable: /bin/bash
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/storage_checks.py"
+      - disk-safety
+      - --disk
+      - "{{ item }}"
+      - --require-symlink
+      - --resolve-swap
+      - --zfs-guard
   loop: "{{ private_cloud.storage.disks }}"
   changed_when: false
   when: zfs_pool_check.rc != 0
@@ -366,20 +377,17 @@
   when: zfs_pool_check.rc != 0 and item.rc == 0
 
 - name: Recheck selected disks immediately before erasing signatures
-  ansible.builtin.shell: >-
-    set -eu;
-    test -L '{{ item }}';
-    test "$(lsblk -dn -o TYPE '{{ item }}')" = disk;
-    test "$(lsblk -nr -o MOUNTPOINTS '{{ item }}' | sed '/^$/d' | head -n 1)" = "";
-    test "$(lsblk -nr -o FSTYPE '{{ item }}' | grep -Fx swap | head -n 1)" = "";
-    for child in $(lsblk -nr -o PATH '{{ item }}'); do
-      test -z "$(find /sys/class/block/$(basename $(readlink -f "$child"))/holders -mindepth 1 -maxdepth 1 -print -quit)";
-      for member in $(zpool status -LP 2>/dev/null | awk '$1 ~ /^\/dev\// {print $1}'); do
-        test "$(readlink -f "$child")" != "$(readlink -f "$member")";
-      done;
-    done
-  args:
-    executable: /bin/bash
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/storage_checks.py"
+      - disk-safety
+      - --disk
+      - "{{ item }}"
+      - --require-symlink
+      - --resolve-swap
+      - --zfs-guard
+      - --require-disk
   loop: "{{ private_cloud.storage.disks }}"
   register: zfs_pre_wipe_rechecks
   changed_when: false
@@ -703,19 +711,13 @@
   failed_when: zfs_generated_key_fragment.rc != 0 or zfs_generated_key_fragment.stdout | trim == ''
 
 - name: Verify every encrypted generated mount requires its key unit
-  ansible.builtin.shell: >-
-    set -eu;
-    while IFS=$'\t' read -r dataset mountpoint encroot; do
-      test -n "$dataset" || continue;
-      test "$encroot" != '-' || continue;
-      unit=$(systemd-escape --path --suffix=mount "$mountpoint");
-      requires=$(systemctl show --value -p Requires "$unit");
-      after=$(systemctl show --value -p After "$unit");
-      grep -Eq '(^| )zfs-load-key@tank-secure.service( |$)' <<<"$requires";
-      grep -Eq '(^| )zfs-load-key@tank-secure.service( |$)' <<<"$after";
-    done < <(zfs list -H -r -o name,mountpoint,encroot {{ zfs_secure_dataset }})
-  args:
-    executable: /bin/bash
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/storage_checks.py"
+      - encrypted-mounts
+      - --dataset
+      - "{{ zfs_secure_dataset }}"
   changed_when: false
 
 - name: Verify the encrypted dataset uses the fixed file key

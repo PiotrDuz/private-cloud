@@ -4,6 +4,9 @@
     that: ansible_facts.distribution | lower == 'ubuntu'
     fail_msg: Zabbix Agent is supported only on Ubuntu.
 
+- name: Resolve monitored datasets
+  ansible.builtin.include_tasks: ../../../tasks/monitoring_dataset_inventory.yml
+
 - name: Install the Zabbix repository keyring
   ansible.builtin.file:
     path: /etc/apt/keyrings
@@ -81,6 +84,15 @@
     owner: root
     group: root
     mode: '0755'
+  notify: Restart Zabbix Agent 2
+
+- name: Install the monitored dataset inventory
+  ansible.builtin.copy:
+    content: "{{ {'datasets': private_cloud_monitored_datasets} | to_nice_json }}\n"
+    dest: "{{ zabbix_dataset_inventory }}"
+    owner: root
+    group: root
+    mode: '0644'
   notify: Restart Zabbix Agent 2
 
 - name: Install ZFS user parameters
@@ -179,12 +191,12 @@
   ansible.builtin.meta: flush_handlers
 
 - name: Verify ZFS collector JSON
-  ansible.builtin.command: runuser -u zabbix -- {{ zabbix_zfs_collector }} metrics
+  ansible.builtin.command: runuser -u zabbix -- {{ zabbix_zfs_collector }} --inventory {{ zabbix_dataset_inventory }} metrics
   register: zabbix_zfs_metrics
   changed_when: false
 
 - name: Verify ZFS snapshot collector JSON
-  ansible.builtin.command: runuser -u zabbix -- {{ zabbix_zfs_collector }} snapshots
+  ansible.builtin.command: runuser -u zabbix -- {{ zabbix_zfs_collector }} --inventory {{ zabbix_dataset_inventory }} snapshots
   register: zabbix_zfs_snapshots
   changed_when: false
 

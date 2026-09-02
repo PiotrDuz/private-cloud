@@ -1,0 +1,19 @@
+---
+- name: Load the private-cloud dataset catalog
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/service_catalog.yml"
+
+- name: Initialize monitoring dataset inventory
+  ansible.builtin.set_fact:
+    private_cloud_monitored_datasets: []
+    private_cloud_all_dataset_names: "{{ private_cloud_dataset_catalog | map(attribute='name') | list }}"
+
+- name: Select datasets for enabled stages
+  ansible.builtin.set_fact:
+    private_cloud_monitored_datasets: "{{ private_cloud_monitored_datasets + [item | combine({'required': true})] }}"
+  loop: "{{ private_cloud_dataset_catalog }}"
+  when: private_cloud.stages[item.stage] | bool
+
+- name: Resolve monitored dataset names
+  ansible.builtin.set_fact:
+    private_cloud_monitored_dataset_names: "{{ private_cloud_monitored_datasets | map(attribute='name') | list }}"

@@ -13,107 +13,45 @@
     fail_msg: Stalwart configuration is invalid.
   no_log: true
 
-- name: Ensure the installer runtime directory exists
-  ansible.builtin.file:
-    path: "{{ stalwart_kubeconfig | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: '0700'
-
-- name: Inspect the k0s kubeconfig
-  ansible.builtin.stat:
-    path: "{{ stalwart_kubeconfig }}"
-  register: stalwart_kubeconfig_stat
-
-- name: Generate a missing k0s kubeconfig for tagged Stalwart reruns
-  ansible.builtin.command: k0s kubeconfig admin
-  register: stalwart_generated_kubeconfig
-  when: not stalwart_kubeconfig_stat.stat.exists
-  changed_when: true
-  no_log: true
-
-- name: Install the generated Stalwart kubeconfig
-  ansible.builtin.copy:
-    content: "{{ stalwart_generated_kubeconfig.stdout }}"
-    dest: "{{ stalwart_kubeconfig }}"
-    owner: root
-    group: root
-    mode: '0600'
-  when: not stalwart_kubeconfig_stat.stat.exists
-  no_log: true
+- name: Prepare the Stalwart kubeconfig
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"
+  vars:
+    private_cloud_kubeconfig: "{{ stalwart_kubeconfig }}"
 
 - name: Resolve a Ready Kubernetes node
   kubernetes.core.k8s_info:
     kubeconfig: "{{ stalwart_kubeconfig }}"
     api_version: v1
     kind: Node
+    name: "{{ ansible_hostname }}"
   register: stalwart_nodes
   changed_when: false
 
-- name: Initialize Stalwart node selection
+- name: Select the managed storage node
   ansible.builtin.set_fact:
-    stalwart_node_name: ''
+    stalwart_node_name: "{{ ansible_hostname }}"
 
-- name: Select the Ready Kubernetes node
-  ansible.builtin.set_fact:
-    stalwart_node_name: "{{ item.metadata.name }}"
-  loop: "{{ stalwart_nodes.resources }}"
-  when:
-    - item.status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
-    - stalwart_node_name | length == 0
-
-- name: Require a Ready Kubernetes node
+- name: Require the managed storage node to be Ready
   ansible.builtin.assert:
-    that: stalwart_node_name | length > 0
-    fail_msg: No Ready Kubernetes node is available for Stalwart.
+    that:
+      - stalwart_nodes.resources | length == 1
+      - stalwart_nodes.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    fail_msg: "Managed storage host {{ ansible_hostname }} is not a Ready Kubernetes node for Stalwart."
 
-- name: Check Stalwart service dataset
-  ansible.builtin.command: zfs list -H -p -o name {{ stalwart_dataset }}
-  register: stalwart_dataset_check
-  changed_when: false
-  failed_when: false
+- name: Prepare the Stalwart service dataset
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: Stalwart
+    private_cloud_service_dataset: "{{ stalwart_dataset }}"
+    private_cloud_service_dataset_mountpoint: "{{ stalwart_dataset_mountpoint }}"
+    private_cloud_service_storage_size: "{{ private_cloud.stalwart.storage_size }}"
 
-- name: Read Stalwart dataset usage
-  ansible.builtin.command: zfs get -H -p -o value used {{ stalwart_dataset }}
-  register: stalwart_dataset_used
-  changed_when: false
-  when: stalwart_dataset_check.rc == 0
-
-- name: Reject a Stalwart quota below existing usage
-  ansible.builtin.assert:
-    that: (private_cloud.stalwart.storage_size | human_to_bytes) | int >= (stalwart_dataset_used.stdout | int)
-    fail_msg: Stalwart storage_size cannot be smaller than existing dataset usage.
-  when: stalwart_dataset_check.rc == 0
-
-- name: Create Stalwart service dataset
-  ansible.builtin.command: zfs create {{ stalwart_dataset }}
-  when: stalwart_dataset_check.rc != 0
-  changed_when: true
-
-- name: Read Stalwart dataset quota
-  ansible.builtin.command: zfs get -H -p -o value quota {{ stalwart_dataset }}
-  register: stalwart_current_quota
-  changed_when: false
-
-- name: Apply Stalwart dataset quota
-  ansible.builtin.command: zfs set quota={{ private_cloud.stalwart.storage_size }} {{ stalwart_dataset }}
-  when: stalwart_current_quota.stdout | int != (private_cloud.stalwart.storage_size | human_to_bytes | int)
-  changed_when: true
-
-- name: Verify Stalwart dataset is mounted
-  ansible.builtin.command: mountpoint -q {{ stalwart_dataset_mountpoint }}
-  changed_when: false
-
-- name: Verify Stalwart dataset quota
-  ansible.builtin.command: zfs get -H -p -o value quota {{ stalwart_dataset }}
-  register: stalwart_effective_quota
-  changed_when: false
-
-- name: Assert Stalwart dataset quota
-  ansible.builtin.assert:
-    that: stalwart_effective_quota.stdout | int == (private_cloud.stalwart.storage_size | human_to_bytes | int)
-    fail_msg: Stalwart dataset quota does not match storage_size.
+- name: Verify the Stalwart service dataset quota
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_quota.yml"
+  vars:
+    private_cloud_service_name: Stalwart
+    private_cloud_service_dataset: "{{ stalwart_dataset }}"
+    private_cloud_service_storage_size: "{{ private_cloud.stalwart.storage_size }}"
 
 - name: Inspect existing Stalwart storage and credentials
   kubernetes.core.k8s_info:
@@ -261,19 +199,67 @@
     definition: "{{ lookup('template', 'runtime-secret.yml.j2') | from_yaml }}"
   no_log: true
 
+- name: Calculate the Stalwart configuration revision
+  ansible.builtin.set_fact:
+    stalwart_configuration_revision: >-
+      {{ (lookup('template', 'plan.ndjson.j2') ~ lookup('template', 'runtime-secret.yml.j2')) | hash('sha256') }}
+  no_log: true
+
+- name: Render Stalwart manifests from the authoritative base
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: stalwart
+    manifest_base: "{{ role_path }}/../../../k0s-services/stalwart/kustomize/base"
+    manifest_kustomize_command: "{{ stalwart_kustomize_command }}"
+    manifest_values:
+      dataset_path: "{{ stalwart_dataset_mountpoint }}"
+      node_name: "{{ stalwart_node_name }}"
+      image: "{{ stalwart_image }}"
+      cli_image: "{{ stalwart_cli_image }}"
+      memory: "{{ private_cloud.stalwart.max_ram }}"
+      hostname: "{{ private_cloud.stalwart.hostname }}"
+      database_name: "{{ private_cloud.stalwart.database_name }}"
+      database_username: "{{ private_cloud.stalwart.database_username }}"
+      https_node_port: "{{ private_cloud.stalwart.https_node_port | int }}"
+      smtp_node_port: "{{ private_cloud.stalwart.smtp_node_port | int }}"
+      submissions_node_port: "{{ private_cloud.stalwart.submissions_node_port | int }}"
+      submission_node_port: "{{ private_cloud.stalwart.submission_node_port | int }}"
+      imaps_node_port: "{{ private_cloud.stalwart.imaps_node_port | int }}"
+
+- name: Select Stalwart manifest stages
+  ansible.builtin.set_fact:
+    stalwart_storage_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | selectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim']) | list }}
+    stalwart_service_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | rejectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim', 'StatefulSet', 'Job']) | list }}
+    stalwart_statefulset_manifests: >-
+      {{ private_cloud_rendered_manifests | selectattr('kind', 'equalto', 'StatefulSet') | list }}
+    stalwart_job_manifests: >-
+      {{ private_cloud_rendered_manifests | selectattr('kind', 'equalto', 'Job') | list }}
+
 - name: Apply Stalwart storage and services
   kubernetes.core.k8s:
     kubeconfig: "{{ stalwart_kubeconfig }}"
     state: present
-    definition: "{{ lookup('template', item) | from_yaml }}"
-  loop:
-    - pv.yml.j2
-    - pvc.yml.j2
-    - config.yml.j2
-    - headless-service.yml.j2
-    - service.yml.j2
-    - public-service.yml.j2
+    definition: "{{ stalwart_storage_manifests + stalwart_service_manifests }}"
   no_log: true
+- name: Inspect the applied Stalwart configuration revision
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    api_version: apps/v1
+    kind: StatefulSet
+    name: "{{ stalwart_service_name }}"
+    namespace: "{{ stalwart_namespace }}"
+  register: stalwart_existing_statefulset
+  changed_when: false
+
+- name: Determine whether Stalwart configuration must be applied
+  ansible.builtin.set_fact:
+    stalwart_configuration_required: >-
+      {{ stalwart_existing_statefulset.resources | length == 0 or ((stalwart_existing_statefulset.resources[0].spec.template.metadata.annotations | default({})).get("private-cloud.example/configuration-revision", "") != stalwart_configuration_revision) }}
+
 
 - name: Apply Stalwart configuration with temporary recovery access
   block:
@@ -291,7 +277,24 @@
       kubernetes.core.k8s:
         kubeconfig: "{{ stalwart_kubeconfig }}"
         state: present
-        definition: "{{ lookup('template', 'statefulset.yml.j2') | from_yaml }}"
+        definition: "{{ stalwart_statefulset_manifests }}"
+      no_log: true
+
+    - name: Restart Stalwart with temporary recovery access
+      kubernetes.core.k8s:
+        kubeconfig: "{{ stalwart_kubeconfig }}"
+        state: patched
+        definition:
+          apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: "{{ stalwart_service_name }}"
+            namespace: "{{ stalwart_namespace }}"
+          spec:
+            template:
+              metadata:
+                annotations:
+                  private-cloud.example/recovery-revision: "{{ stalwart_configuration_revision }}"
       no_log: true
 
     - name: Wait for Stalwart recovery access
@@ -304,8 +307,11 @@
       register: stalwart_statefulset
       until:
         - stalwart_statefulset.resources | length > 0
-        - stalwart_statefulset.resources[0].status.readyReplicas | default(0) | int == 1
-        - stalwart_statefulset.resources[0].status.currentRevision | default('') == stalwart_statefulset.resources[0].status.updateRevision | default('pending')
+        - stalwart_statefulset.resources[0].status.observedGeneration | default(0) | int >= stalwart_statefulset.resources[0].metadata.generation | int
+        - stalwart_statefulset.resources[0].status.updateRevision | default('') | length > 0
+        - stalwart_statefulset.resources[0].status.currentRevision | default('') == stalwart_statefulset.resources[0].status.updateRevision
+        - stalwart_statefulset.resources[0].status.updatedReplicas | default(0) | int == stalwart_statefulset.resources[0].spec.replicas | default(1) | int
+        - stalwart_statefulset.resources[0].status.readyReplicas | default(0) | int == stalwart_statefulset.resources[0].spec.replicas | default(1) | int
       retries: 60
       delay: 5
       changed_when: false
@@ -325,7 +331,7 @@
       kubernetes.core.k8s:
         kubeconfig: "{{ stalwart_kubeconfig }}"
         state: present
-        definition: "{{ lookup('template', 'job.yml.j2') | from_yaml }}"
+        definition: "{{ stalwart_job_manifests }}"
       no_log: true
 
     - name: Wait for Stalwart configuration job
@@ -359,7 +365,7 @@
         - {api_version: v1, kind: Secret, name: stalwart-recovery-credentials}
       no_log: true
 
-    - name: Restart Stalwart without recovery access
+    - name: Restart Stalwart without recovery access after successful configuration
       kubernetes.core.k8s:
         kubeconfig: "{{ stalwart_kubeconfig }}"
         state: patched
@@ -373,7 +379,33 @@
             template:
               metadata:
                 annotations:
-                  private-cloud.example/recovery-removed-at: "{{ ansible_date_time.iso8601 }}"
+                  private-cloud.example/recovery-revision: null
+                  private-cloud.example/configuration-revision: "{{ stalwart_configuration_revision }}"
+      when:
+        - stalwart_plan_job is defined
+        - stalwart_plan_job.resources | default([]) | length > 0
+        - stalwart_plan_job.resources[0].status.succeeded | default(0) | int == 1
+      no_log: true
+
+    - name: Restart Stalwart without recovery access after failed configuration
+      kubernetes.core.k8s:
+        kubeconfig: "{{ stalwart_kubeconfig }}"
+        state: patched
+        definition:
+          apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: "{{ stalwart_service_name }}"
+            namespace: "{{ stalwart_namespace }}"
+          spec:
+            template:
+              metadata:
+                annotations:
+                  private-cloud.example/recovery-revision: null
+      when: >-
+        stalwart_plan_job is not defined or
+        stalwart_plan_job.resources | default([]) | length == 0 or
+        stalwart_plan_job.resources[0].status.succeeded | default(0) | int != 1
       no_log: true
 
     - name: Wait for Stalwart without recovery access
@@ -386,15 +418,15 @@
       register: stalwart_final_statefulset
       until:
         - stalwart_final_statefulset.resources | length > 0
-        - stalwart_final_statefulset.resources[0].status.readyReplicas | default(0) | int == 1
-        - stalwart_final_statefulset.resources[0].status.currentRevision | default('') == stalwart_final_statefulset.resources[0].status.updateRevision | default('pending')
+        - stalwart_final_statefulset.resources[0].status.observedGeneration | default(0) | int >= stalwart_final_statefulset.resources[0].metadata.generation | int
+        - stalwart_final_statefulset.resources[0].status.updateRevision | default('') | length > 0
+        - stalwart_final_statefulset.resources[0].status.currentRevision | default('') == stalwart_final_statefulset.resources[0].status.updateRevision
+        - stalwart_final_statefulset.resources[0].status.updatedReplicas | default(0) | int == stalwart_final_statefulset.resources[0].spec.replicas | default(1) | int
+        - stalwart_final_statefulset.resources[0].status.readyReplicas | default(0) | int == stalwart_final_statefulset.resources[0].spec.replicas | default(1) | int
       retries: 60
       delay: 5
       changed_when: false
-      when:
-        - stalwart_plan_job is defined
-        - stalwart_plan_job.resources | default([]) | length > 0
-        - stalwart_plan_job.resources[0].status.succeeded | default(0) | int == 1
+  when: stalwart_configuration_required | bool
 
 - name: Wait for Stalwart public service endpoint
   kubernetes.core.k8s_info:

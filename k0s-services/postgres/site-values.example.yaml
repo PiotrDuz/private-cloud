@@ -1,0 +1,5 @@
+dataset_path: /tank/secure/backup/k0s/services/postgres
+node_name: replace-with-k0s-node
+image: pgvector/pgvector:0.8.6-pg18-bookworm
+memory: 2Gi
+shared_buffers: 512MB

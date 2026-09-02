@@ -12,6 +12,10 @@ postgres_admin_username: postgres
 postgres_image: pgvector/pgvector:0.8.6-pg18-bookworm
 postgres_pgvector_version: 0.8.6
 postgres_kubeconfig: /run/private-cloud/kubeconfig
+postgres_kustomize_command:
+  - k0s
+  - kubectl
+  - kustomize
 postgres_zfs_properties:
   recordsize: 8K
   compression: zstd

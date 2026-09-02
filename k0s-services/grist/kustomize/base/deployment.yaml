@@ -17,6 +17,8 @@ spec:
       labels:
         app.kubernetes.io/name: grist
     spec:
+      serviceAccountName: grist
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 60
       containers:
         - name: grist
@@ -42,8 +44,13 @@ spec:
           ports:
             - {name: http, containerPort: 8484, protocol: TCP}
           resources:
-            requests: {memory: 2Gi}
-            limits: {memory: 2Gi}
+            requests: {cpu: 250m, memory: 2Gi, ephemeral-storage: 256Mi}
+            limits: {cpu: 2, memory: 2Gi, ephemeral-storage: 2Gi}
+          startupProbe:
+            httpGet: {path: /, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
           readinessProbe:
             httpGet: {path: /, port: http}
             initialDelaySeconds: 20

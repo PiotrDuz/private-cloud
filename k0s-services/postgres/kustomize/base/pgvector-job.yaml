@@ -12,6 +12,8 @@ spec:
       labels:
         app.kubernetes.io/name: postgres-pgvector
     spec:
+      serviceAccountName: postgres-pgvector
+      automountServiceAccountToken: false
       restartPolicy: OnFailure
       containers:
         - name: pgvector
@@ -32,3 +34,6 @@ spec:
             - >-
               until pg_isready; do sleep 2; done;
               psql -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS vector; ALTER EXTENSION vector UPDATE;'
+          resources:
+            requests: {cpu: 100m, memory: 128Mi, ephemeral-storage: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi, ephemeral-storage: 512Mi}

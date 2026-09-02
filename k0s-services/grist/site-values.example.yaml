@@ -1,0 +1,10 @@
+dataset_path: /tank/secure/backup/k0s/services/grist
+node_name: replace-with-k0s-node
+image: gristlabs/grist:1.7.16
+memory: 2Gi
+hostname: grist.example.com
+default_email: admin@example.com
+database_name: grist
+database_username: grist
+postgres_service: postgres
+node_port: 30848

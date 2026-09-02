@@ -1,3 +1,4 @@
+schema_version: 2
 private_cloud:
   stages:
     zfs: true
@@ -10,6 +11,7 @@ private_cloud:
     onlyoffice: true
     opencloud: true
     grist: true
+    manticore: true
     affine: true
     zabbix_server: true
     zabbix_agent: true
@@ -19,6 +21,7 @@ private_cloud:
       - /dev/disk/by-id/replace-with-second-disk
   k0s:
     version: v1.36.2+k0s.0
+    sha256: 8b5d985f803df27acb44f900b2574a5b48e600bd2f87a3335d2a853b888e9298
     config_quota: 1G
     images_quota: 10G
     ephemeral_quota: 10G
@@ -51,6 +54,9 @@ private_cloud:
     default_email: admin@example.com
     hostname: grist.example.com
     node_port: 30848
+  manticore:
+    storage_size: 50G
+    max_ram: 1Gi
   affine:
     storage_size: 100G
     max_ram: 4Gi

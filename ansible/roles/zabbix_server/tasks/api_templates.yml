@@ -1,3 +1,35 @@
+- name: Load the retained ZFS template
+  ansible.builtin.set_fact:
+    zabbix_zfs_template_document: "{{ lookup('file', zabbix_template_paths[0]) | from_yaml }}"
+
+- name: Initialize enabled ZFS template items
+  ansible.builtin.set_fact:
+    zabbix_enabled_zfs_template_items: []
+
+- name: Select ZFS items for enabled datasets
+  ansible.builtin.set_fact:
+    zabbix_enabled_zfs_template_items: "{{ zabbix_enabled_zfs_template_items + [item] }}"
+  loop: "{{ zabbix_zfs_template_document.zabbix_export.templates[0].items }}"
+  when: item.key not in zabbix_all_dataset_item_keys or item.key in zabbix_monitored_dataset_item_keys
+  no_log: true
+
+- name: Build the enabled ZFS template
+  ansible.builtin.set_fact:
+    zabbix_enabled_zfs_template: >-
+      {{ zabbix_zfs_template_document | combine({
+           'zabbix_export': zabbix_zfs_template_document.zabbix_export | combine({
+             'templates': [zabbix_zfs_template_document.zabbix_export.templates[0] | combine({
+               'items': zabbix_enabled_zfs_template_items
+             })]
+           })
+         }) }}
+
+- name: Resolve managed Zabbix template sources
+  ansible.builtin.set_fact:
+    zabbix_template_sources:
+      - "{{ zabbix_enabled_zfs_template | to_nice_yaml(indent=2, width=4096) }}"
+      - "{{ lookup('file', zabbix_template_paths[1]) }}"
+
 - name: Import managed Zabbix templates
   ansible.builtin.uri:
     url: "{{ zabbix_api_url }}"
@@ -9,7 +41,7 @@
       method: configuration.import
       params:
         format: yaml
-        source: "{{ lookup('file', item) }}"
+        source: "{{ item }}"
         rules:
           discoveryRules: {createMissing: true, updateExisting: true, deleteMissing: true}
           graphs: {createMissing: true, updateExisting: true, deleteMissing: true}
@@ -20,7 +52,7 @@
           valueMaps: {createMissing: true, updateExisting: true, deleteMissing: true}
       id: 10
     status_code: 200
-  loop: "{{ zabbix_template_paths }}"
+  loop: "{{ zabbix_template_sources }}"
   register: zabbix_template_imports
   changed_when: true
   no_log: true

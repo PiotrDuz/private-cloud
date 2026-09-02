@@ -13,107 +13,45 @@
     fail_msg: OnlyOffice configuration is invalid.
   no_log: true
 
-- name: Ensure the installer runtime directory exists
-  ansible.builtin.file:
-    path: "{{ onlyoffice_kubeconfig | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: '0700'
-
-- name: Inspect the k0s kubeconfig
-  ansible.builtin.stat:
-    path: "{{ onlyoffice_kubeconfig }}"
-  register: onlyoffice_kubeconfig_stat
-
-- name: Generate a missing k0s kubeconfig for tagged OnlyOffice reruns
-  ansible.builtin.command: k0s kubeconfig admin
-  register: onlyoffice_generated_kubeconfig
-  when: not onlyoffice_kubeconfig_stat.stat.exists
-  changed_when: true
-  no_log: true
-
-- name: Install the generated OnlyOffice kubeconfig
-  ansible.builtin.copy:
-    content: "{{ onlyoffice_generated_kubeconfig.stdout }}"
-    dest: "{{ onlyoffice_kubeconfig }}"
-    owner: root
-    group: root
-    mode: '0600'
-  when: not onlyoffice_kubeconfig_stat.stat.exists
-  no_log: true
+- name: Prepare the OnlyOffice kubeconfig
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"
+  vars:
+    private_cloud_kubeconfig: "{{ onlyoffice_kubeconfig }}"
 
 - name: Resolve a Ready Kubernetes node
   kubernetes.core.k8s_info:
     kubeconfig: "{{ onlyoffice_kubeconfig }}"
     api_version: v1
     kind: Node
+    name: "{{ ansible_hostname }}"
   register: onlyoffice_nodes
   changed_when: false
 
-- name: Initialize OnlyOffice node selection
+- name: Select the managed storage node
   ansible.builtin.set_fact:
-    onlyoffice_node_name: ''
+    onlyoffice_node_name: "{{ ansible_hostname }}"
 
-- name: Select the Ready Kubernetes node
-  ansible.builtin.set_fact:
-    onlyoffice_node_name: "{{ item.metadata.name }}"
-  loop: "{{ onlyoffice_nodes.resources }}"
-  when:
-    - item.status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
-    - onlyoffice_node_name | length == 0
-
-- name: Require a Ready Kubernetes node
+- name: Require the managed storage node to be Ready
   ansible.builtin.assert:
-    that: onlyoffice_node_name | length > 0
-    fail_msg: No Ready Kubernetes node is available for OnlyOffice.
+    that:
+      - onlyoffice_nodes.resources | length == 1
+      - onlyoffice_nodes.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    fail_msg: "Managed storage host {{ ansible_hostname }} is not a Ready Kubernetes node for OnlyOffice."
 
-- name: Check OnlyOffice service dataset
-  ansible.builtin.command: zfs list -H -p -o name {{ onlyoffice_dataset }}
-  register: onlyoffice_dataset_check
-  changed_when: false
-  failed_when: false
+- name: Prepare the OnlyOffice service dataset
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: OnlyOffice
+    private_cloud_service_dataset: "{{ onlyoffice_dataset }}"
+    private_cloud_service_dataset_mountpoint: "{{ onlyoffice_dataset_mountpoint }}"
+    private_cloud_service_storage_size: "{{ private_cloud.onlyoffice.storage_size }}"
 
-- name: Read OnlyOffice dataset usage
-  ansible.builtin.command: zfs get -H -p -o value used {{ onlyoffice_dataset }}
-  register: onlyoffice_dataset_used
-  changed_when: false
-  when: onlyoffice_dataset_check.rc == 0
-
-- name: Reject an OnlyOffice quota below existing usage
-  ansible.builtin.assert:
-    that: (private_cloud.onlyoffice.storage_size | human_to_bytes) | int >= (onlyoffice_dataset_used.stdout | int)
-    fail_msg: OnlyOffice storage_size cannot be smaller than existing dataset usage.
-  when: onlyoffice_dataset_check.rc == 0
-
-- name: Create OnlyOffice service dataset
-  ansible.builtin.command: zfs create {{ onlyoffice_dataset }}
-  when: onlyoffice_dataset_check.rc != 0
-  changed_when: true
-
-- name: Read OnlyOffice dataset quota
-  ansible.builtin.command: zfs get -H -p -o value quota {{ onlyoffice_dataset }}
-  register: onlyoffice_current_quota
-  changed_when: false
-
-- name: Apply OnlyOffice dataset quota
-  ansible.builtin.command: zfs set quota={{ private_cloud.onlyoffice.storage_size }} {{ onlyoffice_dataset }}
-  when: onlyoffice_current_quota.stdout | int != (private_cloud.onlyoffice.storage_size | human_to_bytes | int)
-  changed_when: true
-
-- name: Verify OnlyOffice dataset is mounted
-  ansible.builtin.command: mountpoint -q {{ onlyoffice_dataset_mountpoint }}
-  changed_when: false
-
-- name: Verify OnlyOffice dataset quota
-  ansible.builtin.command: zfs get -H -p -o value quota {{ onlyoffice_dataset }}
-  register: onlyoffice_effective_quota
-  changed_when: false
-
-- name: Assert OnlyOffice dataset quota
-  ansible.builtin.assert:
-    that: onlyoffice_effective_quota.stdout | int == (private_cloud.onlyoffice.storage_size | human_to_bytes | int)
-    fail_msg: OnlyOffice dataset quota does not match storage_size.
+- name: Verify the OnlyOffice service dataset quota
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_quota.yml"
+  vars:
+    private_cloud_service_name: OnlyOffice
+    private_cloud_service_dataset: "{{ onlyoffice_dataset }}"
+    private_cloud_service_storage_size: "{{ private_cloud.onlyoffice.storage_size }}"
 
 - name: Inspect existing OnlyOffice storage and credentials
   kubernetes.core.k8s_info:
@@ -167,18 +105,39 @@
   when: not onlyoffice_secret_present | bool or not onlyoffice_secret_matches | bool
   no_log: true
 
-- name: Apply OnlyOffice storage and workload
+- name: Render OnlyOffice manifests from the authoritative base
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: onlyoffice
+    manifest_base: "{{ role_path }}/../../../k0s-services/onlyoffice/kustomize/base"
+    manifest_kustomize_command: "{{ onlyoffice_kustomize_command }}"
+    manifest_values:
+      dataset_path: "{{ onlyoffice_dataset_mountpoint }}"
+      node_name: "{{ onlyoffice_node_name }}"
+      image: "{{ onlyoffice_image }}"
+      memory: "{{ private_cloud.onlyoffice.max_ram }}"
+      node_port: "{{ private_cloud.onlyoffice.node_port }}"
+
+- name: Select OnlyOffice manifest stages
+  ansible.builtin.set_fact:
+    onlyoffice_storage_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | selectattr("kind", "in", ["PersistentVolume", "PersistentVolumeClaim"]) | list }}
+    onlyoffice_workload_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | rejectattr("kind", "in", ["PersistentVolume", "PersistentVolumeClaim"]) | list }}
+
+- name: Apply OnlyOffice storage
   kubernetes.core.k8s:
     kubeconfig: "{{ onlyoffice_kubeconfig }}"
     state: present
-    definition: "{{ lookup('template', item) | from_yaml }}"
-  loop:
-    - pv.yml.j2
-    - pvc.yml.j2
-    - deployment.yml.j2
-    - service.yml.j2
-    - public-service.yml.j2
-  no_log: true
+    definition: "{{ onlyoffice_storage_manifests }}"
+
+- name: Apply OnlyOffice workload
+  kubernetes.core.k8s:
+    kubeconfig: "{{ onlyoffice_kubeconfig }}"
+    state: present
+    definition: "{{ onlyoffice_workload_manifests }}"
 
 - name: Restart OnlyOffice after a credentials change
   kubernetes.core.k8s:
@@ -208,8 +167,10 @@
   register: onlyoffice_deployment
   until:
     - onlyoffice_deployment.resources | length > 0
-    - onlyoffice_deployment.resources[0].status.updatedReplicas | default(0) | int == 1
-    - onlyoffice_deployment.resources[0].status.availableReplicas | default(0) | int == 1
+    - onlyoffice_deployment.resources[0].status.observedGeneration | default(0) | int >= onlyoffice_deployment.resources[0].metadata.generation | int
+    - onlyoffice_deployment.resources[0].status.updatedReplicas | default(0) | int == onlyoffice_deployment.resources[0].spec.replicas | default(1) | int
+    - onlyoffice_deployment.resources[0].status.readyReplicas | default(0) | int == onlyoffice_deployment.resources[0].spec.replicas | default(1) | int
+    - onlyoffice_deployment.resources[0].status.availableReplicas | default(0) | int == onlyoffice_deployment.resources[0].spec.replicas | default(1) | int
   retries: 90
   delay: 5
   changed_when: false

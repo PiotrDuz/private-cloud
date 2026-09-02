@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-ingress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: affine
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grist
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres-pgvector
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: stalwart
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: zabbix
+      ports:
+        - {protocol: TCP, port: 5432}

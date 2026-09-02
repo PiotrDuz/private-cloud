@@ -1,0 +1,23 @@
+---
+- name: Check service dataset
+  ansible.builtin.command: zfs list -H -p -o name {{ private_cloud_service_dataset }}
+  register: private_cloud_service_dataset_check
+  changed_when: false
+  failed_when: false
+
+- name: Read service dataset usage
+  ansible.builtin.command: zfs get -H -p -o value used {{ private_cloud_service_dataset }}
+  register: private_cloud_service_dataset_used
+  changed_when: false
+  when: private_cloud_service_dataset_check.rc == 0
+
+- name: Reject a quota below existing usage
+  ansible.builtin.assert:
+    that: (private_cloud_service_storage_size | human_to_bytes) | int >= (private_cloud_service_dataset_used.stdout | int)
+    fail_msg: "{{ private_cloud_service_name }} {{ private_cloud_service_capacity_label | default('storage_size') }} cannot be smaller than existing dataset usage."
+  when: private_cloud_service_dataset_check.rc == 0
+
+- name: Create service dataset
+  ansible.builtin.command: zfs create {{ private_cloud_service_dataset }}
+  when: private_cloud_service_dataset_check.rc != 0
+  changed_when: true

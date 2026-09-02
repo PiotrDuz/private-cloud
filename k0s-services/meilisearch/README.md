@@ -9,3 +9,12 @@ The Meilisearch service is managed by `ansible/roles/meilisearch`.
 - The dataset uses the configured quota.
 - The local PV and PVC advertise a fixed `10Ti` capacity.
 - The service is reachable only inside the cluster.
+
+## Manifest review
+
+- The Kustomize base is the authoritative public workload definition.
+- Install Kustomize to render without root or a cluster.
+
+```bash
+python3 ansible/render_manifests.py meilisearch --base k0s-services/meilisearch/kustomize/base --values k0s-services/meilisearch/site-values.example.yaml
+```

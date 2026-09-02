@@ -1,0 +1,13 @@
+dataset_path: /tank/secure/backup/k0s/services/stalwart
+node_name: replace-with-k0s-node
+image: stalwartlabs/stalwart:v0.16
+cli_image: ghcr.io/stalwartlabs/cli:latest@sha256:fe199affac1d120a8c200ef39ae629765a2976270e0453575c1caf906ee15b52
+memory: 2Gi
+hostname: mail.example.com
+database_name: stalwart
+database_username: stalwart
+https_node_port: 30443
+smtp_node_port: 30025
+submissions_node_port: 30465
+submission_node_port: 30587
+imaps_node_port: 30993

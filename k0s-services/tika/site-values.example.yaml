@@ -1,0 +1,4 @@
+dataset_path: /tank/secure/backup/k0s/services/tika
+node_name: replace-with-k0s-node
+image: apache/tika:3.3.1.0
+memory: 1Gi

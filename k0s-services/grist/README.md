@@ -15,3 +15,12 @@ The Grist service is managed by `ansible/roles/grist`.
 - Forward the Grist hostname to the configured NodePort through the TLS proxy.
 - Preserve WebSockets in the TLS proxy.
 - Use the boot key for initial administrator setup.
+
+## Manifest review
+
+- The Kustomize base is the authoritative public workload definition.
+- Install Kustomize to render without root or a cluster.
+
+```bash
+python3 ansible/render_manifests.py grist --base k0s-services/grist/kustomize/base --values k0s-services/grist/site-values.example.yaml
+```

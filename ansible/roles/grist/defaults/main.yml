@@ -10,4 +10,8 @@ grist_pvc_name: grist-data
 grist_pv_capacity: 10Ti
 grist_image: gristlabs/grist:1.7.16
 grist_kubeconfig: /run/private-cloud/kubeconfig
+grist_kustomize_command:
+  - k0s
+  - kubectl
+  - kustomize
 grist_postgres_service: postgres

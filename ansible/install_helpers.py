@@ -27,6 +27,7 @@ SECRETS_CONFIGURATION = Path(__file__).resolve().parent / "config" / "private-cl
 EXAMPLE_CONFIGURATION = Path(__file__).resolve().parent / "config" / "private-cloud.example.yml"
 INVENTORY = Path(__file__).resolve().parent / "inventory" / "hosts.yml"
 PLAYBOOK = Path(__file__).resolve().parent / "site.yml"
+ANSIBLE_CONFIG = Path(__file__).resolve().parent / "ansible.cfg"
 LOCK_FILE = RUNTIME_DIRECTORY / "installer.lock"
 VAULT_PASSWORD_FILE = RUNTIME_DIRECTORY / "vault-password"
 OLD_VAULT_PASSWORD_FILE = RUNTIME_DIRECTORY / "old-vault-password"
@@ -34,7 +35,33 @@ TEMP_SECRET_FILE = RUNTIME_DIRECTORY / "secrets.yml"
 TEMP_PUBLIC_FILE = RUNTIME_DIRECTORY / "public.yml"
 TEMP_RUNTIME_FILE = RUNTIME_DIRECTORY / "runtime.yml"
 KUBECONFIG_FILE = RUNTIME_DIRECTORY / "kubeconfig"
+INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
+SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate")
+CURRENT_SCHEMA_VERSION = 2
+CURRENT_SECRETS_SCHEMA_VERSION = 1
+SECRET_SCHEMAS = {
+    "storage": {"encryption_passphrase"},
+    "postgres": {"admin_password"},
+    "meilisearch": {"master_key"},
+    "stalwart": {"database_password", "admin_password", "mailbox_password", "relay_password"},
+    "zabbix": {"database_password", "admin_password"},
+    "onlyoffice": {"jwt_secret"},
+    "opencloud": {"admin_password"},
+    "grist": {"database_password", "session_secret", "boot_key"},
+    "affine": {"database_password"},
+}
+SECRET_STAGES = {
+    "storage": "zfs",
+    "postgres": "postgres",
+    "meilisearch": "meilisearch",
+    "stalwart": "stalwart",
+    "zabbix": "zabbix_server",
+    "onlyoffice": "onlyoffice",
+    "opencloud": "opencloud",
+    "grist": "grist",
+    "affine": "affine",
+}
 QUOTA_PATTERN = re.compile(r"[1-9][0-9]*[KMGTPE]")
 RAM_PATTERN = re.compile(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)")
 IDENTIFIER_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -114,6 +141,51 @@ def dump_yaml(value: Mapping[str, Any]) -> str:
     return yaml.safe_dump(value, default_flow_style=False, sort_keys=False)
 
 
+def migrate_public_configuration(configuration: Mapping[str, Any], defaults: Mapping[str, Any]) -> dict[str, Any]:
+    version = configuration.get("schema_version", 0)
+    if type(version) is not int or version < 0:
+        raise InstallerError("Public configuration schema_version must be a non-negative integer")
+    if version > CURRENT_SCHEMA_VERSION:
+        raise InstallerError(f"Public configuration schema version {version} is newer than supported version {CURRENT_SCHEMA_VERSION}")
+    migrated = json.loads(json.dumps(configuration))
+    while version < CURRENT_SCHEMA_VERSION:
+        if version == 0:
+            migrated = _migrate_public_v0_to_v1(migrated, defaults)
+        elif version == 1:
+            migrated = _migrate_public_v1_to_v2(migrated, defaults)
+        else:
+            raise InstallerError(f"No migration is available from public configuration schema version {version}")
+        version = migrated["schema_version"]
+    return migrated
+
+
+def migrate_secrets_configuration(configuration: Mapping[str, Any]) -> dict[str, Any]:
+    allowed = {"secrets_schema_version", "private_cloud_secrets"}
+    if not set(configuration) <= allowed:
+        raise InstallerError("Encrypted configuration has unknown top-level keys")
+    version = configuration.get("secrets_schema_version", 0)
+    if type(version) is not int or version < 0:
+        raise InstallerError("Encrypted configuration secrets_schema_version must be a non-negative integer")
+    if version > CURRENT_SECRETS_SCHEMA_VERSION:
+        raise InstallerError(
+            f"Encrypted configuration schema version {version} is newer than supported version {CURRENT_SECRETS_SCHEMA_VERSION}"
+        )
+    migrated = json.loads(json.dumps(configuration))
+    while version < CURRENT_SECRETS_SCHEMA_VERSION:
+        if version == 0:
+            migrated = _migrate_secrets_v0_to_v1(migrated)
+        else:
+            raise InstallerError(f"No migration is available from encrypted configuration schema version {version}")
+        version = migrated["secrets_schema_version"]
+    secrets_root = migrated.get("private_cloud_secrets")
+    if not isinstance(secrets_root, dict) or not set(secrets_root) <= set(SECRET_SCHEMAS):
+        raise InstallerError("Encrypted configuration has unknown or malformed sections")
+    for section, values in secrets_root.items():
+        if not isinstance(values, dict) or not set(values) <= SECRET_SCHEMAS[section]:
+            raise InstallerError("Encrypted configuration has unknown or malformed keys")
+    return migrated
+
+
 def prompt_line(prompt: str, default: str | None = None, input_stream: TextIO | None = None) -> str:
     suffix = f" [{default}]" if default is not None else ""
     stream = input_stream or __import__("sys").stdin
@@ -165,31 +237,24 @@ def prompt_secret(prompt: str, *, confirm: bool = True) -> str:
 
 
 def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
-    if set(configuration) != {"private_cloud"} or not isinstance(configuration["private_cloud"], dict):
-        raise InstallerError("Public configuration must contain only private_cloud")
+    if set(configuration) != {"schema_version", "private_cloud"} or not isinstance(configuration["private_cloud"], dict):
+        raise InstallerError("Public configuration must contain only schema_version and private_cloud")
+    if configuration["schema_version"] != CURRENT_SCHEMA_VERSION:
+        raise InstallerError(f"Public configuration schema_version must be {CURRENT_SCHEMA_VERSION}")
     cloud = configuration["private_cloud"]
-    expected = {"stages", "storage", "k0s", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "affine", "stalwart", "zabbix"}
+    expected = {"stages", "storage", "k0s", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "affine", "stalwart", "zabbix"}
     if set(cloud) != expected:
         raise InstallerError("Public configuration has missing or unknown sections")
     stages = cloud["stages"]
-    if not isinstance(stages, dict) or set(stages) != {"zfs", "k0s", "postgres", "meilisearch", "stalwart", "tika", "bleve", "onlyoffice", "opencloud", "grist", "affine", "zabbix_server", "zabbix_agent"}:
+    if not isinstance(stages, dict) or set(stages) != {"zfs", "k0s", "postgres", "meilisearch", "stalwart", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "affine", "zabbix_server", "zabbix_agent"}:
         raise InstallerError("Stage configuration is incomplete")
     if any(type(value) is not bool for value in stages.values()):
         raise InstallerError("Every stage flag must be Boolean")
-    dependencies = {
-        "k0s": ("zfs",),
-        "postgres": ("k0s",),
-        "meilisearch": ("k0s",),
-        "stalwart": ("postgres", "meilisearch"),
-        "tika": ("k0s",),
-        "bleve": ("k0s",),
-        "onlyoffice": ("k0s",),
-        "opencloud": ("tika", "bleve", "onlyoffice"),
-        "grist": ("postgres",),
-        "affine": ("postgres",),
-        "zabbix_server": ("postgres",),
-        "zabbix_agent": ("zabbix_server",),
-    }
+    dependencies = load_yaml(SERVICE_CATALOG).get("private_cloud_stage_dependencies")
+    if not isinstance(dependencies, dict) or set(dependencies) != set(stages) - {"zfs"}:
+        raise InstallerError("Service catalog stage dependencies are incomplete")
+    if any(not isinstance(required, list) or any(dependency not in stages for dependency in required) for required in dependencies.values()):
+        raise InstallerError("Service catalog stage dependencies are invalid")
     if any(stages[stage] and not all(stages[dependency] for dependency in required) for stage, required in dependencies.items()):
         raise InstallerError("Enabled stages must follow the dependency chain")
     storage = cloud["storage"]
@@ -204,11 +269,13 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         if any(not re.fullmatch(r"/dev/disk/by-id/[A-Za-z0-9_.:+-]+", disk) for disk in disks):
             raise InstallerError("ZFS disks must use stable /dev/disk/by-id paths")
     k0s = cloud["k0s"]
-    if not isinstance(k0s, dict) or set(k0s) != {"version", "config_quota", "images_quota", "ephemeral_quota"}:
+    if not isinstance(k0s, dict) or set(k0s) != {"version", "sha256", "config_quota", "images_quota", "ephemeral_quota"}:
         raise InstallerError("k0s configuration has missing or unknown keys")
-    for key in ("version", "config_quota", "images_quota", "ephemeral_quota"):
+    for key in ("version", "sha256", "config_quota", "images_quota", "ephemeral_quota"):
         if not isinstance(k0s, dict) or not isinstance(k0s.get(key), str) or not k0s[key]:
             raise InstallerError(f"Missing k0s.{key}")
+    if not re.fullmatch(r"[0-9a-f]{64}", k0s["sha256"]):
+        raise InstallerError("k0s.sha256 must be a lowercase SHA-256 digest")
     for key in ("config_quota", "images_quota", "ephemeral_quota"):
         if not QUOTA_PATTERN.fullmatch(k0s[key]):
             raise InstallerError(f"Invalid k0s.{key}")
@@ -275,6 +342,11 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Invalid grist.hostname")
     if type(grist.get("node_port")) is not int or not 30000 <= grist["node_port"] <= 32767:
         raise InstallerError("Invalid grist.node_port")
+    manticore = cloud["manticore"]
+    if not isinstance(manticore, dict) or set(manticore) != {"storage_size", "max_ram"}:
+        raise InstallerError("Manticore configuration has missing or unknown keys")
+    if not QUOTA_PATTERN.fullmatch(str(manticore.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(manticore.get("max_ram", ""))):
+        raise InstallerError("Invalid Manticore size configuration")
     affine = cloud["affine"]
     expected_affine = {"storage_size", "max_ram", "redis_max_ram", "database_name", "database_username", "hostname", "node_port"}
     if not isinstance(affine, dict) or set(affine) != expected_affine:
@@ -360,39 +432,35 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Every public NodePort must be unique")
 
 
-def validate_secrets_configuration(configuration: Mapping[str, Any]) -> None:
-    schemas = {
-        "storage": {"encryption_passphrase"},
-        "postgres": {"admin_password"},
-        "meilisearch": {"master_key"},
-        "stalwart": {"database_password", "admin_password", "mailbox_password", "relay_password"},
-        "zabbix": {"database_password", "admin_password"},
-        "onlyoffice": {"jwt_secret"},
-        "opencloud": {"admin_password"},
-        "grist": {"database_password", "session_secret", "boot_key"},
-        "affine": {"database_password"},
-    }
+def validate_secrets_configuration(configuration: Mapping[str, Any], stages: Mapping[str, bool]) -> None:
+    if set(configuration) != {"secrets_schema_version", "private_cloud_secrets"}:
+        raise InstallerError("Encrypted configuration has missing or unknown top-level keys")
+    if configuration["secrets_schema_version"] != CURRENT_SECRETS_SCHEMA_VERSION:
+        raise InstallerError(f"Encrypted configuration secrets_schema_version must be {CURRENT_SECRETS_SCHEMA_VERSION}")
     secrets_root = configuration.get("private_cloud_secrets")
-    if not isinstance(secrets_root, dict) or set(secrets_root) != set(schemas):
-        raise InstallerError("Encrypted configuration is incomplete")
-    for section, keys in schemas.items():
-        if not isinstance(secrets_root.get(section), dict) or set(secrets_root[section]) != keys:
+    if not isinstance(secrets_root, dict) or not set(secrets_root) <= set(SECRET_SCHEMAS):
+        raise InstallerError("Encrypted configuration has unknown sections")
+    for section, values in secrets_root.items():
+        if not isinstance(values, dict) or not set(values) <= SECRET_SCHEMAS[section]:
             raise InstallerError("Encrypted configuration has missing or unknown keys")
-        for key in keys:
-            if not isinstance(secrets_root[section].get(key), str) or not secrets_root[section][key]:
+        for key, value in values.items():
+            if not isinstance(value, str) or not value:
                 raise InstallerError(f"Encrypted configuration is missing {section}.{key}")
-    if len(secrets_root["meilisearch"]["master_key"].encode()) < 16:
+    for section, schema in SECRET_SCHEMAS.items():
+        if stages.get(SECRET_STAGES[section]) and (section not in secrets_root or set(secrets_root[section]) != schema):
+            raise InstallerError(f"Encrypted configuration is missing credentials for enabled stage {SECRET_STAGES[section]}")
+    if "meilisearch" in secrets_root and "master_key" in secrets_root["meilisearch"] and len(secrets_root["meilisearch"]["master_key"].encode()) < 16:
         raise InstallerError("The Meilisearch master key must contain at least 16 bytes")
-    if len(secrets_root["onlyoffice"]["jwt_secret"]) < 32:
+    if "onlyoffice" in secrets_root and "jwt_secret" in secrets_root["onlyoffice"] and len(secrets_root["onlyoffice"]["jwt_secret"]) < 32:
         raise InstallerError("The OnlyOffice JWT secret must contain at least 32 characters")
-    if len(secrets_root["grist"]["session_secret"]) < 32:
+    if "grist" in secrets_root and "session_secret" in secrets_root["grist"] and len(secrets_root["grist"]["session_secret"]) < 32:
         raise InstallerError("The Grist session secret must contain at least 32 characters")
-    if len(secrets_root["grist"]["boot_key"]) < 16:
+    if "grist" in secrets_root and "boot_key" in secrets_root["grist"] and len(secrets_root["grist"]["boot_key"]) < 16:
         raise InstallerError("The Grist boot key must contain at least 16 characters")
-    if len(secrets_root["affine"]["database_password"]) < 16:
+    if "affine" in secrets_root and "database_password" in secrets_root["affine"] and len(secrets_root["affine"]["database_password"]) < 16:
         raise InstallerError("The AFFiNE database password must contain at least 16 characters")
-    passphrase_length = len(secrets_root["storage"]["encryption_passphrase"].encode())
-    if not 8 <= passphrase_length <= 512:
+    passphrase = secrets_root.get("storage", {}).get("encryption_passphrase")
+    if passphrase is not None and not 8 <= len(passphrase.encode()) <= 512:
         raise InstallerError("The storage passphrase must contain 8 to 512 bytes")
 
 
@@ -410,12 +478,26 @@ def require_kubernetes_readiness() -> None:
     run_command(["python3", "-c", "import kubernetes"])
 
 
-def run_command(args: Sequence[str], *, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
+def run_command(
+    args: Sequence[str],
+    *,
+    input_text: str | None = None,
+    environment: Mapping[str, str] | None = None,
+    stage: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    command_environment = os.environ.copy()
+    if environment:
+        command_environment.update(environment)
     try:
-        return subprocess.run(list(args), input=input_text, text=True, check=True, capture_output=True)
+        return subprocess.run(list(args), input=input_text, text=True, check=True, capture_output=True, env=command_environment)
     except (OSError, subprocess.CalledProcessError) as error:
-        detail = getattr(error, "stderr", "") or ""
-        raise InstallerError(f"Command failed: {args[0]}{(': ' + detail.strip()) if detail.strip() else ''}") from error
+        stdout = getattr(error, "stdout", "") or ""
+        stderr = getattr(error, "stderr", "") or ""
+        log_path = _write_command_failure_log(args, stdout, stderr)
+        failed_stage, failed_task, detail = _summarize_command_failure(args[0], stdout, stderr, stage)
+        raise InstallerError(
+            f"Command failed; stage={failed_stage}; task={failed_task}; error={detail}; detailed_log={log_path}"
+        ) from error
 
 
 def command_exists(command: str) -> bool:
@@ -470,8 +552,8 @@ def validate_vault_ciphertext(path: Path) -> None:
         raise InstallerError("ansible-vault did not produce a valid ciphertext header")
 
 
-def write_secret_file(configuration: Mapping[str, Any], path: Path = TEMP_SECRET_FILE) -> None:
-    validate_secrets_configuration(configuration)
+def write_secret_file(configuration: Mapping[str, Any], stages: Mapping[str, bool], path: Path = TEMP_SECRET_FILE) -> None:
+    validate_secrets_configuration(configuration, stages)
     atomic_write(path, dump_yaml(configuration), 0o600)
 
 
@@ -492,6 +574,98 @@ def redact_secrets(configuration: Mapping[str, Any]) -> dict[str, Any]:
 def ram_to_bytes(value: str) -> int:
     units = {"Ki": 1024, "Mi": 1024 ** 2, "Gi": 1024 ** 3, "Ti": 1024 ** 4}
     return int(value[:-2]) * units[value[-2:]]
+
+
+def _migrate_public_v0_to_v1(configuration: dict[str, Any], defaults: Mapping[str, Any]) -> dict[str, Any]:
+    if set(configuration) != {"private_cloud"} or not isinstance(configuration.get("private_cloud"), dict):
+        raise InstallerError("Unversioned public configuration must contain only private_cloud")
+    default_cloud = defaults.get("private_cloud")
+    if defaults.get("schema_version") != 2 or not isinstance(default_cloud, dict):
+        raise InstallerError("The example configuration cannot provide migration defaults")
+    cloud = configuration["private_cloud"]
+    stages = cloud.get("stages")
+    if not isinstance(stages, dict):
+        raise InstallerError("Unversioned public configuration must contain a stages mapping")
+    for section, default_value in default_cloud.items():
+        if section == "manticore":
+            continue
+        if section not in cloud:
+            cloud[section] = json.loads(json.dumps(default_value))
+        elif isinstance(default_value, dict) and isinstance(cloud[section], dict):
+            for key, value in default_value.items():
+                if section == "stages" and key == "manticore":
+                    continue
+                if key not in cloud[section]:
+                    cloud[section][key] = False if section == "stages" else json.loads(json.dumps(value))
+    configuration["schema_version"] = 1
+    return configuration
+
+
+def _migrate_public_v1_to_v2(configuration: dict[str, Any], defaults: Mapping[str, Any]) -> dict[str, Any]:
+    old_sections = {"stages", "storage", "k0s", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "affine", "stalwart", "zabbix"}
+    old_stages = {"zfs", "k0s", "postgres", "meilisearch", "stalwart", "tika", "bleve", "onlyoffice", "opencloud", "grist", "affine", "zabbix_server", "zabbix_agent"}
+    cloud = configuration.get("private_cloud")
+    default_cloud = defaults.get("private_cloud")
+    if set(configuration) != {"schema_version", "private_cloud"} or configuration.get("schema_version") != 1:
+        raise InstallerError("Schema version 1 public configuration is malformed")
+    if not isinstance(cloud, dict) or set(cloud) != old_sections:
+        raise InstallerError("Schema version 1 public configuration has missing or unknown sections")
+    if not isinstance(cloud.get("stages"), dict) or set(cloud["stages"]) != old_stages:
+        raise InstallerError("Schema version 1 stage configuration is incomplete")
+    if defaults.get("schema_version") != 2 or not isinstance(default_cloud, dict):
+        raise InstallerError("The example configuration cannot provide schema version 2 migration defaults")
+    if not isinstance(default_cloud.get("manticore"), dict):
+        raise InstallerError("The example configuration is missing Manticore migration defaults")
+    if not isinstance(default_cloud.get("k0s"), dict) or not isinstance(default_cloud["k0s"].get("sha256"), str):
+        raise InstallerError("The example configuration is missing the k0s checksum migration default")
+    cloud["stages"]["manticore"] = False
+    cloud["manticore"] = json.loads(json.dumps(default_cloud["manticore"]))
+    cloud["k0s"]["sha256"] = default_cloud["k0s"]["sha256"]
+    configuration["schema_version"] = 2
+    return configuration
+
+
+def _migrate_secrets_v0_to_v1(configuration: dict[str, Any]) -> dict[str, Any]:
+    if set(configuration) != {"private_cloud_secrets"} or not isinstance(configuration.get("private_cloud_secrets"), dict):
+        raise InstallerError("Unversioned encrypted configuration must contain only private_cloud_secrets")
+    configuration["secrets_schema_version"] = 1
+    return configuration
+
+
+def _write_command_failure_log(args: Sequence[str], stdout: str, stderr: str) -> Path:
+    ensure_runtime_directory()
+    if INSTALLER_LOG.is_symlink():
+        raise InstallerError(f"Unsafe symbolic-link installer log: {INSTALLER_LOG}")
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(INSTALLER_LOG, flags, 0o600)
+    details = os.fstat(descriptor)
+    if not stat.S_ISREG(details.st_mode) or details.st_uid != 0:
+        os.close(descriptor)
+        raise InstallerError("Installer log must be a root-owned regular file")
+    os.fchmod(descriptor, 0o600)
+    with os.fdopen(descriptor, "a", encoding="utf-8") as stream:
+        stream.write(f"command: {args[0]}\nstdout:\n{stdout}\nstderr:\n{stderr}\n")
+    return INSTALLER_LOG
+
+
+def _summarize_command_failure(command: str, stdout: str, stderr: str, stage: str | None) -> tuple[str, str, str]:
+    task_matches = re.findall(r"(?m)^TASK \[([^]]+)]", stdout)
+    task = task_matches[-1] if task_matches else command
+    inferred_stage = task.split(" : ", 1)[0] if " : " in task else stage or command
+    failure_lines = re.findall(r"(?m)^fatal: .*?FAILED! => (.+)$", stdout)
+    detail = "Ansible task failed" if failure_lines else "Command execution failed"
+    return (
+        _sanitize_failure_text(inferred_stage, 80),
+        _sanitize_failure_text(task, 160),
+        _sanitize_failure_text(detail, 400),
+    )
+
+
+def _sanitize_failure_text(value: str, limit: int) -> str:
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", value)
+    text = re.sub(r"(?i)(password|passphrase|secret|token|key)(\s*[=:]\s*)([^\s,;}]+)", r"\1\2[redacted]", text)
+    text = " ".join(text.split())
+    return (text[: limit - 3] + "...") if len(text) > limit else text
 
 
 class InstallerError(RuntimeError):

@@ -13,8 +13,11 @@ spec:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
+  claimRef:
+    namespace: private-cloud
+    name: zabbix-server-data
   local:
-    path: /var/lib/zabbix
+    path: /tank/secure/backup/k0s/services/zabbix
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -22,4 +25,4 @@ spec:
             - key: kubernetes.io/hostname
               operator: In
               values:
-                - localhost
+                - replace-with-k0s-node

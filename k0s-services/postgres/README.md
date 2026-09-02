@@ -13,3 +13,12 @@ The PostgreSQL service is managed by `ansible/roles/postgres`.
 - The image is `pgvector/pgvector:0.8.6-pg18-bookworm`.
 - The PostgreSQL role enables and verifies the `vector` extension.
 - The static bundle includes a versioned pgvector enablement Job.
+
+## Manifest review
+
+- The Kustomize base is the authoritative public workload definition.
+- Install Kustomize to render without root or a cluster.
+
+```bash
+python3 ansible/render_manifests.py postgres --base k0s-services/postgres/kustomize/base --values k0s-services/postgres/site-values.example.yaml
+```

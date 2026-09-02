@@ -25,13 +25,13 @@ data:
         - "'self'"
         - "blob:"
         - "https://embed.diagrams.net/"
-        - "https://onlyoffice.example.com/"
+        - "https://replace-with-onlyoffice-hostname/"
       img-src:
         - "'self'"
         - "data:"
         - "blob:"
         - "https://raw.githubusercontent.com/opencloud-eu/awesome-apps/"
-        - "https://onlyoffice.example.com/"
+        - "https://replace-with-onlyoffice-hostname/"
       manifest-src:
         - "'self'"
       media-src:

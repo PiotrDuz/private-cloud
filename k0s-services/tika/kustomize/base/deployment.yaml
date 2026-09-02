@@ -17,6 +17,8 @@ spec:
       labels:
         app.kubernetes.io/name: tika
     spec:
+      serviceAccountName: tika
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 35002
         fsGroupChangePolicy: OnRootMismatch
@@ -27,8 +29,13 @@ spec:
           ports:
             - {name: http, containerPort: 9998, protocol: TCP}
           resources:
-            requests: {memory: 1Gi}
-            limits: {memory: 1Gi}
+            requests: {cpu: 250m, memory: 1Gi, ephemeral-storage: 512Mi}
+            limits: {cpu: 2, memory: 1Gi, ephemeral-storage: 4Gi}
+          startupProbe:
+            httpGet: {path: /tika, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 30
           readinessProbe:
             httpGet: {path: /tika, port: http}
             initialDelaySeconds: 5

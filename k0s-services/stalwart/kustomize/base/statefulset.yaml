@@ -15,7 +15,10 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: stalwart
+        app.kubernetes.io/component: server
     spec:
+      serviceAccountName: stalwart
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 2000
@@ -42,6 +45,12 @@ spec:
               valueFrom: {secretKeyRef: {name: stalwart-runtime-credentials, key: INBOX_EU_SMTP_PASSWORD}}
             - name: MEILI_MASTER_KEY
               valueFrom: {secretKeyRef: {name: meilisearch-credentials, key: MEILI_MASTER_KEY}}
+            - name: STALWART_RECOVERY_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: stalwart-recovery-credentials
+                  key: STALWART_RECOVERY_ADMIN
+                  optional: true
           ports:
             - {name: management, containerPort: 8080, protocol: TCP}
             - {name: https, containerPort: 443, protocol: TCP}
@@ -50,8 +59,13 @@ spec:
             - {name: submission, containerPort: 587, protocol: TCP}
             - {name: imaps, containerPort: 993, protocol: TCP}
           resources:
-            requests: {memory: 2Gi}
-            limits: {memory: 2Gi}
+            requests: {cpu: 250m, memory: 2Gi, ephemeral-storage: 256Mi}
+            limits: {cpu: 2, memory: 2Gi, ephemeral-storage: 2Gi}
+          startupProbe:
+            httpGet: {path: /healthz/ready, port: management}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 30
           readinessProbe:
             httpGet: {path: /healthz/ready, port: management}
             initialDelaySeconds: 10

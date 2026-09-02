@@ -27,28 +27,58 @@ ZFS = command_path("zfs")
 ZPOOL = command_path("zpool")
 POOL_NAME = "tank"
 SECURE_DATASET = "tank/secure"
-LEAF_DATASETS = (
-    "tank/secure/backup/k0s/config",
-    "tank/secure/no-backup/k0s/images",
-    "tank/secure/no-backup/k0s/ephemeral",
-    "tank/secure/backup/k0s/services/postgres",
-    "tank/secure/backup/k0s/services/meilisearch",
-    "tank/secure/backup/k0s/services/tika",
-    "tank/secure/backup/k0s/services/bleve",
-    "tank/secure/backup/k0s/services/onlyoffice",
-    "tank/secure/backup/k0s/services/opencloud",
-    "tank/secure/backup/k0s/services/grist",
-    "tank/secure/backup/k0s/services/affine",
-    "tank/secure/backup/k0s/services/stalwart",
-    "tank/secure/backup/k0s/services/zabbix",
-)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--inventory", required=True)
+    parser.add_argument("mode", choices=("metrics", "snapshots"))
+    args = parser.parse_args()
+
+    collector = Collector(load_inventory(args.inventory))
+    result = collector.metrics() if args.mode == "metrics" else collector.snapshots()
+    print(json.dumps(result, separators=(",", ":"), sort_keys=True))
+
+
+def load_inventory(path):
+    with open(path, encoding="utf-8") as handle:
+        document = json.load(handle)
+    entries = document.get("datasets") if isinstance(document, dict) else None
+    if not isinstance(entries, list):
+        raise ValueError("dataset inventory must contain a datasets list")
+
+    inventory = []
+    names = set()
+    datasets = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("dataset inventory entries must be objects")
+        name = entry.get("name")
+        dataset = entry.get("dataset")
+        required = entry.get("required")
+        if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", name):
+            raise ValueError("dataset inventory contains an invalid name")
+        if not isinstance(dataset, str) or not re.fullmatch(
+            r"tank/secure/(?:backup|no-backup)/k0s/[a-z0-9/-]+", dataset
+        ):
+            raise ValueError("dataset inventory contains an invalid dataset path")
+        if not isinstance(required, bool):
+            raise ValueError("dataset inventory required flags must be booleans")
+        if name in names or dataset in datasets:
+            raise ValueError("dataset inventory contains duplicate entries")
+        names.add(name)
+        datasets.add(dataset)
+        inventory.append({"name": name, "dataset": dataset, "required": required})
+    return inventory
 
 
 class Collector:
-    def __init__(self):
+    def __init__(self, inventory):
+        self.inventory = inventory
         self.errors = []
+        self.missing_datasets = []
 
-    def run(self, command):
+    def run(self, command, required=True):
         env = os.environ.copy()
         env["LC_ALL"] = "C"
         try:
@@ -61,12 +91,14 @@ class Collector:
                 timeout=10,
             )
         except (OSError, subprocess.TimeoutExpired) as error:
-            self.errors.append(f"{command[0]} failed: {error}")
+            if required:
+                self.errors.append(f"{command[0]} failed: {error}")
             return ""
 
         if result.returncode != 0:
             detail = result.stderr.strip() or f"exit status {result.returncode}"
-            self.errors.append(f"{command[0]} failed: {detail}")
+            if required:
+                self.errors.append(f"{command[0]} failed: {detail}")
             return ""
         return result.stdout
 
@@ -93,12 +125,8 @@ class Collector:
         return int(float(match.group(1)) * (1024 ** powers[match.group(2)]))
 
     def pools(self):
-        properties = (
-            "name,size,allocated,free,fragmentation,capacity,dedupratio,health"
-        )
-        output = self.run(
-            [ZPOOL, "list", "-H", "-p", "-o", properties, POOL_NAME]
-        )
+        properties = "name,size,allocated,free,fragmentation,capacity,dedupratio,health"
+        output = self.run([ZPOOL, "list", "-H", "-p", "-o", properties, POOL_NAME])
         pools = {}
         for line in output.splitlines():
             fields = line.split("\t")
@@ -210,7 +238,9 @@ class Collector:
                 scan = stripped.split(":", 1)[1].strip()
                 pools[current_pool]["scan"] = scan
                 pools[current_pool]["scrub_active"] = int("scrub in progress" in scan)
-                pools[current_pool]["resilver_active"] = int("resilver in progress" in scan)
+                pools[current_pool]["resilver_active"] = int(
+                    "resilver in progress" in scan
+                )
                 repaired = re.search(r"scrub repaired (\S+)", scan)
                 if repaired:
                     pools[current_pool]["last_scrub_repaired"] = self.human_size(
@@ -233,7 +263,9 @@ class Collector:
                         parsed = parsedate_to_datetime(date_text)
                         if parsed.tzinfo is None:
                             parsed = parsed.astimezone()
-                        pools[current_pool]["last_scrub_epoch"] = int(parsed.timestamp())
+                        pools[current_pool]["last_scrub_epoch"] = int(
+                            parsed.timestamp()
+                        )
                     except (TypeError, ValueError, OverflowError):
                         pass
                 continue
@@ -274,7 +306,8 @@ class Collector:
 
     def datasets(self):
         datasets = {}
-        for name in LEAF_DATASETS:
+        for entry in self.inventory:
+            name = entry["dataset"]
             output = self.run(
                 [
                     ZFS,
@@ -284,10 +317,14 @@ class Collector:
                     "-o",
                     "name,used,quota",
                     name,
-                ]
+                ],
+                required=entry["required"],
             )
             fields = output.strip().split("\t")
             if len(fields) != 3:
+                self.missing_datasets.append(entry)
+                if entry["required"]:
+                    self.errors.append(f"required dataset {name} is unavailable")
                 continue
             used = self.number(fields[1])
             quota = self.number(fields[2])
@@ -374,6 +411,7 @@ class Collector:
             "datasets": self.datasets(),
             "secure": self.secure_dataset(),
             "arc": self.arc(),
+            "missing_datasets": self.missing_datasets,
         }
         result["error_count"] = len(self.errors)
         result["errors"] = self.errors
@@ -382,7 +420,8 @@ class Collector:
     def snapshots(self):
         generated_at = int(time.time())
         datasets = {}
-        for dataset_name in LEAF_DATASETS:
+        for entry in self.inventory:
+            dataset_name = entry["dataset"]
             dataset_output = self.run(
                 [
                     ZFS,
@@ -392,10 +431,16 @@ class Collector:
                     "-o",
                     "name,used,usedbysnapshots",
                     dataset_name,
-                ]
+                ],
+                required=entry["required"],
             )
             fields = dataset_output.strip().split("\t")
             if len(fields) != 3:
+                self.missing_datasets.append(entry)
+                if entry["required"]:
+                    self.errors.append(
+                        f"required dataset {dataset_name} is unavailable"
+                    )
                 continue
             used_bytes = self.number(fields[1]) or 0
             retained_bytes = self.number(fields[2]) or 0
@@ -405,9 +450,7 @@ class Collector:
                 "dataset_used_bytes": used_bytes,
                 "retained_bytes": retained_bytes,
                 "retained_percent": (
-                    round(retained_bytes * 100 / used_bytes, 4)
-                    if used_bytes
-                    else 0
+                    round(retained_bytes * 100 / used_bytes, 4) if used_bytes else 0
                 ),
                 "snapshot_unique_bytes_sum": 0,
                 "oldest_creation": 0,
@@ -416,7 +459,10 @@ class Collector:
                 "newest_age": 0,
             }
 
-        for dataset_name in LEAF_DATASETS:
+        for entry in self.inventory:
+            dataset_name = entry["dataset"]
+            if dataset_name not in datasets:
+                continue
             snapshot_output = self.run(
                 [
                     ZFS,
@@ -430,7 +476,8 @@ class Collector:
                     "-o",
                     "name,creation,used",
                     dataset_name,
-                ]
+                ],
+                required=entry["required"],
             )
             for line in snapshot_output.splitlines():
                 fields = line.split("\t")
@@ -445,9 +492,15 @@ class Collector:
                 summary["snapshot_unique_bytes_sum"] += used
                 if not isinstance(creation, int):
                     continue
-                if summary["oldest_creation"] == 0 or creation < summary["oldest_creation"]:
+                if (
+                    summary["oldest_creation"] == 0
+                    or creation < summary["oldest_creation"]
+                ):
                     summary["oldest_creation"] = creation
-                if summary["newest_creation"] == 0 or creation > summary["newest_creation"]:
+                if (
+                    summary["newest_creation"] == 0
+                    or creation > summary["newest_creation"]
+                ):
                     summary["newest_creation"] = creation
 
         for summary in datasets.values():
@@ -459,19 +512,10 @@ class Collector:
             "generated_at": generated_at,
             "total_count": sum(item["count"] for item in datasets.values()),
             "datasets": datasets,
+            "missing_datasets": self.missing_datasets,
             "error_count": len(self.errors),
             "errors": self.errors,
         }
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=("metrics", "snapshots"))
-    args = parser.parse_args()
-
-    collector = Collector()
-    result = collector.metrics() if args.mode == "metrics" else collector.snapshots()
-    print(json.dumps(result, separators=(",", ":"), sort_keys=True))
 
 
 if __name__ == "__main__":

@@ -1,4 +1,10 @@
 ---
+- name: Require the supported public schema version
+  ansible.builtin.assert:
+    that:
+      - schema_version == 2
+    fail_msg: Public configuration schema version is unsupported
+
 - name: Require supported Debian-family target
   ansible.builtin.assert:
     that:
@@ -15,16 +21,16 @@
   ansible.builtin.assert:
     that:
       - private_cloud is mapping
-      - (private_cloud.keys() | list | difference(['stages', 'storage', 'k0s', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'affine', 'stalwart', 'zabbix']) | length) == 0
-      - (['stages', 'storage', 'k0s', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'affine', 'stalwart', 'zabbix'] | difference(private_cloud.keys() | list) | length) == 0
+      - (private_cloud.keys() | list | difference(['stages', 'storage', 'k0s', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'affine', 'stalwart', 'zabbix']) | length) == 0
+      - (['stages', 'storage', 'k0s', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'affine', 'stalwart', 'zabbix'] | difference(private_cloud.keys() | list) | length) == 0
     fail_msg: Public configuration has missing or unknown sections
 
 - name: Require exact nested public schema
   ansible.builtin.assert:
     that:
-      - (private_cloud.stages.keys() | list | sort) == ['affine', 'bleve', 'grist', 'k0s', 'meilisearch', 'onlyoffice', 'opencloud', 'postgres', 'stalwart', 'tika', 'zabbix_agent', 'zabbix_server', 'zfs']
+      - (private_cloud.stages.keys() | list | sort) == ['affine', 'bleve', 'grist', 'k0s', 'manticore', 'meilisearch', 'onlyoffice', 'opencloud', 'postgres', 'stalwart', 'tika', 'zabbix_agent', 'zabbix_server', 'zfs']
       - (private_cloud.storage.keys() | list) == ['disks']
-      - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'images_quota', 'version']
+      - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'images_quota', 'sha256', 'version']
       - (private_cloud.postgres.keys() | list | sort) == ['max_ram', 'volume_size']
       - (private_cloud.meilisearch.keys() | list | sort) == ['max_ram', 'storage_size']
       - (private_cloud.tika.keys() | list | sort) == ['max_ram', 'storage_size']
@@ -32,54 +38,58 @@
       - (private_cloud.onlyoffice.keys() | list | sort) == ['hostname', 'max_ram', 'node_port', 'storage_size']
       - (private_cloud.opencloud.keys() | list | sort) == ['hostname', 'max_ram', 'node_port', 'storage_size']
       - (private_cloud.grist.keys() | list | sort) == ['database_name', 'database_username', 'default_email', 'hostname', 'max_ram', 'node_port', 'storage_size']
+      - (private_cloud.manticore.keys() | list | sort) == ['max_ram', 'storage_size']
       - (private_cloud.affine.keys() | list | sort) == ['database_name', 'database_username', 'hostname', 'max_ram', 'node_port', 'redis_max_ram', 'storage_size']
       - (private_cloud.stalwart.keys() | list | sort) == ['acme_contact', 'admin_username', 'database_name', 'database_username', 'domain', 'forwarding_domain', 'hostname', 'https_node_port', 'imaps_node_port', 'mailbox_username', 'max_ram', 'relay_host', 'relay_implicit_tls', 'relay_port', 'relay_username', 'smtp_node_port', 'storage_size', 'submission_node_port', 'submissions_node_port']
       - (private_cloud.zabbix.keys() | list | sort) == ['admin_username', 'agent_server_active', 'database_name', 'database_username', 'hostname', 'server_node_port', 'storage_size', 'web_node_port']
     fail_msg: Public configuration has missing or unknown nested keys
 
-- name: Require exact encrypted schema
+- name: Require the supported encrypted schema version
+  ansible.builtin.assert:
+    that:
+      - secrets_schema_version == 1
+    fail_msg: Encrypted configuration schema version is unsupported
+  no_log: true
+
+- name: Require known encrypted sections
   ansible.builtin.assert:
     that:
       - private_cloud_secrets is mapping
-      - (private_cloud_secrets.keys() | list | sort) == ['affine', 'grist', 'meilisearch', 'onlyoffice', 'opencloud', 'postgres', 'stalwart', 'storage', 'zabbix']
-      - (private_cloud_secrets.storage.keys() | list) == ['encryption_passphrase']
-      - (private_cloud_secrets.postgres.keys() | list) == ['admin_password']
-      - (private_cloud_secrets.meilisearch.keys() | list) == ['master_key']
-      - (private_cloud_secrets.stalwart.keys() | list | sort) == ['admin_password', 'database_password', 'mailbox_password', 'relay_password']
-      - (private_cloud_secrets.zabbix.keys() | list | sort) == ['admin_password', 'database_password']
-      - (private_cloud_secrets.onlyoffice.keys() | list) == ['jwt_secret']
-      - (private_cloud_secrets.opencloud.keys() | list) == ['admin_password']
-      - (private_cloud_secrets.grist.keys() | list | sort) == ['boot_key', 'database_password', 'session_secret']
-      - (private_cloud_secrets.affine.keys() | list) == ['database_password']
-    fail_msg: Encrypted configuration has missing or unknown nested keys
-    no_log: true
+      - (private_cloud_secrets.keys() | list | difference(['affine', 'grist', 'meilisearch', 'onlyoffice', 'opencloud', 'postgres', 'stalwart', 'storage', 'zabbix']) | length) == 0
+    fail_msg: Encrypted configuration has unknown sections
+  no_log: true
+
+- name: Require known encrypted keys
+  ansible.builtin.assert:
+    that:
+      - item.name not in private_cloud_secrets or private_cloud_secrets[item.name] is mapping
+      - item.name not in private_cloud_secrets or (private_cloud_secrets[item.name].keys() | list | difference(item['keys']) | length) == 0
+    fail_msg: Encrypted configuration has unknown nested keys
+  loop:
+    - {name: storage, keys: [encryption_passphrase]}
+    - {name: postgres, keys: [admin_password]}
+    - {name: meilisearch, keys: [master_key]}
+    - {name: stalwart, keys: [admin_password, database_password, mailbox_password, relay_password]}
+    - {name: zabbix, keys: [admin_password, database_password]}
+    - {name: onlyoffice, keys: [jwt_secret]}
+    - {name: opencloud, keys: [admin_password]}
+    - {name: grist, keys: [boot_key, database_password, session_secret]}
+    - {name: affine, keys: [database_password]}
+  no_log: true
 
 - name: Require Boolean stage flags
   ansible.builtin.assert:
     that:
       - private_cloud.stages[item] is boolean
-    loop: [zfs, k0s, postgres, meilisearch, stalwart, tika, bleve, onlyoffice, opencloud, grist, affine, zabbix_server, zabbix_agent]
     fail_msg: Every stage flag must be Boolean
+  loop: [zfs, k0s, postgres, meilisearch, stalwart, tika, bleve, onlyoffice, opencloud, grist, manticore, affine, zabbix_server, zabbix_agent]
 
 - name: Require stage dependencies
   ansible.builtin.assert:
     that:
-      - not private_cloud.stages.k0s or private_cloud.stages.zfs
-      - not private_cloud.stages.postgres or private_cloud.stages.k0s
-      - not private_cloud.stages.meilisearch or private_cloud.stages.k0s
-      - not private_cloud.stages.stalwart or private_cloud.stages.postgres
-      - not private_cloud.stages.stalwart or private_cloud.stages.meilisearch
-      - not private_cloud.stages.zabbix_server or private_cloud.stages.postgres
-      - not private_cloud.stages.tika or private_cloud.stages.k0s
-      - not private_cloud.stages.bleve or private_cloud.stages.k0s
-      - not private_cloud.stages.onlyoffice or private_cloud.stages.k0s
-      - not private_cloud.stages.opencloud or private_cloud.stages.tika
-      - not private_cloud.stages.opencloud or private_cloud.stages.bleve
-      - not private_cloud.stages.opencloud or private_cloud.stages.onlyoffice
-      - not private_cloud.stages.grist or private_cloud.stages.postgres
-      - not private_cloud.stages.affine or private_cloud.stages.postgres
-      - not private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
+      - not private_cloud.stages[item.key] or (item.value | map('extract', private_cloud.stages) | select('equalto', false) | list | length) == 0
     fail_msg: Enabled stages must follow the dependency chain
+  loop: "{{ private_cloud_stage_dependencies | dict2items }}"
 
 - name: Require Ubuntu for the Zabbix Agent stage
   ansible.builtin.assert:
@@ -92,10 +102,32 @@
     that:
       - private_cloud.k0s.version is string
       - private_cloud.k0s.version | length > 0
+      - private_cloud.k0s.sha256 is match('^[0-9a-f]{64}$')
       - private_cloud.k0s.config_quota is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.k0s.images_quota is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.k0s.ephemeral_quota is match('^[1-9][0-9]*[KMGTPE]$')
     fail_msg: k0s configuration is invalid
+
+
+- name: Require the k0s amd64 and systemd host capabilities
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.architecture == 'x86_64'
+      - ansible_facts.service_mgr == 'systemd'
+    fail_msg: The managed k0s release requires an amd64 systemd host.
+  when: private_cloud.stages.k0s | bool
+
+- name: Check the cgroup-v2 controller interface for k0s
+  ansible.builtin.stat:
+    path: /sys/fs/cgroup/cgroup.controllers
+  register: preflight_cgroup_v2
+  when: private_cloud.stages.k0s | bool
+
+- name: Require cgroup-v2 for k0s
+  ansible.builtin.assert:
+    that: preflight_cgroup_v2.stat.exists
+    fail_msg: The managed k0s release requires a cgroup-v2 host.
+  when: private_cloud.stages.k0s | bool
 
 - name: Require PostgreSQL values
   ansible.builtin.assert:
@@ -167,6 +199,13 @@
       - private_cloud.grist.node_port >= 30000
       - private_cloud.grist.node_port <= 32767
     fail_msg: Grist configuration is invalid
+
+- name: Require Manticore values
+  ansible.builtin.assert:
+    that:
+      - private_cloud.manticore.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.manticore.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+    fail_msg: Manticore configuration is invalid
 
 - name: Require AFFiNE values
   ansible.builtin.assert:
@@ -293,9 +332,9 @@
       - preflight_unique_disks | length == private_cloud.storage.disks | length
       - item is string
       - item is match('^/dev/disk/by-id/')
-    loop: "{{ private_cloud.storage.disks }}"
-    when: private_cloud.stages.zfs | bool
     fail_msg: ZFS disks must be unique stable /dev/disk/by-id paths
+  loop: "{{ private_cloud.storage.disks }}"
+  when: private_cloud.stages.zfs | bool
 
 - name: Require storage secret when ZFS is enabled
   ansible.builtin.assert:
@@ -303,45 +342,45 @@
       - private_cloud_secrets is mapping
       - private_cloud_secrets.storage.encryption_passphrase is string
       - private_cloud_secrets.storage.encryption_passphrase | length > 0
-    when: private_cloud.stages.zfs | bool
-    no_log: true
     fail_msg: Required encrypted secrets are missing
+  when: private_cloud.stages.zfs | bool
+  no_log: true
 
 - name: Require PostgreSQL secret when PostgreSQL is enabled
   ansible.builtin.assert:
     that:
       - private_cloud_secrets.postgres.admin_password is string
       - private_cloud_secrets.postgres.admin_password | length > 0
-    when: private_cloud.stages.postgres | bool
-    no_log: true
     fail_msg: Required encrypted secrets are missing
+  when: private_cloud.stages.postgres | bool
+  no_log: true
 
 - name: Require Meilisearch secret when Meilisearch is enabled
   ansible.builtin.assert:
     that:
       - private_cloud_secrets.meilisearch.master_key is string
       - private_cloud_secrets.meilisearch.master_key | length >= 16
-    when: private_cloud.stages.meilisearch | bool
-    no_log: true
     fail_msg: Required encrypted secrets are missing
+  when: private_cloud.stages.meilisearch | bool
+  no_log: true
 
 - name: Require OnlyOffice secret when OnlyOffice is enabled
   ansible.builtin.assert:
     that:
       - private_cloud_secrets.onlyoffice.jwt_secret is string
       - private_cloud_secrets.onlyoffice.jwt_secret | length >= 32
-    when: private_cloud.stages.onlyoffice | bool
-    no_log: true
     fail_msg: Required encrypted secrets are missing
+  when: private_cloud.stages.onlyoffice | bool
+  no_log: true
 
 - name: Require OpenCloud secret when OpenCloud is enabled
   ansible.builtin.assert:
     that:
       - private_cloud_secrets.opencloud.admin_password is string
       - private_cloud_secrets.opencloud.admin_password | length > 0
-    when: private_cloud.stages.opencloud | bool
-    no_log: true
     fail_msg: Required encrypted secrets are missing
+  when: private_cloud.stages.opencloud | bool
+  no_log: true
 
 - name: Require Grist secrets when Grist is enabled
   ansible.builtin.assert:
@@ -352,18 +391,18 @@
       - private_cloud_secrets.grist.session_secret | length >= 32
       - private_cloud_secrets.grist.boot_key is string
       - private_cloud_secrets.grist.boot_key | length >= 16
-    when: private_cloud.stages.grist | bool
-    no_log: true
     fail_msg: Required encrypted secrets are missing
+  when: private_cloud.stages.grist | bool
+  no_log: true
 
 - name: Require AFFiNE secret when AFFiNE is enabled
   ansible.builtin.assert:
     that:
       - private_cloud_secrets.affine.database_password is string
       - private_cloud_secrets.affine.database_password | length >= 16
-    when: private_cloud.stages.affine | bool
-    no_log: true
     fail_msg: Required encrypted secrets are missing
+  when: private_cloud.stages.affine | bool
+  no_log: true
 
 - name: Require Stalwart secrets when Stalwart is enabled
   ansible.builtin.assert:
@@ -376,9 +415,9 @@
       - private_cloud_secrets.stalwart.mailbox_password | length > 0
       - private_cloud_secrets.stalwart.relay_password is string
       - private_cloud_secrets.stalwart.relay_password | length > 0
-    when: private_cloud.stages.stalwart | bool
-    no_log: true
     fail_msg: Required encrypted secrets are missing
+  when: private_cloud.stages.stalwart | bool
+  no_log: true
 
 - name: Require Zabbix secrets when Zabbix server is enabled
   ansible.builtin.assert:
@@ -387,9 +426,9 @@
       - private_cloud_secrets.zabbix.database_password | length > 0
       - private_cloud_secrets.zabbix.admin_password is string
       - private_cloud_secrets.zabbix.admin_password | length > 0
-    when: private_cloud.stages.zabbix_server | bool
-    no_log: true
     fail_msg: Required encrypted secrets are missing
+  when: private_cloud.stages.zabbix_server | bool
+  no_log: true
 
 - name: Require a valid ZFS passphrase
   ansible.builtin.command:
@@ -409,8 +448,9 @@
     that:
       - preflight_passphrase_bytes.stdout | int >= 8
       - preflight_passphrase_bytes.stdout | int <= 512
-    when: private_cloud.stages.zfs | bool
-    no_log: true
+  when: private_cloud.stages.zfs | bool
+  no_log: true
+
 
 - name: Check for an existing tank pool
   ansible.builtin.command: zpool list -H -o name tank
@@ -466,18 +506,9 @@
   when: private_cloud.stages.zfs | bool
 
 - name: Validate an existing tank pool layout read-only
-  ansible.builtin.shell: >-
-    set -eu;
-    status=$(zpool status -P -L tank);
-    vdevs=$(printf '%s\n' "$status" | awk '$1 ~ /^(mirror|raidz[0-9]+|draid|spares|logs|cache|special|dedup)/ {print $1}');
-    test "$(printf '%s\n' "$vdevs" | sed '/^$/d' | wc -l)" -eq 1;
-    printf '%s\n' "$vdevs" | grep -Eq '^raidz1(-[0-9]+)?$';
-    actual=$(printf '%s\n' "$status" | awk '$1 ~ /^\/dev\// && $2 == "ONLINE" {print $1}' | while read -r member; do readlink -f "$member"; done | sort);
-    expected=$(for disk in {{ private_cloud.storage.disks | map('quote') | join(' ') }}; do readlink -f "$disk"; done | sort);
-    test -n "$actual";
-    test "$actual" = "$expected"
-  args:
-    executable: /bin/bash
+  ansible.builtin.command: >-
+    python3 {{ playbook_dir }}/storage_checks.py pool-layout --pool tank --disks
+    {{ private_cloud.storage.disks | map('quote') | join(' ') }}
   register: preflight_pool_layout
   changed_when: false
   failed_when: false
@@ -536,9 +567,9 @@
     that:
       - item.stat.exists
       - item.stat.isreg
-    loop: "{{ preflight_assets.results | default([]) }}"
-    when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
     fail_msg: A required repository runtime asset is missing
+  loop: "{{ preflight_assets.results | default([]) }}"
+  when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
 
 - name: Require executable collector assets
   ansible.builtin.assert:
@@ -548,8 +579,8 @@
       - preflight_assets.results[2].stat.executable
       - not preflight_assets.results[3].stat.executable
       - not preflight_assets.results[4].stat.executable
-    when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
     fail_msg: Repository asset modes do not match the runtime contract
+  when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
 
 - name: Extract repository template UUID values
   ansible.builtin.set_fact:
@@ -570,9 +601,9 @@
     that:
       - preflight_unique_template_uuids | length == preflight_template_uuids | length
       - item is match('^[0-9a-fA-F]{12}4[0-9a-fA-F]{3}[89abAB][0-9a-fA-F]{3}[0-9a-fA-F]{12}$') or item is match('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
-    loop: "{{ preflight_template_uuids | default([]) }}"
-    when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
     fail_msg: Repository template UUIDs must be unique UUIDv4-compatible values
+  loop: "{{ preflight_template_uuids | default([]) }}"
+  when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
 
 - name: Require initial destructive authorization when applicable
   ansible.builtin.assert:
@@ -620,31 +651,21 @@
     that:
       - item.stat.exists
       - item.stat.isblk
-    loop: "{{ preflight_disk_stats.results | default([]) }}"
-    when:
-      - private_cloud.stages.zfs | bool
-      - private_cloud_runtime.initial_install | default(false) | bool
     fail_msg: Every selected disk must resolve to a whole block device
+  loop: "{{ preflight_disk_stats.results | default([]) }}"
+  when:
+    - private_cloud.stages.zfs | bool
+    - private_cloud_runtime.initial_install | default(false) | bool
 
 - name: Inspect selected disks recursively and read-only
-  ansible.builtin.shell: >-
-    set -eu;
-    test "$(lsblk -dnro TYPE {{ item | quote }})" = disk;
-    test -z "$(lsblk -nrpo MOUNTPOINT {{ item | quote }} | sed '/^$/d')";
-    test -z "$(lsblk -nrpo FSTYPE {{ item | quote }} | grep -Fx swap)";
-    for device in $(lsblk -nrpo NAME {{ item | quote }}); do
-      test -z "$(swapon --noheadings --raw --show=NAME | grep -Fx -- "$device")";
-      kname=$(basename "$device");
-      test -z "$(find /sys/class/block/$kname/holders -mindepth 1 -maxdepth 1 -print -quit)";
-      resolved_device=$(readlink -f "$device");
-      if command -v zpool >/dev/null 2>&1; then
-        for member in $(zpool status -LP 2>/dev/null | awk '$1 ~ /^\/dev\// {print $1}'); do
-          test "$(readlink -f "$member")" != "$resolved_device";
-        done;
-      fi;
-    done;
-  args:
-    executable: /bin/bash
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/storage_checks.py"
+      - disk-safety
+      - --disk
+      - "{{ item }}"
+      - --require-disk
   loop: "{{ private_cloud.storage.disks }}"
   register: preflight_disk_safety
   changed_when: false
@@ -652,7 +673,6 @@
   when:
     - private_cloud.stages.zfs | bool
     - private_cloud_runtime.initial_install | default(false) | bool
-
 - name: Require selected disks to be inactive
   ansible.builtin.assert:
     that: item.rc == 0
@@ -684,6 +704,7 @@
       onlyoffice_dataset: tank/secure/backup/k0s/services/onlyoffice
       opencloud_dataset: tank/secure/backup/k0s/services/opencloud
       grist_dataset: tank/secure/backup/k0s/services/grist
+      manticore_dataset: tank/secure/backup/k0s/services/manticore
       affine_dataset: tank/secure/backup/k0s/services/affine
       stalwart_dataset: tank/secure/backup/k0s/services/stalwart
       zabbix_dataset: tank/secure/backup/k0s/services/zabbix
@@ -701,6 +722,7 @@
     - { dataset: 'tank/secure/backup/k0s/services/onlyoffice', quota: '{{ private_cloud.onlyoffice.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/opencloud', quota: '{{ private_cloud.opencloud.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/grist', quota: '{{ private_cloud.grist.storage_size }}' }
+    - { dataset: 'tank/secure/backup/k0s/services/manticore', quota: '{{ private_cloud.manticore.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/affine', quota: '{{ private_cloud.affine.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/stalwart', quota: '{{ private_cloud.stalwart.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/zabbix', quota: '{{ private_cloud.zabbix.storage_size }}' }
@@ -713,9 +735,42 @@
     that:
       - >-
         (item.item.quota[:-1] | int) * (1024 ** {'K': 1, 'M': 2, 'G': 3, 'T': 4, 'P': 5, 'E': 6}[item.item.quota[-1:]]) >= item.stdout | int
-    loop: "{{ preflight_existing_usage.results }}"
-    when: item.rc == 0 and item.stdout | trim != '-'
     fail_msg: A configured dataset quota cannot be reduced below existing usage
+  loop: "{{ preflight_existing_usage.results }}"
+  when: item.rc == 0 and item.stdout | trim != '-'
+
+
+- name: Calculate enabled workload memory commitments
+  ansible.builtin.set_fact:
+    preflight_host_reserve_bytes: 8589934592
+    preflight_transient_peak_bytes: >-
+      {{ [
+        (private_cloud.stages.affine | ternary(2147483648, 0)),
+        (private_cloud.stages.postgres | ternary(536870912, 0)),
+        (private_cloud.stages.stalwart | ternary(536870912, 0)),
+        (private_cloud.stages.opencloud | ternary(536870912, 0))
+      ] | max }}
+    preflight_workload_memory_bytes: >-
+      {{
+        (private_cloud.stages.postgres | ternary(private_cloud.postgres.max_ram | human_to_bytes, 0)) +
+        (private_cloud.stages.meilisearch | ternary(private_cloud.meilisearch.max_ram | human_to_bytes, 0)) +
+        (private_cloud.stages.tika | ternary(private_cloud.tika.max_ram | human_to_bytes, 0)) +
+        (private_cloud.stages.onlyoffice | ternary(private_cloud.onlyoffice.max_ram | human_to_bytes, 0)) +
+        (private_cloud.stages.opencloud | ternary(private_cloud.opencloud.max_ram | human_to_bytes, 0)) +
+        (private_cloud.stages.grist | ternary(private_cloud.grist.max_ram | human_to_bytes, 0)) +
+        (private_cloud.stages.manticore | ternary(private_cloud.manticore.max_ram | human_to_bytes, 0)) +
+        (private_cloud.stages.affine | ternary((private_cloud.affine.max_ram | human_to_bytes) + (private_cloud.affine.redis_max_ram | human_to_bytes), 0)) +
+        (private_cloud.stages.stalwart | ternary(private_cloud.stalwart.max_ram | human_to_bytes, 0)) +
+        (private_cloud.stages.zabbix_server | ternary(1610612736, 0))
+      }}
+
+- name: Require memory for workloads and host reserve
+  ansible.builtin.assert:
+    that:
+      - (ansible_facts.memtotal_mb | int * 1048576) >= (preflight_host_reserve_bytes | int + preflight_workload_memory_bytes | int + preflight_transient_peak_bytes | int)
+    fail_msg: >-
+      Host RAM cannot cover enabled workload limits, the largest enabled transient Job or
+      init-container limit, and the fixed 8GiB reserve for the operating system, k0s, and ZFS ARC.
 
 - name: Calculate PostgreSQL derived memory value
   ansible.builtin.set_fact:

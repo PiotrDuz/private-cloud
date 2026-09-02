@@ -2,6 +2,9 @@
 
 The Stalwart service is managed by `ansible/roles/stalwart`.
 
+- The Kustomize base is the authoritative Kubernetes workload definition.
+- Render the public example with `python3 ansible/render_manifests.py stalwart --base k0s-services/stalwart/kustomize/base --values k0s-services/stalwart/site-values.example.yaml`.
+
 - Configure `private_cloud.stalwart` in the public configuration.
 - Store database, mailbox, administrator, and relay passwords in the encrypted configuration.
 - Run `sudo python3 ansible/install.py` from the repository root.

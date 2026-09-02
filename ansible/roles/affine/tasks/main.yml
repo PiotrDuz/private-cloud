@@ -17,97 +17,38 @@
     fail_msg: AFFiNE configuration is invalid.
   no_log: true
 
-- name: Ensure the installer runtime directory exists
-  ansible.builtin.file:
-    path: "{{ affine_kubeconfig | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: '0700'
-
-- name: Inspect the k0s kubeconfig
-  ansible.builtin.stat:
-    path: "{{ affine_kubeconfig }}"
-  register: affine_kubeconfig_stat
-
-- name: Generate a missing k0s kubeconfig for tagged AFFiNE reruns
-  ansible.builtin.command: k0s kubeconfig admin
-  register: affine_generated_kubeconfig
-  when: not affine_kubeconfig_stat.stat.exists
-  changed_when: true
-  no_log: true
-
-- name: Install the generated AFFiNE kubeconfig
-  ansible.builtin.copy:
-    content: "{{ affine_generated_kubeconfig.stdout }}"
-    dest: "{{ affine_kubeconfig }}"
-    owner: root
-    group: root
-    mode: '0600'
-  when: not affine_kubeconfig_stat.stat.exists
-  no_log: true
+- name: Prepare the AFFiNE kubeconfig
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"
+  vars:
+    private_cloud_kubeconfig: "{{ affine_kubeconfig }}"
 
 - name: Resolve a Ready Kubernetes node
   kubernetes.core.k8s_info:
     kubeconfig: "{{ affine_kubeconfig }}"
     api_version: v1
     kind: Node
+    name: "{{ ansible_hostname }}"
   register: affine_nodes
   changed_when: false
 
-- name: Initialize AFFiNE node selection
+- name: Select the managed storage node
   ansible.builtin.set_fact:
-    affine_node_name: ''
+    affine_node_name: "{{ ansible_hostname }}"
 
-- name: Select the Ready Kubernetes node
-  ansible.builtin.set_fact:
-    affine_node_name: "{{ item.metadata.name }}"
-  loop: "{{ affine_nodes.resources }}"
-  when:
-    - item.status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
-    - affine_node_name | length == 0
-
-- name: Require a Ready Kubernetes node
+- name: Require the managed storage node to be Ready
   ansible.builtin.assert:
-    that: affine_node_name | length > 0
-    fail_msg: No Ready Kubernetes node is available for AFFiNE.
+    that:
+      - affine_nodes.resources | length == 1
+      - affine_nodes.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    fail_msg: "Managed storage host {{ ansible_hostname }} is not a Ready Kubernetes node for AFFiNE."
 
-- name: Check AFFiNE service dataset
-  ansible.builtin.command: zfs list -H -p -o name {{ affine_dataset }}
-  register: affine_dataset_check
-  changed_when: false
-  failed_when: false
-
-- name: Read AFFiNE dataset usage
-  ansible.builtin.command: zfs get -H -p -o value used {{ affine_dataset }}
-  register: affine_dataset_used
-  changed_when: false
-  when: affine_dataset_check.rc == 0
-
-- name: Reject an AFFiNE quota below existing usage
-  ansible.builtin.assert:
-    that: (private_cloud.affine.storage_size | human_to_bytes) | int >= (affine_dataset_used.stdout | int)
-    fail_msg: AFFiNE storage_size cannot be smaller than existing dataset usage.
-  when: affine_dataset_check.rc == 0
-
-- name: Create AFFiNE service dataset
-  ansible.builtin.command: zfs create {{ affine_dataset }}
-  when: affine_dataset_check.rc != 0
-  changed_when: true
-
-- name: Read AFFiNE dataset quota
-  ansible.builtin.command: zfs get -H -p -o value quota {{ affine_dataset }}
-  register: affine_current_quota
-  changed_when: false
-
-- name: Apply AFFiNE dataset quota
-  ansible.builtin.command: zfs set quota={{ private_cloud.affine.storage_size }} {{ affine_dataset }}
-  when: affine_current_quota.stdout | int != (private_cloud.affine.storage_size | human_to_bytes | int)
-  changed_when: true
-
-- name: Verify AFFiNE dataset is mounted
-  ansible.builtin.command: mountpoint -q {{ affine_dataset_mountpoint }}
-  changed_when: false
+- name: Prepare the AFFiNE service dataset
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: AFFiNE
+    private_cloud_service_dataset: "{{ affine_dataset }}"
+    private_cloud_service_dataset_mountpoint: "{{ affine_dataset_mountpoint }}"
+    private_cloud_service_storage_size: "{{ private_cloud.affine.storage_size }}"
 
 - name: Ensure AFFiNE persistent component directories exist
   ansible.builtin.file:
@@ -120,15 +61,12 @@
     - {path: storage, owner: root, group: root}
     - {path: config, owner: root, group: root}
 
-- name: Verify AFFiNE dataset quota
-  ansible.builtin.command: zfs get -H -p -o value quota {{ affine_dataset }}
-  register: affine_effective_quota
-  changed_when: false
-
-- name: Assert AFFiNE dataset quota
-  ansible.builtin.assert:
-    that: affine_effective_quota.stdout | int == (private_cloud.affine.storage_size | human_to_bytes | int)
-    fail_msg: AFFiNE dataset quota does not match storage_size.
+- name: Verify the AFFiNE service dataset quota
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_quota.yml"
+  vars:
+    private_cloud_service_name: AFFiNE
+    private_cloud_service_dataset: "{{ affine_dataset }}"
+    private_cloud_service_storage_size: "{{ private_cloud.affine.storage_size }}"
 
 - name: Inspect existing AFFiNE storage and credentials
   kubernetes.core.k8s_info:
@@ -355,16 +293,63 @@
   when: not affine_secret_present | bool or not affine_secret_matches | bool
   no_log: true
 
+- name: Render AFFiNE manifests from the authoritative base
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: affine
+    manifest_base: "{{ role_path }}/../../../k0s-services/affine/kustomize/base"
+    manifest_kustomize_command: "{{ affine_kustomize_command }}"
+    manifest_values:
+      dataset_path: "{{ affine_dataset_mountpoint }}"
+      node_name: "{{ affine_node_name }}"
+      image: "{{ affine_image }}"
+      redis_image: "{{ affine_redis_image }}"
+      memory: "{{ private_cloud.affine.max_ram }}"
+      redis_memory: "{{ private_cloud.affine.redis_max_ram }}"
+      node_port: "{{ private_cloud.affine.node_port | int }}"
+
+- name: Select AFFiNE manifest stages
+  ansible.builtin.set_fact:
+    affine_storage_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | selectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim']) | list }}
+    affine_redis_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | selectattr('metadata.name', 'in', [affine_redis_service_name]) | list }}
+    affine_migration_manifests: >-
+      {{ private_cloud_rendered_manifests | selectattr('kind', 'equalto', 'Job') | list }}
+    affine_workload_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | rejectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim', 'Job'])
+         | rejectattr('metadata.name', 'in', [affine_redis_service_name]) | list }}
+    affine_migration_job_name: "{{ (private_cloud_rendered_manifests | selectattr('kind', 'equalto', 'Job') | map(attribute='metadata.name') | list | first) }}"
+
+- name: Inspect the target AFFiNE migration job
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: batch/v1
+    kind: Job
+    name: "{{ affine_migration_job_name }}"
+    namespace: "{{ affine_namespace }}"
+  register: affine_existing_migration_job
+  changed_when: false
+
+- name: Require recovery of a failed AFFiNE migration
+  ansible.builtin.assert:
+    that: >-
+      affine_existing_migration_job.resources | length == 0 or
+      affine_existing_migration_job.resources[0].status.failed | default(0) | int == 0
+    fail_msg: >-
+      AFFiNE migration {{ affine_migration_job_name }} previously failed. Preserve the
+      current AFFiNE version, recover the database from a compatible backup if needed,
+      then remove this failed Job after correcting the migration cause.
+
+
 - name: Apply AFFiNE storage and Redis
   kubernetes.core.k8s:
     kubeconfig: "{{ affine_kubeconfig }}"
     state: present
-    definition: "{{ lookup('template', item) | from_yaml }}"
-  loop:
-    - pv.yml.j2
-    - pvc.yml.j2
-    - redis-deployment.yml.j2
-    - redis-service.yml.j2
+    definition: "{{ affine_storage_manifests + affine_redis_manifests }}"
   no_log: true
 
 - name: Wait for the AFFiNE Redis deployment
@@ -377,17 +362,64 @@
   register: affine_redis_deployment
   until:
     - affine_redis_deployment.resources | length > 0
-    - affine_redis_deployment.resources[0].status.updatedReplicas | default(0) | int == 1
-    - affine_redis_deployment.resources[0].status.availableReplicas | default(0) | int == 1
+    - affine_redis_deployment.resources[0].status.observedGeneration | default(0) | int >= affine_redis_deployment.resources[0].metadata.generation | int
+    - affine_redis_deployment.resources[0].status.updatedReplicas | default(0) | int == affine_redis_deployment.resources[0].spec.replicas | default(1) | int
+    - affine_redis_deployment.resources[0].status.readyReplicas | default(0) | int == affine_redis_deployment.resources[0].spec.replicas | default(1) | int
+    - affine_redis_deployment.resources[0].status.availableReplicas | default(0) | int == affine_redis_deployment.resources[0].spec.replicas | default(1) | int
   retries: 90
   delay: 5
   changed_when: false
+
+- name: Inspect the previous AFFiNE workload
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ affine_service_name }}"
+    namespace: "{{ affine_namespace }}"
+  register: affine_previous_deployment
+  changed_when: false
+
+- name: Stop the previous AFFiNE workload before a new migration
+  kubernetes.core.k8s:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    state: patched
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ affine_service_name }}"
+        namespace: "{{ affine_namespace }}"
+      spec:
+        replicas: 0
+  when:
+    - affine_existing_migration_job.resources | length == 0
+    - affine_previous_deployment.resources | length > 0
+  no_log: true
+
+- name: Wait for the previous AFFiNE workload to stop
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ affine_service_name }}"
+    namespace: "{{ affine_namespace }}"
+  register: affine_stopped_deployment
+  until: >-
+    affine_stopped_deployment.resources | length == 0 or
+    affine_stopped_deployment.resources[0].status.replicas | default(0) | int == 0
+  retries: 60
+  delay: 5
+  changed_when: false
+  when:
+    - affine_existing_migration_job.resources | length == 0
+    - affine_previous_deployment.resources | length > 0
 
 - name: Apply the versioned AFFiNE migration job
   kubernetes.core.k8s:
     kubeconfig: "{{ affine_kubeconfig }}"
     state: present
-    definition: "{{ lookup('template', 'migration-job.yml.j2') | from_yaml }}"
+    definition: "{{ affine_migration_manifests }}"
   no_log: true
 
 - name: Wait for the AFFiNE migration job
@@ -409,11 +441,7 @@
   kubernetes.core.k8s:
     kubeconfig: "{{ affine_kubeconfig }}"
     state: present
-    definition: "{{ lookup('template', item) | from_yaml }}"
-  loop:
-    - deployment.yml.j2
-    - service.yml.j2
-    - public-service.yml.j2
+    definition: "{{ affine_workload_manifests }}"
   no_log: true
 
 - name: Restart AFFiNE after a credentials change
@@ -444,8 +472,10 @@
   register: affine_deployment
   until:
     - affine_deployment.resources | length > 0
-    - affine_deployment.resources[0].status.updatedReplicas | default(0) | int == 1
-    - affine_deployment.resources[0].status.availableReplicas | default(0) | int == 1
+    - affine_deployment.resources[0].status.observedGeneration | default(0) | int >= affine_deployment.resources[0].metadata.generation | int
+    - affine_deployment.resources[0].status.updatedReplicas | default(0) | int == affine_deployment.resources[0].spec.replicas | default(1) | int
+    - affine_deployment.resources[0].status.readyReplicas | default(0) | int == affine_deployment.resources[0].spec.replicas | default(1) | int
+    - affine_deployment.resources[0].status.availableReplicas | default(0) | int == affine_deployment.resources[0].spec.replicas | default(1) | int
   retries: 90
   delay: 5
   changed_when: false

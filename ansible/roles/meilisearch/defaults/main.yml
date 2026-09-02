@@ -9,3 +9,7 @@ meilisearch_pvc_name: meilisearch-data
 meilisearch_pv_capacity: 10Ti
 meilisearch_image: getmeili/meilisearch:v1.53.1
 meilisearch_kubeconfig: /run/private-cloud/kubeconfig
+meilisearch_kustomize_command:
+  - k0s
+  - kubectl
+  - kustomize

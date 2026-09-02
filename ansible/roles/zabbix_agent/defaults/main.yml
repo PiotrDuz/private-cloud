@@ -5,6 +5,7 @@ zabbix_agent_backup: /etc/zabbix/zabbix_agent2.conf.pre-private-cloud
 zabbix_zfs_collector: /usr/local/libexec/zabbix/zfs-collector.py
 zabbix_ecc_collector: /usr/local/libexec/zabbix/memory-ecc-collector.py
 zabbix_smart_wrapper: /usr/local/libexec/zabbix/smartctl-wrapper
+zabbix_dataset_inventory: /etc/zabbix/private-cloud-datasets.json
 zabbix_zfs_config: /etc/zabbix/zabbix_agent2.d/zfs.conf
 zabbix_ecc_config: /etc/zabbix/zabbix_agent2.d/memory-ecc.conf
 zabbix_smart_config: /etc/zabbix/zabbix_agent2.d/plugins.d/smart.conf
