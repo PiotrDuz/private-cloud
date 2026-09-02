@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ grist_pvc_name }}
+  namespace: {{ grist_namespace }}
+  labels:
+    app.kubernetes.io/name: grist
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ grist_pv_capacity }}
+  storageClassName: ""
+  volumeName: {{ grist_pv_name }}

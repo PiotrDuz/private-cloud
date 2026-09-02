@@ -1,0 +1,12 @@
+---
+onlyoffice_namespace: private-cloud
+onlyoffice_service_name: onlyoffice
+onlyoffice_public_service_name: onlyoffice-public
+onlyoffice_secret_name: onlyoffice-credentials
+onlyoffice_dataset: tank/secure/backup/k0s/services/onlyoffice
+onlyoffice_dataset_mountpoint: /tank/secure/backup/k0s/services/onlyoffice
+onlyoffice_pv_name: onlyoffice-data
+onlyoffice_pvc_name: onlyoffice-data
+onlyoffice_pv_capacity: 10Ti
+onlyoffice_image: onlyoffice/documentserver:9.4.0.1
+onlyoffice_kubeconfig: /run/private-cloud/kubeconfig

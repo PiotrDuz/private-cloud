@@ -1,0 +1,464 @@
+---
+- name: Validate AFFiNE inputs
+  ansible.builtin.assert:
+    that:
+      - private_cloud.affine.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.affine.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - private_cloud.affine.redis_max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - (private_cloud.affine.max_ram | human_to_bytes | int) >= 2147483648
+      - (private_cloud.affine.redis_max_ram | human_to_bytes | int) >= 134217728
+      - private_cloud.affine.database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - private_cloud.affine.database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - private_cloud.affine.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
+      - private_cloud.affine.node_port is integer
+      - private_cloud.affine.node_port >= 30000
+      - private_cloud.affine.node_port <= 32767
+      - private_cloud_secrets.affine.database_password | length >= 16
+    fail_msg: AFFiNE configuration is invalid.
+  no_log: true
+
+- name: Ensure the installer runtime directory exists
+  ansible.builtin.file:
+    path: "{{ affine_kubeconfig | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Inspect the k0s kubeconfig
+  ansible.builtin.stat:
+    path: "{{ affine_kubeconfig }}"
+  register: affine_kubeconfig_stat
+
+- name: Generate a missing k0s kubeconfig for tagged AFFiNE reruns
+  ansible.builtin.command: k0s kubeconfig admin
+  register: affine_generated_kubeconfig
+  when: not affine_kubeconfig_stat.stat.exists
+  changed_when: true
+  no_log: true
+
+- name: Install the generated AFFiNE kubeconfig
+  ansible.builtin.copy:
+    content: "{{ affine_generated_kubeconfig.stdout }}"
+    dest: "{{ affine_kubeconfig }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when: not affine_kubeconfig_stat.stat.exists
+  no_log: true
+
+- name: Resolve a Ready Kubernetes node
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: v1
+    kind: Node
+  register: affine_nodes
+  changed_when: false
+
+- name: Initialize AFFiNE node selection
+  ansible.builtin.set_fact:
+    affine_node_name: ''
+
+- name: Select the Ready Kubernetes node
+  ansible.builtin.set_fact:
+    affine_node_name: "{{ item.metadata.name }}"
+  loop: "{{ affine_nodes.resources }}"
+  when:
+    - item.status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    - affine_node_name | length == 0
+
+- name: Require a Ready Kubernetes node
+  ansible.builtin.assert:
+    that: affine_node_name | length > 0
+    fail_msg: No Ready Kubernetes node is available for AFFiNE.
+
+- name: Check AFFiNE service dataset
+  ansible.builtin.command: zfs list -H -p -o name {{ affine_dataset }}
+  register: affine_dataset_check
+  changed_when: false
+  failed_when: false
+
+- name: Read AFFiNE dataset usage
+  ansible.builtin.command: zfs get -H -p -o value used {{ affine_dataset }}
+  register: affine_dataset_used
+  changed_when: false
+  when: affine_dataset_check.rc == 0
+
+- name: Reject an AFFiNE quota below existing usage
+  ansible.builtin.assert:
+    that: (private_cloud.affine.storage_size | human_to_bytes) | int >= (affine_dataset_used.stdout | int)
+    fail_msg: AFFiNE storage_size cannot be smaller than existing dataset usage.
+  when: affine_dataset_check.rc == 0
+
+- name: Create AFFiNE service dataset
+  ansible.builtin.command: zfs create {{ affine_dataset }}
+  when: affine_dataset_check.rc != 0
+  changed_when: true
+
+- name: Read AFFiNE dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ affine_dataset }}
+  register: affine_current_quota
+  changed_when: false
+
+- name: Apply AFFiNE dataset quota
+  ansible.builtin.command: zfs set quota={{ private_cloud.affine.storage_size }} {{ affine_dataset }}
+  when: affine_current_quota.stdout | int != (private_cloud.affine.storage_size | human_to_bytes | int)
+  changed_when: true
+
+- name: Verify AFFiNE dataset is mounted
+  ansible.builtin.command: mountpoint -q {{ affine_dataset_mountpoint }}
+  changed_when: false
+
+- name: Ensure AFFiNE persistent component directories exist
+  ansible.builtin.file:
+    path: "{{ affine_dataset_mountpoint }}/{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: '0750'
+  loop:
+    - {path: storage, owner: root, group: root}
+    - {path: config, owner: root, group: root}
+
+- name: Verify AFFiNE dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ affine_dataset }}
+  register: affine_effective_quota
+  changed_when: false
+
+- name: Assert AFFiNE dataset quota
+  ansible.builtin.assert:
+    that: affine_effective_quota.stdout | int == (private_cloud.affine.storage_size | human_to_bytes | int)
+    fail_msg: AFFiNE dataset quota does not match storage_size.
+
+- name: Inspect existing AFFiNE storage and credentials
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ item.namespace | default(omit) }}"
+  loop:
+    - {api_version: v1, kind: PersistentVolume, name: affine-data}
+    - {api_version: v1, kind: PersistentVolumeClaim, name: affine-data, namespace: private-cloud}
+    - {api_version: v1, kind: Secret, name: affine-credentials, namespace: private-cloud}
+    - {api_version: apps/v1, kind: Deployment, name: affine-postgres, namespace: private-cloud}
+  register: affine_existing
+  changed_when: false
+  no_log: true
+
+- name: Reject an unmigrated private AFFiNE PostgreSQL deployment
+  ansible.builtin.assert:
+    that: affine_existing.results[3].resources | length == 0
+    fail_msg: Migrate the existing affine-postgres database into the shared PostgreSQL service before applying this role.
+
+- name: Reject incompatible AFFiNE persistent storage
+  ansible.builtin.assert:
+    that:
+      - affine_existing.results[0].resources | length == 0 or affine_existing.results[0].resources[0].spec.local.path == affine_dataset_mountpoint
+      - affine_existing.results[0].resources | length == 0 or affine_existing.results[0].resources[0].spec.capacity.storage == affine_pv_capacity
+      - affine_existing.results[0].resources | length == 0 or affine_node_name in affine_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - affine_existing.results[1].resources | length == 0 or affine_existing.results[1].resources[0].spec.resources.requests.storage == affine_pv_capacity
+      - affine_existing.results[1].resources | length == 0 or affine_existing.results[1].resources[0].spec.volumeName == affine_pv_name
+    fail_msg: Existing AFFiNE persistent storage conflicts with the configured local storage.
+
+- name: Classify the existing AFFiNE credentials
+  ansible.builtin.set_fact:
+    affine_secret_present: "{{ affine_existing.results[2].resources | length > 0 }}"
+    affine_secret_managed: >-
+      {{ affine_existing.results[2].resources | length > 0 and
+         ((affine_existing.results[2].resources[0].metadata.annotations | default({})).get('private-cloud.example/managed-by', '') == 'ansible') }}
+    affine_identity_matches: >-
+      {{ affine_existing.results[2].resources | length > 0 and
+         affine_existing.results[2].resources[0].data.AFFINE_DB_NAME is defined and
+         affine_existing.results[2].resources[0].data.AFFINE_DB_USERNAME is defined and
+         (affine_existing.results[2].resources[0].data.AFFINE_DB_NAME | b64decode == private_cloud.affine.database_name) and
+         (affine_existing.results[2].resources[0].data.AFFINE_DB_USERNAME | b64decode == private_cloud.affine.database_username) }}
+    affine_database_password_matches: >-
+      {{ affine_existing.results[2].resources | length > 0 and
+         affine_existing.results[2].resources[0].data.AFFINE_DB_PASSWORD is defined and
+         (affine_existing.results[2].resources[0].data.AFFINE_DB_PASSWORD | b64decode == private_cloud_secrets.affine.database_password) }}
+    affine_secret_matches: >-
+      {{ affine_existing.results[2].resources | length > 0 and
+         affine_existing.results[2].resources[0].data.AFFINE_DB_NAME is defined and
+         affine_existing.results[2].resources[0].data.AFFINE_DB_USERNAME is defined and
+         affine_existing.results[2].resources[0].data.AFFINE_DB_PASSWORD is defined and
+         affine_existing.results[2].resources[0].data.DATABASE_URL is defined and
+         (affine_existing.results[2].resources[0].data.AFFINE_DB_NAME | b64decode == private_cloud.affine.database_name) and
+         (affine_existing.results[2].resources[0].data.AFFINE_DB_USERNAME | b64decode == private_cloud.affine.database_username) and
+         (affine_existing.results[2].resources[0].data.AFFINE_DB_PASSWORD | b64decode == private_cloud_secrets.affine.database_password) and
+         (affine_existing.results[2].resources[0].data.DATABASE_URL | b64decode == ("postgresql://" ~ private_cloud.affine.database_username ~ ":" ~ (private_cloud_secrets.affine.database_password | urlencode | replace("/", "%2F")) ~ "@" ~ affine_postgres_service ~ ":5432/" ~ private_cloud.affine.database_name)) }}
+  no_log: true
+
+- name: Reject a changed AFFiNE database identity
+  ansible.builtin.assert:
+    that: not affine_secret_present | bool or affine_identity_matches | bool
+    fail_msg: AFFiNE database_name and database_username cannot change after initialization.
+  no_log: true
+
+- name: Reject incompatible unmanaged AFFiNE credentials
+  ansible.builtin.assert:
+    that: not affine_secret_present | bool or affine_secret_managed | bool or affine_secret_matches | bool
+    fail_msg: Existing AFFiNE credentials conflict with the configured values.
+  no_log: true
+
+- name: Locate the shared PostgreSQL pod for AFFiNE database bootstrap
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ affine_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=postgres
+  register: affine_postgres_pods
+  until:
+    - affine_postgres_pods.resources | length > 0
+    - affine_postgres_pods.resources[0].status.containerStatuses | default([]) | selectattr('ready', 'equalto', true) | list | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Check the AFFiNE PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    namespace: "{{ affine_namespace }}"
+    pod: "{{ affine_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT rolcanlogin FROM pg_roles WHERE rolname = '{{ private_cloud.affine.database_username | replace("'", "''") }}';"
+  register: affine_role_exists
+  changed_when: false
+  no_log: true
+
+- name: Create the AFFiNE PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    namespace: "{{ affine_namespace }}"
+    pod: "{{ affine_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'printf %s {{ lookup('template', 'create-role.sql.j2') | b64encode }} |
+      base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
+  when: affine_role_exists.stdout | trim == ''
+  changed_when: true
+  no_log: true
+
+- name: Update the AFFiNE PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    namespace: "{{ affine_namespace }}"
+    pod: "{{ affine_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'printf %s {{ lookup('template', 'alter-role.sql.j2') | b64encode }} |
+      base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
+  when:
+    - affine_role_exists.stdout | trim != ''
+    - affine_role_exists.stdout | trim == 'f' or not affine_database_password_matches | bool
+  changed_when: true
+  no_log: true
+
+- name: Check the AFFiNE PostgreSQL database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    namespace: "{{ affine_namespace }}"
+    pod: "{{ affine_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '{{ private_cloud.affine.database_name | replace("'", "''") }}';"
+  register: affine_database_exists
+  changed_when: false
+  no_log: true
+
+- name: Create the AFFiNE PostgreSQL database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    namespace: "{{ affine_namespace }}"
+    pod: "{{ affine_postgres_pods.resources[0].metadata.name }}"
+    command: createdb -U postgres -O {{ private_cloud.affine.database_username }} {{ private_cloud.affine.database_name }}
+  when: affine_database_exists.stdout | trim == ''
+  changed_when: true
+  no_log: true
+
+- name: Set the AFFiNE database owner when needed
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    namespace: "{{ affine_namespace }}"
+    pod: "{{ affine_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "ALTER DATABASE \"{{ private_cloud.affine.database_name }}\" OWNER TO \"{{ private_cloud.affine.database_username }}\";"
+  when:
+    - affine_database_exists.stdout | trim != ''
+    - affine_database_exists.stdout | trim != private_cloud.affine.database_username
+  changed_when: true
+  no_log: true
+
+- name: Read AFFiNE pgvector status
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    namespace: "{{ affine_namespace }}"
+    pod: "{{ affine_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d {{ private_cloud.affine.database_name }} -c
+      "SELECT COALESCE((SELECT extversion FROM pg_extension WHERE extname = 'vector'), 'absent') || '|' || COALESCE((SELECT default_version FROM pg_available_extensions WHERE name = 'vector'), 'unavailable');"
+  register: affine_pgvector_status
+  changed_when: false
+
+- name: Classify AFFiNE pgvector status
+  ansible.builtin.set_fact:
+    affine_pgvector_installed_version: "{{ (affine_pgvector_status.stdout | trim).split('|')[0] }}"
+    affine_pgvector_available_version: "{{ (affine_pgvector_status.stdout | trim).split('|')[1] }}"
+
+- name: Require pgvector for AFFiNE
+  ansible.builtin.assert:
+    that: affine_pgvector_available_version == affine_pgvector_version
+    fail_msg: The shared PostgreSQL service does not provide the configured pgvector version.
+
+- name: Enable pgvector in the AFFiNE database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    namespace: "{{ affine_namespace }}"
+    pod: "{{ affine_postgres_pods.resources[0].metadata.name }}"
+    command: psql -v ON_ERROR_STOP=1 -At -U postgres -d {{ private_cloud.affine.database_name }} -c "CREATE EXTENSION vector;"
+  when: affine_pgvector_installed_version == 'absent'
+  changed_when: true
+
+- name: Update pgvector in the AFFiNE database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    namespace: "{{ affine_namespace }}"
+    pod: "{{ affine_postgres_pods.resources[0].metadata.name }}"
+    command: psql -v ON_ERROR_STOP=1 -At -U postgres -d {{ private_cloud.affine.database_name }} -c "ALTER EXTENSION vector UPDATE;"
+  when:
+    - affine_pgvector_installed_version != 'absent'
+    - affine_pgvector_installed_version != affine_pgvector_version
+  changed_when: true
+
+- name: Verify AFFiNE pgvector
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    namespace: "{{ affine_namespace }}"
+    pod: "{{ affine_postgres_pods.resources[0].metadata.name }}"
+    command: psql -At -U postgres -d {{ private_cloud.affine.database_name }} -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';"
+  register: affine_pgvector_effective
+  changed_when: false
+
+- name: Assert AFFiNE pgvector
+  ansible.builtin.assert:
+    that: affine_pgvector_effective.stdout | trim == affine_pgvector_version
+    fail_msg: The vector extension is not enabled in the AFFiNE database.
+
+- name: Apply AFFiNE credentials
+  kubernetes.core.k8s:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'secret.yml.j2') | from_yaml }}"
+  register: affine_secret_apply
+  when: not affine_secret_present | bool or not affine_secret_matches | bool
+  no_log: true
+
+- name: Apply AFFiNE storage and Redis
+  kubernetes.core.k8s:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - pv.yml.j2
+    - pvc.yml.j2
+    - redis-deployment.yml.j2
+    - redis-service.yml.j2
+  no_log: true
+
+- name: Wait for the AFFiNE Redis deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ affine_redis_service_name }}"
+    namespace: "{{ affine_namespace }}"
+  register: affine_redis_deployment
+  until:
+    - affine_redis_deployment.resources | length > 0
+    - affine_redis_deployment.resources[0].status.updatedReplicas | default(0) | int == 1
+    - affine_redis_deployment.resources[0].status.availableReplicas | default(0) | int == 1
+  retries: 90
+  delay: 5
+  changed_when: false
+
+- name: Apply the versioned AFFiNE migration job
+  kubernetes.core.k8s:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'migration-job.yml.j2') | from_yaml }}"
+  no_log: true
+
+- name: Wait for the AFFiNE migration job
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: batch/v1
+    kind: Job
+    name: "{{ affine_migration_job_name }}"
+    namespace: "{{ affine_namespace }}"
+  register: affine_migration_job
+  until:
+    - affine_migration_job.resources | length > 0
+    - affine_migration_job.resources[0].status.succeeded | default(0) | int == 1
+  retries: 120
+  delay: 5
+  changed_when: false
+
+- name: Apply AFFiNE workload and services
+  kubernetes.core.k8s:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - deployment.yml.j2
+    - service.yml.j2
+    - public-service.yml.j2
+  no_log: true
+
+- name: Restart AFFiNE after a credentials change
+  kubernetes.core.k8s:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    state: patched
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ affine_service_name }}"
+        namespace: "{{ affine_namespace }}"
+      spec:
+        template:
+          metadata:
+            annotations:
+              private-cloud.example/credentials-restarted-at: "{{ ansible_date_time.iso8601 }}"
+  when: affine_secret_apply.changed | default(false)
+  no_log: true
+
+- name: Wait for AFFiNE deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ affine_service_name }}"
+    namespace: "{{ affine_namespace }}"
+  register: affine_deployment
+  until:
+    - affine_deployment.resources | length > 0
+    - affine_deployment.resources[0].status.updatedReplicas | default(0) | int == 1
+    - affine_deployment.resources[0].status.availableReplicas | default(0) | int == 1
+  retries: 90
+  delay: 5
+  changed_when: false
+
+- name: Wait for AFFiNE service endpoint
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    name: "{{ affine_service_name }}"
+    namespace: "{{ affine_namespace }}"
+  register: affine_endpoint
+  until: affine_endpoint.resources | length > 0 and (affine_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0)
+  retries: 90
+  delay: 5
+  changed_when: false

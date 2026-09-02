@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ tika_service_name }}
+  namespace: {{ tika_namespace }}
+  labels:
+    app.kubernetes.io/name: tika
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tika
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tika
+    spec:
+      securityContext:
+        fsGroup: 35002
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: tika
+          image: {{ tika_image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 9998
+              protocol: TCP
+          resources:
+            requests:
+              memory: {{ private_cloud.tika.max_ram }}
+            limits:
+              memory: {{ private_cloud.tika.max_ram }}
+          readinessProbe:
+            httpGet:
+              path: /tika
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 24
+          livenessProbe:
+            httpGet:
+              path: /tika
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/tika
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ tika_pvc_name }}

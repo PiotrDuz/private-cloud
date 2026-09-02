@@ -10,4 +10,6 @@ The PostgreSQL service is managed by `ansible/roles/postgres`.
 - The local PV and PVC advertise a fixed `10Ti` capacity.
 - The container memory limit uses the configured maximum RAM.
 - PostgreSQL `shared_buffers` uses 25% of the configured maximum RAM.
-- The image remains `postgres:18.4-bookworm`.
+- The image is `pgvector/pgvector:0.8.6-pg18-bookworm`.
+- The PostgreSQL role enables and verifies the `vector` extension.
+- The static bundle includes a versioned pgvector enablement Job.

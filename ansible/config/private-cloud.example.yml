@@ -5,6 +5,12 @@ private_cloud:
     postgres: true
     meilisearch: true
     stalwart: true
+    tika: true
+    bleve: true
+    onlyoffice: true
+    opencloud: true
+    grist: true
+    affine: true
     zabbix_server: true
     zabbix_agent: true
   storage:
@@ -22,6 +28,37 @@ private_cloud:
   meilisearch:
     storage_size: 20G
     max_ram: 1Gi
+  tika:
+    storage_size: 5G
+    max_ram: 1Gi
+  bleve:
+    storage_size: 20G
+  onlyoffice:
+    storage_size: 20G
+    max_ram: 4Gi
+    hostname: onlyoffice.example.com
+    node_port: 30082
+  opencloud:
+    storage_size: 100G
+    max_ram: 4Gi
+    hostname: cloud.example.com
+    node_port: 30920
+  grist:
+    storage_size: 50G
+    max_ram: 2Gi
+    database_name: grist
+    database_username: grist
+    default_email: admin@example.com
+    hostname: grist.example.com
+    node_port: 30848
+  affine:
+    storage_size: 100G
+    max_ram: 4Gi
+    redis_max_ram: 512Mi
+    database_name: affine
+    database_username: affine
+    hostname: affine.example.com
+    node_port: 30310
   stalwart:
     storage_size: 100G
     max_ram: 2Gi

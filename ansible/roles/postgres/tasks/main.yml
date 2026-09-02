@@ -139,12 +139,6 @@
     that: postgres_node_name is defined and postgres_node_name | length > 0
     fail_msg: No Ready Kubernetes node is available for PostgreSQL.
 
-- name: Apply PostgreSQL namespace
-  kubernetes.core.k8s:
-    kubeconfig: "{{ postgres_kubeconfig }}"
-    state: present
-    definition: "{{ lookup('template', 'namespace.yml.j2') | from_yaml }}"
-
 - name: Inspect existing PostgreSQL resources
   kubernetes.core.k8s_info:
     kubeconfig: "{{ postgres_kubeconfig }}"
@@ -297,6 +291,61 @@
     pod: "{{ postgres_pods.resources[0].metadata.name }}"
     command: pg_isready -U postgres -d postgres
   changed_when: false
+
+- name: Read shared PostgreSQL pgvector status
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ postgres_kubeconfig }}"
+    namespace: "{{ postgres_namespace }}"
+    pod: "{{ postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT COALESCE((SELECT extversion FROM pg_extension WHERE extname = 'vector'), 'absent') || '|' || COALESCE((SELECT default_version FROM pg_available_extensions WHERE name = 'vector'), 'unavailable');"
+  register: postgres_pgvector_status
+  changed_when: false
+
+- name: Classify shared PostgreSQL pgvector status
+  ansible.builtin.set_fact:
+    postgres_pgvector_installed_version: "{{ (postgres_pgvector_status.stdout | trim).split('|')[0] }}"
+    postgres_pgvector_available_version: "{{ (postgres_pgvector_status.stdout | trim).split('|')[1] }}"
+
+- name: Require the configured pgvector version
+  ansible.builtin.assert:
+    that: postgres_pgvector_available_version == postgres_pgvector_version
+    fail_msg: The shared PostgreSQL image does not provide the configured pgvector version.
+
+- name: Enable pgvector in the PostgreSQL administrator database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ postgres_kubeconfig }}"
+    namespace: "{{ postgres_namespace }}"
+    pod: "{{ postgres_pods.resources[0].metadata.name }}"
+    command: psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres -c "CREATE EXTENSION vector;"
+  when: postgres_pgvector_installed_version == 'absent'
+  changed_when: true
+
+- name: Update pgvector in the PostgreSQL administrator database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ postgres_kubeconfig }}"
+    namespace: "{{ postgres_namespace }}"
+    pod: "{{ postgres_pods.resources[0].metadata.name }}"
+    command: psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres -c "ALTER EXTENSION vector UPDATE;"
+  when:
+    - postgres_pgvector_installed_version != 'absent'
+    - postgres_pgvector_installed_version != postgres_pgvector_version
+  changed_when: true
+
+- name: Verify shared PostgreSQL pgvector
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ postgres_kubeconfig }}"
+    namespace: "{{ postgres_namespace }}"
+    pod: "{{ postgres_pods.resources[0].metadata.name }}"
+    command: psql -At -U postgres -d postgres -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';"
+  register: postgres_pgvector_effective
+  changed_when: false
+
+- name: Assert shared PostgreSQL pgvector
+  ansible.builtin.assert:
+    that: postgres_pgvector_effective.stdout | trim == postgres_pgvector_version
+    fail_msg: The shared PostgreSQL vector extension is not enabled at the configured version.
 
 - name: Read effective PostgreSQL settings
   kubernetes.core.k8s_exec:

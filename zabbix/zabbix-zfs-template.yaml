@@ -402,6 +402,222 @@ zabbix_export:
               expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["meilisearch"])>{$ZFS.SNAPSHOT.MAX_AGE}'
               name: 'ZFS dataset meilisearch has an old snapshot'
               priority: WARNING
+        - uuid: d038fbf243be4a8aa4820b5c170f23bb
+          name: 'Dataset tika: Snapshot retained space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained["tika"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/tika"]["retained_bytes"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 5122124405a84b57b4a3f0ab86a55f09
+          name: 'Dataset tika: Snapshot share of used space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained_percent["tika"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/tika"]["retained_percent"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 896d9ccdb83047e3bba34d0acdaec96f
+          name: 'Dataset tika: Oldest snapshot age'
+          type: DEPENDENT
+          key: 'zfs.snapshot.oldest_age["tika"]'
+          delay: '0'
+          history: 90d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/tika"]["oldest_age"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+          triggers:
+            - uuid: fa42956e90474b5d92969c645e7eee23
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["tika"])>{$ZFS.SNAPSHOT.MAX_AGE}'
+              name: 'ZFS dataset tika has an old snapshot'
+              priority: WARNING
+        - uuid: cc83e382b2ca463bb200ad2ab54cc2d6
+          name: 'Dataset bleve: Snapshot retained space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained["bleve"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/bleve"]["retained_bytes"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: b8cde7f80aff43acaca4a3bc697c7040
+          name: 'Dataset bleve: Snapshot share of used space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained_percent["bleve"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/bleve"]["retained_percent"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: cf4643d939e54b6ca1635034ae4eb77e
+          name: 'Dataset bleve: Oldest snapshot age'
+          type: DEPENDENT
+          key: 'zfs.snapshot.oldest_age["bleve"]'
+          delay: '0'
+          history: 90d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/bleve"]["oldest_age"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+          triggers:
+            - uuid: 274db3cce6384fecb771ba1c5e8970e1
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["bleve"])>{$ZFS.SNAPSHOT.MAX_AGE}'
+              name: 'ZFS dataset bleve has an old snapshot'
+              priority: WARNING
+        - uuid: 3e7bb9195c884eb58de500166fb1a3be
+          name: 'Dataset onlyoffice: Snapshot retained space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained["onlyoffice"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/onlyoffice"]["retained_bytes"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 7fc42117b81f477886ebdb1cc5718bfb
+          name: 'Dataset onlyoffice: Snapshot share of used space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained_percent["onlyoffice"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/onlyoffice"]["retained_percent"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: f17cfee9bb254e45bf9cbe4d0a980ab1
+          name: 'Dataset onlyoffice: Oldest snapshot age'
+          type: DEPENDENT
+          key: 'zfs.snapshot.oldest_age["onlyoffice"]'
+          delay: '0'
+          history: 90d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/onlyoffice"]["oldest_age"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+          triggers:
+            - uuid: d6a9f416aa544e54af0c6df1f0d48b03
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["onlyoffice"])>{$ZFS.SNAPSHOT.MAX_AGE}'
+              name: 'ZFS dataset onlyoffice has an old snapshot'
+              priority: WARNING
+        - uuid: 3af77c9fab14452681b3434306606023
+          name: 'Dataset opencloud: Snapshot retained space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained["opencloud"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/opencloud"]["retained_bytes"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: f9744a452e334045ac66e4c693d1ffce
+          name: 'Dataset opencloud: Snapshot share of used space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained_percent["opencloud"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/opencloud"]["retained_percent"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 05ae5a206a014008aa9e073edfff0928
+          name: 'Dataset opencloud: Oldest snapshot age'
+          type: DEPENDENT
+          key: 'zfs.snapshot.oldest_age["opencloud"]'
+          delay: '0'
+          history: 90d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/opencloud"]["oldest_age"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+          triggers:
+            - uuid: 8101af0183674340aab044e85f1b7e10
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["opencloud"])>{$ZFS.SNAPSHOT.MAX_AGE}'
+              name: 'ZFS dataset opencloud has an old snapshot'
+              priority: WARNING
         - uuid: 095f5d9175f148a288d9323c2294c5b8
           name: 'Dataset stalwart: Snapshot retained space'
           type: DEPENDENT
@@ -455,6 +671,114 @@ zabbix_export:
             - uuid: e13b8d9925b84aaeb9891d483d300477
               expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["stalwart"])>{$ZFS.SNAPSHOT.MAX_AGE}'
               name: 'ZFS dataset stalwart has an old snapshot'
+              priority: WARNING
+        - uuid: 622db520dade49dab85c4420e813d1cc
+          name: 'Dataset grist: Snapshot retained space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained["grist"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/grist"]["retained_bytes"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: f13c0e4fce4c4a09a2f54636566d1537
+          name: 'Dataset grist: Snapshot share of used space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained_percent["grist"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/grist"]["retained_percent"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: e1b445a6a53a4562bfe5803bebf92807
+          name: 'Dataset grist: Oldest snapshot age'
+          type: DEPENDENT
+          key: 'zfs.snapshot.oldest_age["grist"]'
+          delay: '0'
+          history: 90d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/grist"]["oldest_age"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+          triggers:
+            - uuid: e17b6c726f854abfbbebc591aac69604
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["grist"])>{$ZFS.SNAPSHOT.MAX_AGE}'
+              name: 'ZFS dataset grist has an old snapshot'
+              priority: WARNING
+        - uuid: 33a3f794d27b45bd94568129707580d8
+          name: 'Dataset affine: Snapshot retained space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained["affine"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/affine"]["retained_bytes"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: baea84f251bc4c24bb58223b3d5f74ac
+          name: 'Dataset affine: Snapshot share of used space'
+          type: DEPENDENT
+          key: 'zfs.snapshot.retained_percent["affine"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/affine"]["retained_percent"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+        - uuid: 025d8aac944d44929d2cdf5ad78f76dd
+          name: 'Dataset affine: Oldest snapshot age'
+          type: DEPENDENT
+          key: 'zfs.snapshot.oldest_age["affine"]'
+          delay: '0'
+          history: 90d
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/affine"]["oldest_age"]'
+          master_item:
+            key: zfs.snapshots
+          tags:
+            - tag: component
+              value: snapshots
+          triggers:
+            - uuid: 732e68efd9aa44bdaec6dbd7bba1859c
+              expression: 'last(/ZFS by Zabbix agent active/zfs.snapshot.oldest_age["affine"])>{$ZFS.SNAPSHOT.MAX_AGE}'
+              name: 'ZFS dataset affine has an old snapshot'
               priority: WARNING
         - uuid: 24a3dd8c12c84a0c81f399a08f54034a
           name: 'Dataset zabbix: Snapshot retained space'
@@ -870,6 +1194,158 @@ zabbix_export:
               expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["meilisearch"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
               name: 'ZFS dataset meilisearch is over 90% utilized'
               priority: HIGH
+        - uuid: f28f2b247d48404a942d5c14990fb3fb
+          name: 'Dataset tika: Used'
+          type: DEPENDENT
+          key: 'zfs.dataset.used["tika"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/tika"]["used"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: 947d59618bf14a31ad7714543ecda426
+          name: 'Dataset tika: Utilization'
+          type: DEPENDENT
+          key: 'zfs.dataset.utilization["tika"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/tika"]["utilization"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset-capacity
+          triggers:
+            - uuid: c23cba7d39d54fddad81eb98fa5e3a12
+              expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["tika"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
+              name: 'ZFS dataset tika is over 90% utilized'
+              priority: HIGH
+        - uuid: 7c3a03c4c3f94725a740414f3dbdaa2c
+          name: 'Dataset bleve: Used'
+          type: DEPENDENT
+          key: 'zfs.dataset.used["bleve"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/bleve"]["used"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: cb333452d5584313822e9926272bdacf
+          name: 'Dataset bleve: Utilization'
+          type: DEPENDENT
+          key: 'zfs.dataset.utilization["bleve"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/bleve"]["utilization"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset-capacity
+          triggers:
+            - uuid: 07c34f813c1946a89410c2e2c4074c54
+              expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["bleve"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
+              name: 'ZFS dataset bleve is over 90% utilized'
+              priority: HIGH
+        - uuid: abe1f99bf83a4f128b9e1883ef3bdb83
+          name: 'Dataset onlyoffice: Used'
+          type: DEPENDENT
+          key: 'zfs.dataset.used["onlyoffice"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/onlyoffice"]["used"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: 3e2fee54b1f34955a4f292d4742bedcb
+          name: 'Dataset onlyoffice: Utilization'
+          type: DEPENDENT
+          key: 'zfs.dataset.utilization["onlyoffice"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/onlyoffice"]["utilization"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset-capacity
+          triggers:
+            - uuid: f7ea266134a745d4afb3249cd361888e
+              expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["onlyoffice"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
+              name: 'ZFS dataset onlyoffice is over 90% utilized'
+              priority: HIGH
+        - uuid: 660187abd0ed4dec9d08deec7203c090
+          name: 'Dataset opencloud: Used'
+          type: DEPENDENT
+          key: 'zfs.dataset.used["opencloud"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/opencloud"]["used"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: 097d3a5cc28c4c84b1c3b4a670974bb9
+          name: 'Dataset opencloud: Utilization'
+          type: DEPENDENT
+          key: 'zfs.dataset.utilization["opencloud"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/opencloud"]["utilization"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset-capacity
+          triggers:
+            - uuid: 4131a5b91b8847459f5ce9bcc5fcbdb8
+              expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["opencloud"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
+              name: 'ZFS dataset opencloud is over 90% utilized'
+              priority: HIGH
         - uuid: 72250c2d7cc34e45913c2e4ceec601b8
           name: 'Dataset stalwart: Used'
           type: DEPENDENT
@@ -907,6 +1383,82 @@ zabbix_export:
             - uuid: b878f23eb61b47649c6c8565eb48981f
               expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["stalwart"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
               name: 'ZFS dataset stalwart is over 90% utilized'
+              priority: HIGH
+        - uuid: 90951ae1304443be99e8e1b64cbab2c0
+          name: 'Dataset grist: Used'
+          type: DEPENDENT
+          key: 'zfs.dataset.used["grist"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/grist"]["used"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: 685dea5593524879af06f964d569c181
+          name: 'Dataset grist: Utilization'
+          type: DEPENDENT
+          key: 'zfs.dataset.utilization["grist"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/grist"]["utilization"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset-capacity
+          triggers:
+            - uuid: 56f3ee45105341c1b2c498cbfc1f5106
+              expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["grist"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
+              name: 'ZFS dataset grist is over 90% utilized'
+              priority: HIGH
+        - uuid: 9eae7d9f997e487c8fed734e477b91fc
+          name: 'Dataset affine: Used'
+          type: DEPENDENT
+          key: 'zfs.dataset.used["affine"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/affine"]["used"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: fedd7b27ee094ac79ae4cc03f704fdd3
+          name: 'Dataset affine: Utilization'
+          type: DEPENDENT
+          key: 'zfs.dataset.utilization["affine"]'
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/services/affine"]["utilization"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset-capacity
+          triggers:
+            - uuid: 440d95f482c24ac6afdc01c74364667c
+              expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["affine"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
+              name: 'ZFS dataset affine is over 90% utilized'
               priority: HIGH
         - uuid: 482f7fa0d34642e0a7924f8320778984
           name: 'Dataset zabbix: Used'

@@ -33,6 +33,12 @@ LEAF_DATASETS = (
     "tank/secure/no-backup/k0s/ephemeral",
     "tank/secure/backup/k0s/services/postgres",
     "tank/secure/backup/k0s/services/meilisearch",
+    "tank/secure/backup/k0s/services/tika",
+    "tank/secure/backup/k0s/services/bleve",
+    "tank/secure/backup/k0s/services/onlyoffice",
+    "tank/secure/backup/k0s/services/opencloud",
+    "tank/secure/backup/k0s/services/grist",
+    "tank/secure/backup/k0s/services/affine",
     "tank/secure/backup/k0s/services/stalwart",
     "tank/secure/backup/k0s/services/zabbix",
 )

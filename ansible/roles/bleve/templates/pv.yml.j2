@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ bleve_pv_name }}
+  labels:
+    app.kubernetes.io/name: bleve
+spec:
+  capacity:
+    storage: {{ bleve_pv_capacity }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: {{ bleve_namespace }}
+    name: {{ bleve_pvc_name }}
+  local:
+    path: {{ bleve_dataset_mountpoint }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ bleve_node_name | quote }}

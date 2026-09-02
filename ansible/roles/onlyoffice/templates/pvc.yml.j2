@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ onlyoffice_pvc_name }}
+  namespace: {{ onlyoffice_namespace }}
+  labels:
+    app.kubernetes.io/name: onlyoffice
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ onlyoffice_pv_capacity }}
+  storageClassName: ""
+  volumeName: {{ onlyoffice_pv_name }}

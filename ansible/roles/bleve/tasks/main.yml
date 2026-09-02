@@ -1,0 +1,155 @@
+---
+- name: Validate Bleve inputs
+  ansible.builtin.assert:
+    that:
+      - private_cloud.bleve.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+    fail_msg: Bleve configuration is invalid.
+
+- name: Ensure the installer runtime directory exists
+  ansible.builtin.file:
+    path: "{{ bleve_kubeconfig | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Inspect the k0s kubeconfig
+  ansible.builtin.stat:
+    path: "{{ bleve_kubeconfig }}"
+  register: bleve_kubeconfig_stat
+
+- name: Generate a missing k0s kubeconfig for tagged Bleve reruns
+  ansible.builtin.command: k0s kubeconfig admin
+  register: bleve_generated_kubeconfig
+  when: not bleve_kubeconfig_stat.stat.exists
+  changed_when: true
+  no_log: true
+
+- name: Install the generated Bleve kubeconfig
+  ansible.builtin.copy:
+    content: "{{ bleve_generated_kubeconfig.stdout }}"
+    dest: "{{ bleve_kubeconfig }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when: not bleve_kubeconfig_stat.stat.exists
+  no_log: true
+
+- name: Resolve a Ready Kubernetes node
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ bleve_kubeconfig }}"
+    api_version: v1
+    kind: Node
+  register: bleve_nodes
+  changed_when: false
+
+- name: Initialize Bleve node selection
+  ansible.builtin.set_fact:
+    bleve_node_name: ''
+
+- name: Select the Ready Kubernetes node
+  ansible.builtin.set_fact:
+    bleve_node_name: "{{ item.metadata.name }}"
+  loop: "{{ bleve_nodes.resources }}"
+  when:
+    - item.status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    - bleve_node_name | length == 0
+
+- name: Require a Ready Kubernetes node
+  ansible.builtin.assert:
+    that: bleve_node_name | length > 0
+    fail_msg: No Ready Kubernetes node is available for Bleve.
+
+- name: Check Bleve service dataset
+  ansible.builtin.command: zfs list -H -p -o name {{ bleve_dataset }}
+  register: bleve_dataset_check
+  changed_when: false
+  failed_when: false
+
+- name: Read Bleve dataset usage
+  ansible.builtin.command: zfs get -H -p -o value used {{ bleve_dataset }}
+  register: bleve_dataset_used
+  changed_when: false
+  when: bleve_dataset_check.rc == 0
+
+- name: Reject a Bleve quota below existing usage
+  ansible.builtin.assert:
+    that: (private_cloud.bleve.storage_size | human_to_bytes) | int >= (bleve_dataset_used.stdout | int)
+    fail_msg: Bleve storage_size cannot be smaller than existing dataset usage.
+  when: bleve_dataset_check.rc == 0
+
+- name: Create Bleve service dataset
+  ansible.builtin.command: zfs create {{ bleve_dataset }}
+  when: bleve_dataset_check.rc != 0
+  changed_when: true
+
+- name: Read Bleve dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ bleve_dataset }}
+  register: bleve_current_quota
+  changed_when: false
+
+- name: Apply Bleve dataset quota
+  ansible.builtin.command: zfs set quota={{ private_cloud.bleve.storage_size }} {{ bleve_dataset }}
+  when: bleve_current_quota.stdout | int != (private_cloud.bleve.storage_size | human_to_bytes | int)
+  changed_when: true
+
+- name: Verify Bleve dataset is mounted
+  ansible.builtin.command: mountpoint -q {{ bleve_dataset_mountpoint }}
+  changed_when: false
+
+- name: Verify Bleve dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ bleve_dataset }}
+  register: bleve_effective_quota
+  changed_when: false
+
+- name: Assert Bleve dataset quota
+  ansible.builtin.assert:
+    that: bleve_effective_quota.stdout | int == (private_cloud.bleve.storage_size | human_to_bytes | int)
+    fail_msg: Bleve dataset quota does not match storage_size.
+
+- name: Inspect existing Bleve storage
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ bleve_kubeconfig }}"
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ item.namespace | default(omit) }}"
+  loop:
+    - {api_version: v1, kind: PersistentVolume, name: bleve-data}
+    - {api_version: v1, kind: PersistentVolumeClaim, name: bleve-data, namespace: private-cloud}
+  register: bleve_existing_storage
+  changed_when: false
+
+- name: Reject incompatible Bleve persistent storage
+  ansible.builtin.assert:
+    that:
+      - bleve_existing_storage.results[0].resources | length == 0 or bleve_existing_storage.results[0].resources[0].spec.local.path == bleve_dataset_mountpoint
+      - bleve_existing_storage.results[0].resources | length == 0 or bleve_existing_storage.results[0].resources[0].spec.capacity.storage == bleve_pv_capacity
+      - bleve_existing_storage.results[0].resources | length == 0 or bleve_node_name in bleve_existing_storage.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - bleve_existing_storage.results[1].resources | length == 0 or bleve_existing_storage.results[1].resources[0].spec.resources.requests.storage == bleve_pv_capacity
+      - bleve_existing_storage.results[1].resources | length == 0 or bleve_existing_storage.results[1].resources[0].spec.volumeName == bleve_pv_name
+    fail_msg: Existing Bleve persistent storage conflicts with the configured local storage.
+
+- name: Apply Bleve storage
+  kubernetes.core.k8s:
+    kubeconfig: "{{ bleve_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - pv.yml.j2
+    - pvc.yml.j2
+
+- name: Wait for the Bleve persistent volume claim
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ bleve_kubeconfig }}"
+    api_version: v1
+    kind: PersistentVolumeClaim
+    name: "{{ bleve_pvc_name }}"
+    namespace: "{{ bleve_namespace }}"
+  register: bleve_claim
+  until:
+    - bleve_claim.resources | length > 0
+    - bleve_claim.resources[0].status.phase | default('') == 'Bound'
+  retries: 60
+  delay: 5
+  changed_when: false

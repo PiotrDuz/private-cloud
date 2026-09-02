@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ onlyoffice_service_name }}
+  namespace: {{ onlyoffice_namespace }}
+  labels:
+    app.kubernetes.io/name: onlyoffice
+spec:
+  selector:
+    app.kubernetes.io/name: onlyoffice
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

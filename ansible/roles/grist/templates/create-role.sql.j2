@@ -1,0 +1,1 @@
+CREATE ROLE "{{ private_cloud.grist.database_username }}" LOGIN PASSWORD '{{ private_cloud_secrets.grist.database_password | replace("'", "''") }}';

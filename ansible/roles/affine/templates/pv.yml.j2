@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ affine_pv_name }}
+  labels:
+    app.kubernetes.io/name: affine
+spec:
+  capacity:
+    storage: {{ affine_pv_capacity }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: {{ affine_namespace }}
+    name: {{ affine_pvc_name }}
+  local:
+    path: {{ affine_dataset_mountpoint }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ affine_node_name | quote }}

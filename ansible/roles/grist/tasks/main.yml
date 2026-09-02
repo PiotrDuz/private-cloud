@@ -1,0 +1,331 @@
+---
+- name: Validate Grist inputs
+  ansible.builtin.assert:
+    that:
+      - private_cloud.grist.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.grist.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - (private_cloud.grist.max_ram | human_to_bytes | int) >= 536870912
+      - private_cloud.grist.database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - private_cloud.grist.database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - private_cloud.grist.default_email is match('^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$')
+      - private_cloud.grist.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
+      - private_cloud.grist.node_port is integer
+      - private_cloud.grist.node_port >= 30000
+      - private_cloud.grist.node_port <= 32767
+      - private_cloud_secrets.grist.database_password | length > 0
+      - private_cloud_secrets.grist.session_secret | length >= 32
+      - private_cloud_secrets.grist.boot_key | length >= 16
+    fail_msg: Grist configuration is invalid.
+  no_log: true
+
+- name: Ensure the installer runtime directory exists
+  ansible.builtin.file:
+    path: "{{ grist_kubeconfig | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Inspect the k0s kubeconfig
+  ansible.builtin.stat:
+    path: "{{ grist_kubeconfig }}"
+  register: grist_kubeconfig_stat
+
+- name: Generate a missing k0s kubeconfig for tagged Grist reruns
+  ansible.builtin.command: k0s kubeconfig admin
+  register: grist_generated_kubeconfig
+  when: not grist_kubeconfig_stat.stat.exists
+  changed_when: true
+  no_log: true
+
+- name: Install the generated Grist kubeconfig
+  ansible.builtin.copy:
+    content: "{{ grist_generated_kubeconfig.stdout }}"
+    dest: "{{ grist_kubeconfig }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when: not grist_kubeconfig_stat.stat.exists
+  no_log: true
+
+- name: Resolve a Ready Kubernetes node
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    api_version: v1
+    kind: Node
+  register: grist_nodes
+  changed_when: false
+
+- name: Initialize Grist node selection
+  ansible.builtin.set_fact:
+    grist_node_name: ''
+
+- name: Select the Ready Kubernetes node
+  ansible.builtin.set_fact:
+    grist_node_name: "{{ item.metadata.name }}"
+  loop: "{{ grist_nodes.resources }}"
+  when:
+    - item.status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    - grist_node_name | length == 0
+
+- name: Require a Ready Kubernetes node
+  ansible.builtin.assert:
+    that: grist_node_name | length > 0
+    fail_msg: No Ready Kubernetes node is available for Grist.
+
+- name: Check Grist service dataset
+  ansible.builtin.command: zfs list -H -p -o name {{ grist_dataset }}
+  register: grist_dataset_check
+  changed_when: false
+  failed_when: false
+
+- name: Read Grist dataset usage
+  ansible.builtin.command: zfs get -H -p -o value used {{ grist_dataset }}
+  register: grist_dataset_used
+  changed_when: false
+  when: grist_dataset_check.rc == 0
+
+- name: Reject a Grist quota below existing usage
+  ansible.builtin.assert:
+    that: (private_cloud.grist.storage_size | human_to_bytes) | int >= (grist_dataset_used.stdout | int)
+    fail_msg: Grist storage_size cannot be smaller than existing dataset usage.
+  when: grist_dataset_check.rc == 0
+
+- name: Create Grist service dataset
+  ansible.builtin.command: zfs create {{ grist_dataset }}
+  when: grist_dataset_check.rc != 0
+  changed_when: true
+
+- name: Read Grist dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ grist_dataset }}
+  register: grist_current_quota
+  changed_when: false
+
+- name: Apply Grist dataset quota
+  ansible.builtin.command: zfs set quota={{ private_cloud.grist.storage_size }} {{ grist_dataset }}
+  when: grist_current_quota.stdout | int != (private_cloud.grist.storage_size | human_to_bytes | int)
+  changed_when: true
+
+- name: Verify Grist dataset is mounted
+  ansible.builtin.command: mountpoint -q {{ grist_dataset_mountpoint }}
+  changed_when: false
+
+- name: Verify Grist dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ grist_dataset }}
+  register: grist_effective_quota
+  changed_when: false
+
+- name: Assert Grist dataset quota
+  ansible.builtin.assert:
+    that: grist_effective_quota.stdout | int == (private_cloud.grist.storage_size | human_to_bytes | int)
+    fail_msg: Grist dataset quota does not match storage_size.
+
+- name: Inspect existing Grist storage and credentials
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ item.namespace | default(omit) }}"
+  loop:
+    - {api_version: v1, kind: PersistentVolume, name: grist-data}
+    - {api_version: v1, kind: PersistentVolumeClaim, name: grist-data, namespace: private-cloud}
+    - {api_version: v1, kind: Secret, name: grist-credentials, namespace: private-cloud}
+  register: grist_existing
+  changed_when: false
+  no_log: true
+
+- name: Reject incompatible Grist persistent storage
+  ansible.builtin.assert:
+    that:
+      - grist_existing.results[0].resources | length == 0 or grist_existing.results[0].resources[0].spec.local.path == grist_dataset_mountpoint
+      - grist_existing.results[0].resources | length == 0 or grist_existing.results[0].resources[0].spec.capacity.storage == grist_pv_capacity
+      - grist_existing.results[0].resources | length == 0 or grist_node_name in grist_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - grist_existing.results[1].resources | length == 0 or grist_existing.results[1].resources[0].spec.resources.requests.storage == grist_pv_capacity
+      - grist_existing.results[1].resources | length == 0 or grist_existing.results[1].resources[0].spec.volumeName == grist_pv_name
+    fail_msg: Existing Grist persistent storage conflicts with the configured local storage.
+
+- name: Classify the existing Grist credentials
+  ansible.builtin.set_fact:
+    grist_secret_present: "{{ grist_existing.results[2].resources | length > 0 }}"
+    grist_secret_managed: >-
+      {{ grist_existing.results[2].resources | length > 0 and
+         ((grist_existing.results[2].resources[0].metadata.annotations | default({})).get('private-cloud.example/managed-by', '') == 'ansible') }}
+    grist_database_password_matches: >-
+      {{ grist_existing.results[2].resources | length > 0 and
+         grist_existing.results[2].resources[0].data.GRIST_DB_PASSWORD is defined and
+         (grist_existing.results[2].resources[0].data.GRIST_DB_PASSWORD | b64decode == private_cloud_secrets.grist.database_password) }}
+    grist_secret_matches: >-
+      {{ grist_existing.results[2].resources | length > 0 and
+         grist_existing.results[2].resources[0].data.GRIST_DB_PASSWORD is defined and
+         grist_existing.results[2].resources[0].data.GRIST_SESSION_SECRET is defined and
+         grist_existing.results[2].resources[0].data.GRIST_BOOT_KEY is defined and
+         (grist_existing.results[2].resources[0].data.GRIST_DB_PASSWORD | b64decode == private_cloud_secrets.grist.database_password) and
+         (grist_existing.results[2].resources[0].data.GRIST_SESSION_SECRET | b64decode == private_cloud_secrets.grist.session_secret) and
+         (grist_existing.results[2].resources[0].data.GRIST_BOOT_KEY | b64decode == private_cloud_secrets.grist.boot_key) }}
+  no_log: true
+
+- name: Reject incompatible unmanaged Grist credentials
+  ansible.builtin.assert:
+    that: not grist_secret_present | bool or grist_secret_matches | bool or grist_secret_managed | bool
+    fail_msg: Existing Grist credentials conflict with the configured secrets.
+  no_log: true
+
+- name: Locate PostgreSQL pod for Grist database bootstrap
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ grist_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=postgres
+  register: grist_postgres_pods
+  until:
+    - grist_postgres_pods.resources | length > 0
+    - grist_postgres_pods.resources[0].status.containerStatuses | default([]) | selectattr('ready', 'equalto', true) | list | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Check Grist PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    namespace: "{{ grist_namespace }}"
+    pod: "{{ grist_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT rolcanlogin FROM pg_roles WHERE rolname = '{{ private_cloud.grist.database_username | replace("'", "''") }}';"
+  register: grist_role_exists
+  changed_when: false
+  no_log: true
+
+- name: Create the Grist PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    namespace: "{{ grist_namespace }}"
+    pod: "{{ grist_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'printf %s {{ lookup('template', 'create-role.sql.j2') | b64encode }} |
+      base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
+  when: grist_role_exists.stdout | trim == ''
+  changed_when: true
+  no_log: true
+
+- name: Update the Grist PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    namespace: "{{ grist_namespace }}"
+    pod: "{{ grist_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'printf %s {{ lookup('template', 'alter-role.sql.j2') | b64encode }} |
+      base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
+  when:
+    - grist_role_exists.stdout | trim != ''
+    - grist_role_exists.stdout | trim == 'f' or not grist_database_password_matches | bool
+  changed_when: true
+  no_log: true
+
+- name: Check Grist PostgreSQL database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    namespace: "{{ grist_namespace }}"
+    pod: "{{ grist_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '{{ private_cloud.grist.database_name | replace("'", "''") }}';"
+  register: grist_database_exists
+  changed_when: false
+  no_log: true
+
+- name: Create Grist PostgreSQL database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    namespace: "{{ grist_namespace }}"
+    pod: "{{ grist_postgres_pods.resources[0].metadata.name }}"
+    command: createdb -U postgres -O {{ private_cloud.grist.database_username }} {{ private_cloud.grist.database_name }}
+  when: grist_database_exists.stdout | trim == ''
+  changed_when: true
+  no_log: true
+
+- name: Set Grist database owner when needed
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    namespace: "{{ grist_namespace }}"
+    pod: "{{ grist_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "ALTER DATABASE \"{{ private_cloud.grist.database_name }}\" OWNER TO \"{{ private_cloud.grist.database_username }}\";"
+  when:
+    - grist_database_exists.stdout | trim != ''
+    - grist_database_exists.stdout | trim != private_cloud.grist.database_username
+  changed_when: true
+  no_log: true
+
+- name: Apply Grist credentials
+  kubernetes.core.k8s:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'secret.yml.j2') | from_yaml }}"
+  register: grist_secret_apply
+  when: not grist_secret_present | bool or not grist_secret_matches | bool
+  no_log: true
+
+- name: Apply Grist storage and workload
+  kubernetes.core.k8s:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - pv.yml.j2
+    - pvc.yml.j2
+    - deployment.yml.j2
+    - service.yml.j2
+    - public-service.yml.j2
+  no_log: true
+
+- name: Restart Grist after a credentials change
+  kubernetes.core.k8s:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    state: patched
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ grist_service_name }}"
+        namespace: "{{ grist_namespace }}"
+      spec:
+        template:
+          metadata:
+            annotations:
+              private-cloud.example/credentials-restarted-at: "{{ ansible_date_time.iso8601 }}"
+  when: grist_secret_apply.changed | default(false)
+  no_log: true
+
+- name: Wait for Grist deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ grist_service_name }}"
+    namespace: "{{ grist_namespace }}"
+  register: grist_deployment
+  until:
+    - grist_deployment.resources | length > 0
+    - grist_deployment.resources[0].status.updatedReplicas | default(0) | int == 1
+    - grist_deployment.resources[0].status.availableReplicas | default(0) | int == 1
+  retries: 90
+  delay: 5
+  changed_when: false
+
+- name: Wait for Grist service endpoint
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    name: "{{ grist_service_name }}"
+    namespace: "{{ grist_namespace }}"
+  register: grist_endpoint
+  until: grist_endpoint.resources | length > 0 and (grist_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0)
+  retries: 90
+  delay: 5
+  changed_when: false

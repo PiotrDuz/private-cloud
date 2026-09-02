@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ tika_service_name }}
+  namespace: {{ tika_namespace }}
+  labels:
+    app.kubernetes.io/name: tika
+spec:
+  selector:
+    app.kubernetes.io/name: tika
+  ports:
+    - name: http
+      port: 9998
+      targetPort: http
+      protocol: TCP

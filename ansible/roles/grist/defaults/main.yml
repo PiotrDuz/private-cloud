@@ -1,0 +1,13 @@
+---
+grist_namespace: private-cloud
+grist_service_name: grist
+grist_public_service_name: grist-public
+grist_secret_name: grist-credentials
+grist_dataset: tank/secure/backup/k0s/services/grist
+grist_dataset_mountpoint: /tank/secure/backup/k0s/services/grist
+grist_pv_name: grist-data
+grist_pvc_name: grist-data
+grist_pv_capacity: 10Ti
+grist_image: gristlabs/grist:1.7.16
+grist_kubeconfig: /run/private-cloud/kubeconfig
+grist_postgres_service: postgres

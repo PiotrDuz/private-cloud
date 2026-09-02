@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ grist_pv_name }}
+  labels:
+    app.kubernetes.io/name: grist
+spec:
+  capacity:
+    storage: {{ grist_pv_capacity }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: {{ grist_namespace }}
+    name: {{ grist_pvc_name }}
+  local:
+    path: {{ grist_dataset_mountpoint }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ grist_node_name | quote }}

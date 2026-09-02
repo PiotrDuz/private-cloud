@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ grist_service_name }}
+  namespace: {{ grist_namespace }}
+  labels:
+    app.kubernetes.io/name: grist
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grist
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grist
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: grist
+          image: {{ grist_image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: APP_HOME_URL, value: "https://{{ private_cloud.grist.hostname }}"}
+            - {name: APP_DOC_URL, value: "https://{{ private_cloud.grist.hostname }}"}
+            - {name: GRIST_DEFAULT_EMAIL, value: "{{ private_cloud.grist.default_email }}"}
+            - {name: GRIST_SANDBOX_FLAVOR, value: pyodide}
+            - {name: GRIST_SINGLE_PORT, value: "true"}
+            - {name: TYPEORM_TYPE, value: postgres}
+            - {name: TYPEORM_HOST, value: {{ grist_postgres_service }}}
+            - {name: TYPEORM_PORT, value: "5432"}
+            - {name: TYPEORM_DATABASE, value: "{{ private_cloud.grist.database_name }}"}
+            - {name: TYPEORM_USERNAME, value: "{{ private_cloud.grist.database_username }}"}
+            - name: TYPEORM_PASSWORD
+              valueFrom: {secretKeyRef: {name: "{{ grist_secret_name }}", key: GRIST_DB_PASSWORD}}
+            - name: GRIST_SESSION_SECRET
+              valueFrom: {secretKeyRef: {name: "{{ grist_secret_name }}", key: GRIST_SESSION_SECRET}}
+            - name: GRIST_BOOT_KEY
+              valueFrom: {secretKeyRef: {name: "{{ grist_secret_name }}", key: GRIST_BOOT_KEY}}
+          ports:
+            - {name: http, containerPort: 8484, protocol: TCP}
+          resources:
+            requests: {memory: "{{ private_cloud.grist.max_ram }}"}
+            limits: {memory: "{{ private_cloud.grist.max_ram }}"}
+          readinessProbe:
+            httpGet: {path: /, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /, port: http}
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          volumeMounts:
+            - {name: data, mountPath: /persist}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ grist_pvc_name }}

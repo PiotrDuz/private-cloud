@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ tika_pvc_name }}
+  namespace: {{ tika_namespace }}
+  labels:
+    app.kubernetes.io/name: tika
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ tika_pv_capacity }}
+  storageClassName: ""
+  volumeName: {{ tika_pv_name }}

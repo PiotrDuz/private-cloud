@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ bleve_pvc_name }}
+  namespace: {{ bleve_namespace }}
+  labels:
+    app.kubernetes.io/name: bleve
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ bleve_pv_capacity }}
+  storageClassName: ""
+  volumeName: {{ bleve_pv_name }}

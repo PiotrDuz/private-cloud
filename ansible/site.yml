@@ -65,6 +65,54 @@
           when: private_cloud.stages.stalwart | bool
           tags: [stalwart]
 
+        - name: Deploy Apache Tika
+          ansible.builtin.include_role:
+            name: tika
+            apply:
+              tags: [tika]
+          when: private_cloud.stages.tika | bool
+          tags: [tika]
+
+        - name: Provision Bleve storage
+          ansible.builtin.include_role:
+            name: bleve
+            apply:
+              tags: [bleve]
+          when: private_cloud.stages.bleve | bool
+          tags: [bleve]
+
+        - name: Deploy OnlyOffice
+          ansible.builtin.include_role:
+            name: onlyoffice
+            apply:
+              tags: [onlyoffice]
+          when: private_cloud.stages.onlyoffice | bool
+          tags: [onlyoffice]
+
+        - name: Deploy OpenCloud
+          ansible.builtin.include_role:
+            name: opencloud
+            apply:
+              tags: [opencloud]
+          when: private_cloud.stages.opencloud | bool
+          tags: [opencloud]
+
+        - name: Deploy Grist
+          ansible.builtin.include_role:
+            name: grist
+            apply:
+              tags: [grist]
+          when: private_cloud.stages.grist | bool
+          tags: [grist]
+
+        - name: Deploy AFFiNE
+          ansible.builtin.include_role:
+            name: affine
+            apply:
+              tags: [affine]
+          when: private_cloud.stages.affine | bool
+          tags: [affine]
+
         - name: Deploy Zabbix server
           ansible.builtin.include_role:
             name: zabbix_server

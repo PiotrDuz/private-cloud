@@ -1,0 +1,8 @@
+---
+bleve_namespace: private-cloud
+bleve_dataset: tank/secure/backup/k0s/services/bleve
+bleve_dataset_mountpoint: /tank/secure/backup/k0s/services/bleve
+bleve_pv_name: bleve-data
+bleve_pvc_name: bleve-data
+bleve_pv_capacity: 10Ti
+bleve_kubeconfig: /run/private-cloud/kubeconfig

@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-pgvector-086
+  namespace: private-cloud
+  labels:
+    app.kubernetes.io/name: postgres-pgvector
+spec:
+  backoffLimit: 30
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-pgvector
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: pgvector
+          image: pgvector/pgvector:0.8.6-pg18-bookworm
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: PGHOST, value: postgres}
+            - {name: PGDATABASE, value: postgres}
+            - {name: PGUSER, value: postgres}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-admin-credentials
+                  key: POSTGRES_PASSWORD
+          command:
+            - sh
+            - -c
+            - >-
+              until pg_isready; do sleep 2; done;
+              psql -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS vector; ALTER EXTENSION vector UPDATE;'

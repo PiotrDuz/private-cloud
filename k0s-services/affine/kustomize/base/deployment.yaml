@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: affine
+  namespace: private-cloud
+  labels: {app.kubernetes.io/name: affine}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: affine}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: affine}
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: affine
+          image: ghcr.io/toeverything/affine:0.27.3
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: REDIS_SERVER_HOST, value: affine-redis}
+            - name: DATABASE_URL
+              valueFrom: {secretKeyRef: {name: affine-credentials, key: DATABASE_URL}}
+          ports:
+            - {name: http, containerPort: 3010, protocol: TCP}
+          resources:
+            requests: {memory: 4Gi}
+            limits: {memory: 4Gi}
+          readinessProbe:
+            httpGet: {path: /, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /, port: http}
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          volumeMounts:
+            - {name: data, mountPath: /root/.affine/storage, subPath: storage}
+            - {name: data, mountPath: /root/.affine/config, subPath: config}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: affine-data}

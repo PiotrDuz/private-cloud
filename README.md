@@ -29,6 +29,7 @@ sudo python3 ansible/install.py
 - Reapply converges the existing configuration.
 - Rotate replaces selected encrypted values.
 - Ansible runs all enabled stages in dependency order.
+- The k0s stage creates the shared `private-cloud` Kubernetes namespace.
 
 ## Reboot verification
 

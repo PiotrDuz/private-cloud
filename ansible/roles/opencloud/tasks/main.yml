@@ -1,0 +1,229 @@
+---
+- name: Validate OpenCloud inputs
+  ansible.builtin.assert:
+    that:
+      - private_cloud.opencloud.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.opencloud.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - private_cloud.opencloud.hostname | length > 0
+      - private_cloud.opencloud.node_port | int >= 30000
+      - private_cloud.opencloud.node_port | int <= 32767
+      - private_cloud.onlyoffice.hostname | length > 0
+      - private_cloud_secrets.opencloud.admin_password | length > 0
+    fail_msg: OpenCloud configuration is invalid.
+  no_log: true
+
+- name: Ensure the installer runtime directory exists
+  ansible.builtin.file:
+    path: "{{ opencloud_kubeconfig | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Inspect the k0s kubeconfig
+  ansible.builtin.stat:
+    path: "{{ opencloud_kubeconfig }}"
+  register: opencloud_kubeconfig_stat
+
+- name: Generate a missing k0s kubeconfig for tagged OpenCloud reruns
+  ansible.builtin.command: k0s kubeconfig admin
+  register: opencloud_generated_kubeconfig
+  when: not opencloud_kubeconfig_stat.stat.exists
+  changed_when: true
+  no_log: true
+
+- name: Install the generated OpenCloud kubeconfig
+  ansible.builtin.copy:
+    content: "{{ opencloud_generated_kubeconfig.stdout }}"
+    dest: "{{ opencloud_kubeconfig }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when: not opencloud_kubeconfig_stat.stat.exists
+  no_log: true
+
+- name: Resolve a Ready Kubernetes node
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ opencloud_kubeconfig }}"
+    api_version: v1
+    kind: Node
+  register: opencloud_nodes
+  changed_when: false
+
+- name: Initialize OpenCloud node selection
+  ansible.builtin.set_fact:
+    opencloud_node_name: ''
+
+- name: Select the Ready Kubernetes node
+  ansible.builtin.set_fact:
+    opencloud_node_name: "{{ item.metadata.name }}"
+  loop: "{{ opencloud_nodes.resources }}"
+  when:
+    - item.status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    - opencloud_node_name | length == 0
+
+- name: Require a Ready Kubernetes node
+  ansible.builtin.assert:
+    that: opencloud_node_name | length > 0
+    fail_msg: No Ready Kubernetes node is available for OpenCloud.
+
+- name: Check OpenCloud service dataset
+  ansible.builtin.command: zfs list -H -p -o name {{ opencloud_dataset }}
+  register: opencloud_dataset_check
+  changed_when: false
+  failed_when: false
+
+- name: Read OpenCloud dataset usage
+  ansible.builtin.command: zfs get -H -p -o value used {{ opencloud_dataset }}
+  register: opencloud_dataset_used
+  changed_when: false
+  when: opencloud_dataset_check.rc == 0
+
+- name: Reject an OpenCloud quota below existing usage
+  ansible.builtin.assert:
+    that: (private_cloud.opencloud.storage_size | human_to_bytes) | int >= (opencloud_dataset_used.stdout | int)
+    fail_msg: OpenCloud storage_size cannot be smaller than existing dataset usage.
+  when: opencloud_dataset_check.rc == 0
+
+- name: Create OpenCloud service dataset
+  ansible.builtin.command: zfs create {{ opencloud_dataset }}
+  when: opencloud_dataset_check.rc != 0
+  changed_when: true
+
+- name: Read OpenCloud dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ opencloud_dataset }}
+  register: opencloud_current_quota
+  changed_when: false
+
+- name: Apply OpenCloud dataset quota
+  ansible.builtin.command: zfs set quota={{ private_cloud.opencloud.storage_size }} {{ opencloud_dataset }}
+  when: opencloud_current_quota.stdout | int != (private_cloud.opencloud.storage_size | human_to_bytes | int)
+  changed_when: true
+
+- name: Verify OpenCloud dataset is mounted
+  ansible.builtin.command: mountpoint -q {{ opencloud_dataset_mountpoint }}
+  changed_when: false
+
+- name: Verify OpenCloud dataset quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ opencloud_dataset }}
+  register: opencloud_effective_quota
+  changed_when: false
+
+- name: Assert OpenCloud dataset quota
+  ansible.builtin.assert:
+    that: opencloud_effective_quota.stdout | int == (private_cloud.opencloud.storage_size | human_to_bytes | int)
+    fail_msg: OpenCloud dataset quota does not match storage_size.
+
+- name: Inspect existing OpenCloud storage and credentials
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ opencloud_kubeconfig }}"
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ item.namespace | default(omit) }}"
+  loop:
+    - {api_version: v1, kind: PersistentVolume, name: opencloud-data}
+    - {api_version: v1, kind: PersistentVolumeClaim, name: opencloud-data, namespace: private-cloud}
+    - {api_version: v1, kind: PersistentVolume, name: bleve-data}
+    - {api_version: v1, kind: PersistentVolumeClaim, name: bleve-data, namespace: private-cloud}
+    - {api_version: v1, kind: Secret, name: opencloud-credentials, namespace: private-cloud}
+  register: opencloud_existing
+  changed_when: false
+  no_log: true
+
+- name: Reject incompatible OpenCloud persistent storage
+  ansible.builtin.assert:
+    that:
+      - opencloud_existing.results[0].resources | length == 0 or opencloud_existing.results[0].resources[0].spec.local.path == opencloud_dataset_mountpoint
+      - opencloud_existing.results[0].resources | length == 0 or opencloud_existing.results[0].resources[0].spec.capacity.storage == opencloud_pv_capacity
+      - opencloud_existing.results[0].resources | length == 0 or opencloud_node_name in opencloud_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - opencloud_existing.results[1].resources | length == 0 or opencloud_existing.results[1].resources[0].spec.resources.requests.storage == opencloud_pv_capacity
+      - opencloud_existing.results[1].resources | length == 0 or opencloud_existing.results[1].resources[0].spec.volumeName == opencloud_pv_name
+    fail_msg: Existing OpenCloud persistent storage conflicts with the configured local storage.
+
+- name: Require compatible separately provisioned Bleve storage
+  ansible.builtin.assert:
+    that:
+      - opencloud_existing.results[2].resources | length > 0
+      - opencloud_existing.results[2].resources[0].spec.local.path == opencloud_bleve_dataset_mountpoint
+      - opencloud_existing.results[2].resources[0].spec.capacity.storage == opencloud_pv_capacity
+      - opencloud_node_name in opencloud_existing.results[2].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - opencloud_existing.results[3].resources | length > 0
+      - opencloud_existing.results[3].resources[0].spec.volumeName == opencloud_bleve_pv_name
+      - opencloud_existing.results[3].resources[0].status.phase | default('') == 'Bound'
+    fail_msg: Bleve storage must be bound to the same Ready node as OpenCloud.
+
+- name: Classify the existing OpenCloud credentials
+  ansible.builtin.set_fact:
+    opencloud_secret_present: "{{ opencloud_existing.results[4].resources | length > 0 }}"
+    opencloud_secret_matches: >-
+      {{ opencloud_existing.results[4].resources | length > 0 and
+         opencloud_existing.results[4].resources[0].data.IDM_ADMIN_PASSWORD is defined and
+         (opencloud_existing.results[4].resources[0].data.IDM_ADMIN_PASSWORD | b64decode == private_cloud_secrets.opencloud.admin_password) }}
+  no_log: true
+
+- name: Reject a changed OpenCloud initial password
+  ansible.builtin.assert:
+    that: not opencloud_secret_present | bool or opencloud_secret_matches | bool
+    fail_msg: The initial OpenCloud administrator password is immutable through this installer.
+  no_log: true
+
+- name: Apply OpenCloud credentials
+  kubernetes.core.k8s:
+    kubeconfig: "{{ opencloud_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'secret.yml.j2') | from_yaml }}"
+  when: not opencloud_secret_present | bool
+  no_log: true
+
+- name: Apply OpenCloud storage and configuration
+  kubernetes.core.k8s:
+    kubeconfig: "{{ opencloud_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - pv.yml.j2
+    - pvc.yml.j2
+    - apps-configmap.yml.j2
+    - app-registry-configmap.yml.j2
+    - csp-configmap.yml.j2
+
+- name: Apply OpenCloud workload and services
+  kubernetes.core.k8s:
+    kubeconfig: "{{ opencloud_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - deployment.yml.j2
+    - service.yml.j2
+    - public-service.yml.j2
+  no_log: true
+
+- name: Wait for OpenCloud deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ opencloud_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ opencloud_service_name }}"
+    namespace: "{{ opencloud_namespace }}"
+  register: opencloud_deployment
+  until:
+    - opencloud_deployment.resources | length > 0
+    - opencloud_deployment.resources[0].status.updatedReplicas | default(0) | int == 1
+    - opencloud_deployment.resources[0].status.availableReplicas | default(0) | int == 1
+  retries: 120
+  delay: 5
+  changed_when: false
+
+- name: Wait for OpenCloud service endpoint
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ opencloud_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    name: "{{ opencloud_service_name }}"
+    namespace: "{{ opencloud_namespace }}"
+  register: opencloud_endpoint
+  until: opencloud_endpoint.resources | length > 0 and (opencloud_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0)
+  retries: 60
+  delay: 5
+  changed_when: false

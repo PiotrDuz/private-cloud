@@ -1,0 +1,1 @@
+ALTER ROLE "{{ private_cloud.affine.database_username }}" LOGIN PASSWORD '{{ private_cloud_secrets.affine.database_password | replace("'", "''") }}';

@@ -192,9 +192,9 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
         return existing
     source = existing or default_public_configuration()
     if mode == "update":
-        sections = prompt_line("Sections to change (stages, storage, k0s, postgres, meilisearch, stalwart, zabbix)", "").split()
+        sections = prompt_line("Sections to change (stages, storage, k0s, postgres, meilisearch, tika, bleve, onlyoffice, opencloud, grist, affine, stalwart, zabbix)", "").split()
     else:
-        sections = ["stages", "storage", "k0s", "postgres", "meilisearch", "stalwart", "zabbix"]
+        sections = ["stages", "storage", "k0s", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "affine", "stalwart", "zabbix"]
     result = _copy_mapping(source)
     stages = result["private_cloud"]["stages"]
     if "stages" in sections:
@@ -215,6 +215,27 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
     if "meilisearch" in sections:
         for key in ("storage_size", "max_ram"):
             cloud["meilisearch"][key] = prompt_line(f"Meilisearch {key}", cloud["meilisearch"][key])
+    if "tika" in sections:
+        for key in ("storage_size", "max_ram"):
+            cloud["tika"][key] = prompt_line(f"Tika {key}", cloud["tika"][key])
+    if "bleve" in sections:
+        cloud["bleve"]["storage_size"] = prompt_line("Bleve storage_size", cloud["bleve"]["storage_size"])
+    if "onlyoffice" in sections:
+        for key in ("storage_size", "max_ram", "hostname"):
+            cloud["onlyoffice"][key] = prompt_line(f"OnlyOffice {key}", cloud["onlyoffice"][key])
+        cloud["onlyoffice"]["node_port"] = prompt_int("OnlyOffice node_port", cloud["onlyoffice"]["node_port"])
+    if "opencloud" in sections:
+        for key in ("storage_size", "max_ram", "hostname"):
+            cloud["opencloud"][key] = prompt_line(f"OpenCloud {key}", cloud["opencloud"][key])
+        cloud["opencloud"]["node_port"] = prompt_int("OpenCloud node_port", cloud["opencloud"]["node_port"])
+    if "grist" in sections:
+        for key in ("storage_size", "max_ram", "database_name", "database_username", "default_email", "hostname"):
+            cloud["grist"][key] = prompt_line(f"Grist {key}", cloud["grist"][key])
+        cloud["grist"]["node_port"] = prompt_int("Grist node_port", cloud["grist"]["node_port"])
+    if "affine" in sections:
+        for key in ("storage_size", "max_ram", "redis_max_ram", "database_name", "database_username", "hostname"):
+            cloud["affine"][key] = prompt_line(f"AFFiNE {key}", cloud["affine"][key])
+        cloud["affine"]["node_port"] = prompt_int("AFFiNE node_port", cloud["affine"]["node_port"])
     if "stalwart" in sections:
         for key in ("storage_size", "max_ram", "database_name", "database_username", "domain", "forwarding_domain", "hostname", "acme_contact", "admin_username", "mailbox_username", "relay_host", "relay_username"):
             cloud["stalwart"][key] = prompt_line(f"Stalwart {key}", cloud["stalwart"][key])
@@ -272,6 +293,14 @@ def collect_secrets_configuration() -> dict[str, Any]:
             "storage": {"encryption_passphrase": prompt_secret("ZFS encryption passphrase")},
             "postgres": {"admin_password": prompt_secret("PostgreSQL administrator password")},
             "meilisearch": {"master_key": prompt_secret("Meilisearch master key")},
+            "onlyoffice": {"jwt_secret": prompt_secret("OnlyOffice JWT secret")},
+            "opencloud": {"admin_password": prompt_secret("OpenCloud administrator password")},
+            "grist": {
+                "database_password": prompt_secret("Grist database password"),
+                "session_secret": prompt_secret("Grist session secret"),
+                "boot_key": prompt_secret("Grist boot key"),
+            },
+            "affine": {"database_password": prompt_secret("AFFiNE database password")},
             "stalwart": {
                 "database_password": prompt_secret("Stalwart database password"),
                 "admin_password": prompt_secret("Stalwart administrator password"),
@@ -296,6 +325,11 @@ def update_secrets(configuration: dict[str, Any]) -> dict[str, Any]:
         ("stalwart", "admin_password"),
         ("stalwart", "mailbox_password"),
         ("stalwart", "relay_password"),
+        ("onlyoffice", "jwt_secret"),
+        ("grist", "database_password"),
+        ("grist", "session_secret"),
+        ("grist", "boot_key"),
+        ("affine", "database_password"),
         ("zabbix", "database_password"),
         ("zabbix", "admin_password"),
     ):
@@ -306,9 +340,9 @@ def update_secrets(configuration: dict[str, Any]) -> dict[str, Any]:
 
 def rotate_secrets(configuration: dict[str, Any]) -> dict[str, Any]:
     result = _copy_mapping(configuration)
-    selected = prompt_line("Secrets to rotate (storage postgres meilisearch stalwart_database stalwart_admin mailbox relay zabbix_database zabbix_admin)", "all").split()
+    selected = prompt_line("Secrets to rotate (storage postgres meilisearch stalwart_database stalwart_admin mailbox relay onlyoffice grist_database grist_session grist_boot affine_database zabbix_database zabbix_admin)", "all").split()
     if "all" in selected:
-        selected = ["storage", "postgres", "meilisearch", "stalwart_database", "stalwart_admin", "mailbox", "relay", "zabbix_database", "zabbix_admin"]
+        selected = ["storage", "postgres", "meilisearch", "stalwart_database", "stalwart_admin", "mailbox", "relay", "onlyoffice", "grist_database", "grist_session", "grist_boot", "affine_database", "zabbix_database", "zabbix_admin"]
     mapping = {
         "storage": ("storage", "encryption_passphrase"),
         "postgres": ("postgres", "admin_password"),
@@ -318,6 +352,11 @@ def rotate_secrets(configuration: dict[str, Any]) -> dict[str, Any]:
         "mailbox": ("stalwart", "mailbox_password"),
         "relay": ("stalwart", "relay_password"),
         "zabbix_database": ("zabbix", "database_password"),
+        "onlyoffice": ("onlyoffice", "jwt_secret"),
+        "grist_database": ("grist", "database_password"),
+        "grist_session": ("grist", "session_secret"),
+        "grist_boot": ("grist", "boot_key"),
+        "affine_database": ("affine", "database_password"),
         "zabbix_admin": ("zabbix", "admin_password"),
     }
     for name in selected:
@@ -333,6 +372,10 @@ def configured_secret_markers() -> dict[str, Any]:
         "postgres": {"admin_password": "configured"},
         "meilisearch": {"master_key": "configured"},
         "stalwart": {"database_password": "configured", "admin_password": "configured", "mailbox_password": "configured", "relay_password": "configured"},
+        "onlyoffice": {"jwt_secret": "configured"},
+        "opencloud": {"admin_password": "configured"},
+        "grist": {"database_password": "configured", "session_secret": "configured", "boot_key": "configured"},
+        "affine": {"database_password": "configured"},
         "zabbix": {"database_password": "configured", "admin_password": "configured"},
     }
 

@@ -294,6 +294,12 @@
     mode: '0600'
   no_log: true
 
+- name: Apply the shared private cloud namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k0s_kubeconfig_path }}"
+    state: present
+    definition: "{{ lookup('template', 'namespace.yml.j2') | from_yaml }}"
+
 - name: Expose the runtime kubeconfig path to subsequent roles
   ansible.builtin.set_fact:
     private_cloud_kubeconfig_path: "{{ k0s_kubeconfig_path }}"

@@ -284,12 +284,6 @@
   changed_when: true
   no_log: true
 
-- name: Apply Zabbix namespace
-  kubernetes.core.k8s:
-    kubeconfig: "{{ zabbix_kubeconfig }}"
-    state: present
-    definition: "{{ lookup('template', 'namespace.yml.j2') | from_yaml }}"
-
 - name: Apply Zabbix database credentials secret
   kubernetes.core.k8s:
     kubeconfig: "{{ zabbix_kubeconfig }}"
@@ -299,7 +293,7 @@
   when: not zabbix_database_secret_present | bool or not zabbix_database_secret_managed | bool or not zabbix_database_secret_password_matches | bool
   no_log: true
 
-- name: Apply Zabbix namespace, storage, and workloads
+- name: Apply Zabbix storage and workloads
   kubernetes.core.k8s:
     kubeconfig: "{{ zabbix_kubeconfig }}"
     state: present

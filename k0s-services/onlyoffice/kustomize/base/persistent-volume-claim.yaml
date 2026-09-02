@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: onlyoffice-data
+  namespace: private-cloud
+  labels:
+    app.kubernetes.io/name: onlyoffice
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Ti
+  storageClassName: ""
+  volumeName: onlyoffice-data

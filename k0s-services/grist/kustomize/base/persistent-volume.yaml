@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: grist-data
+  labels:
+    app.kubernetes.io/name: grist
+spec:
+  capacity:
+    storage: 10Ti
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: private-cloud
+    name: grist-data
+  local:
+    path: /tank/secure/backup/k0s/services/grist
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - replace-with-k0s-node

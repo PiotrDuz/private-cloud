@@ -168,14 +168,30 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if set(configuration) != {"private_cloud"} or not isinstance(configuration["private_cloud"], dict):
         raise InstallerError("Public configuration must contain only private_cloud")
     cloud = configuration["private_cloud"]
-    expected = {"stages", "storage", "k0s", "postgres", "meilisearch", "stalwart", "zabbix"}
+    expected = {"stages", "storage", "k0s", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "affine", "stalwart", "zabbix"}
     if set(cloud) != expected:
         raise InstallerError("Public configuration has missing or unknown sections")
     stages = cloud["stages"]
-    if not isinstance(stages, dict) or set(stages) != {"zfs", "k0s", "postgres", "meilisearch", "stalwart", "zabbix_server", "zabbix_agent"}:
+    if not isinstance(stages, dict) or set(stages) != {"zfs", "k0s", "postgres", "meilisearch", "stalwart", "tika", "bleve", "onlyoffice", "opencloud", "grist", "affine", "zabbix_server", "zabbix_agent"}:
         raise InstallerError("Stage configuration is incomplete")
     if any(type(value) is not bool for value in stages.values()):
         raise InstallerError("Every stage flag must be Boolean")
+    dependencies = {
+        "k0s": ("zfs",),
+        "postgres": ("k0s",),
+        "meilisearch": ("k0s",),
+        "stalwart": ("postgres", "meilisearch"),
+        "tika": ("k0s",),
+        "bleve": ("k0s",),
+        "onlyoffice": ("k0s",),
+        "opencloud": ("tika", "bleve", "onlyoffice"),
+        "grist": ("postgres",),
+        "affine": ("postgres",),
+        "zabbix_server": ("postgres",),
+        "zabbix_agent": ("zabbix_server",),
+    }
+    if any(stages[stage] and not all(stages[dependency] for dependency in required) for stage, required in dependencies.items()):
+        raise InstallerError("Enabled stages must follow the dependency chain")
     storage = cloud["storage"]
     if not isinstance(storage, dict) or set(storage) != {"disks"}:
         raise InstallerError("Storage configuration has missing or unknown keys")
@@ -209,6 +225,78 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if not QUOTA_PATTERN.fullmatch(str(meilisearch.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(meilisearch.get("max_ram", ""))):
         raise InstallerError("Invalid Meilisearch size configuration")
     stalwart = cloud["stalwart"]
+    tika = cloud["tika"]
+    if not isinstance(tika, dict) or set(tika) != {"storage_size", "max_ram"}:
+        raise InstallerError("Tika configuration has missing or unknown keys")
+    if not QUOTA_PATTERN.fullmatch(str(tika.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(tika.get("max_ram", ""))):
+        raise InstallerError("Invalid Tika size configuration")
+    bleve = cloud["bleve"]
+    if not isinstance(bleve, dict) or set(bleve) != {"storage_size"} or not QUOTA_PATTERN.fullmatch(str(bleve.get("storage_size", ""))):
+        raise InstallerError("Invalid Bleve storage configuration")
+    onlyoffice = cloud["onlyoffice"]
+    expected_onlyoffice = {"storage_size", "max_ram", "hostname", "node_port"}
+    if not isinstance(onlyoffice, dict) or set(onlyoffice) != expected_onlyoffice:
+        raise InstallerError("OnlyOffice configuration has missing or unknown keys")
+    if not QUOTA_PATTERN.fullmatch(str(onlyoffice.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(onlyoffice.get("max_ram", ""))):
+        raise InstallerError("Invalid OnlyOffice size configuration")
+    if ram_to_bytes(onlyoffice["max_ram"]) < 4294967296:
+        raise InstallerError("OnlyOffice max_ram must be at least 4Gi")
+    if not isinstance(onlyoffice.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(onlyoffice["hostname"]):
+        raise InstallerError("Invalid onlyoffice.hostname")
+    if type(onlyoffice.get("node_port")) is not int or not 30000 <= onlyoffice["node_port"] <= 32767:
+        raise InstallerError("Invalid onlyoffice.node_port")
+    opencloud = cloud["opencloud"]
+    expected_opencloud = {"storage_size", "max_ram", "hostname", "node_port"}
+    if not isinstance(opencloud, dict) or set(opencloud) != expected_opencloud:
+        raise InstallerError("OpenCloud configuration has missing or unknown keys")
+    if not QUOTA_PATTERN.fullmatch(str(opencloud.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(opencloud.get("max_ram", ""))):
+        raise InstallerError("Invalid OpenCloud size configuration")
+    if not isinstance(opencloud.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(opencloud["hostname"]):
+        raise InstallerError("Invalid opencloud.hostname")
+    if type(opencloud.get("node_port")) is not int or not 30000 <= opencloud["node_port"] <= 32767:
+        raise InstallerError("Invalid opencloud.node_port")
+    if opencloud["hostname"] == onlyoffice["hostname"] or opencloud["node_port"] == onlyoffice["node_port"]:
+        raise InstallerError("OpenCloud and OnlyOffice endpoints must differ")
+    grist = cloud["grist"]
+    expected_grist = {"storage_size", "max_ram", "database_name", "database_username", "default_email", "hostname", "node_port"}
+    if not isinstance(grist, dict) or set(grist) != expected_grist:
+        raise InstallerError("Grist configuration has missing or unknown keys")
+    if not QUOTA_PATTERN.fullmatch(str(grist.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(grist.get("max_ram", ""))):
+        raise InstallerError("Invalid Grist size configuration")
+    if ram_to_bytes(grist["max_ram"]) < 536870912:
+        raise InstallerError("Grist max_ram must be at least 512Mi")
+    if not IDENTIFIER_PATTERN.fullmatch(str(grist.get("database_name", ""))) or not IDENTIFIER_PATTERN.fullmatch(str(grist.get("database_username", ""))):
+        raise InstallerError("Grist database identifiers are invalid")
+    if grist["database_name"].lower() in {"postgres", "template0", "template1"} or grist["database_username"].lower() in {"postgres", "replication"} or grist["database_username"].lower().startswith("pg_"):
+        raise InstallerError("Grist cannot use a PostgreSQL system database or role")
+    if not isinstance(grist.get("default_email"), str) or not EMAIL_PATTERN.fullmatch(grist["default_email"]):
+        raise InstallerError("Invalid grist.default_email")
+    if not isinstance(grist.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(grist["hostname"]):
+        raise InstallerError("Invalid grist.hostname")
+    if type(grist.get("node_port")) is not int or not 30000 <= grist["node_port"] <= 32767:
+        raise InstallerError("Invalid grist.node_port")
+    affine = cloud["affine"]
+    expected_affine = {"storage_size", "max_ram", "redis_max_ram", "database_name", "database_username", "hostname", "node_port"}
+    if not isinstance(affine, dict) or set(affine) != expected_affine:
+        raise InstallerError("AFFiNE configuration has missing or unknown keys")
+    if not QUOTA_PATTERN.fullmatch(str(affine.get("storage_size", ""))):
+        raise InstallerError("Invalid AFFiNE storage configuration")
+    for key in ("max_ram", "redis_max_ram"):
+        if not RAM_PATTERN.fullmatch(str(affine.get(key, ""))):
+            raise InstallerError(f"Invalid affine.{key}")
+    if ram_to_bytes(affine["max_ram"]) < 2147483648 or ram_to_bytes(affine["redis_max_ram"]) < 134217728:
+        raise InstallerError("AFFiNE memory limits are too small")
+    if not IDENTIFIER_PATTERN.fullmatch(str(affine.get("database_name", ""))) or not IDENTIFIER_PATTERN.fullmatch(str(affine.get("database_username", ""))):
+        raise InstallerError("AFFiNE database identifiers are invalid")
+    if affine["database_name"].lower() in {"postgres", "template0", "template1"} or affine["database_username"].lower() in {"postgres", "replication"} or affine["database_username"].lower().startswith("pg_"):
+        raise InstallerError("AFFiNE cannot use a PostgreSQL system database or role")
+    if not isinstance(affine.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(affine["hostname"]):
+        raise InstallerError("Invalid affine.hostname")
+    if type(affine.get("node_port")) is not int or not 30000 <= affine["node_port"] <= 32767:
+        raise InstallerError("Invalid affine.node_port")
+    public_hostnames = [onlyoffice["hostname"], opencloud["hostname"], grist["hostname"], affine["hostname"]]
+    if len(public_hostnames) != len(set(public_hostnames)):
+        raise InstallerError("Every public application hostname must be unique")
     expected_stalwart = {
         "storage_size", "max_ram", "database_name", "database_username", "domain", "forwarding_domain", "hostname",
         "acme_contact", "admin_username", "mailbox_username", "relay_host", "relay_port", "relay_implicit_tls", "relay_username",
@@ -267,33 +355,42 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
             raise InstallerError(f"Invalid zabbix.{key}")
     if zabbix["server_node_port"] == zabbix["web_node_port"]:
         raise InstallerError("Zabbix NodePorts must differ")
-    if set(stalwart_node_ports) & {zabbix["server_node_port"], zabbix["web_node_port"]}:
-        raise InstallerError("Stalwart and Zabbix NodePorts must differ")
+    external_node_ports = stalwart_node_ports + [zabbix["server_node_port"], zabbix["web_node_port"], onlyoffice["node_port"], opencloud["node_port"], grist["node_port"], affine["node_port"]]
+    if len(external_node_ports) != len(set(external_node_ports)):
+        raise InstallerError("Every public NodePort must be unique")
 
 
 def validate_secrets_configuration(configuration: Mapping[str, Any]) -> None:
-    expected = {
-        "storage": "encryption_passphrase",
-        "postgres": "admin_password",
-        "meilisearch": "master_key",
-        "stalwart": "database_password",
-        "zabbix": "database_password",
+    schemas = {
+        "storage": {"encryption_passphrase"},
+        "postgres": {"admin_password"},
+        "meilisearch": {"master_key"},
+        "stalwart": {"database_password", "admin_password", "mailbox_password", "relay_password"},
+        "zabbix": {"database_password", "admin_password"},
+        "onlyoffice": {"jwt_secret"},
+        "opencloud": {"admin_password"},
+        "grist": {"database_password", "session_secret", "boot_key"},
+        "affine": {"database_password"},
     }
     secrets_root = configuration.get("private_cloud_secrets")
-    if not isinstance(secrets_root, dict) or set(secrets_root) != {"storage", "postgres", "meilisearch", "stalwart", "zabbix"}:
+    if not isinstance(secrets_root, dict) or set(secrets_root) != set(schemas):
         raise InstallerError("Encrypted configuration is incomplete")
-    if any(not isinstance(secrets_root.get(section), dict) for section in ("storage", "postgres", "meilisearch", "stalwart", "zabbix")) or set(secrets_root["storage"]) != {"encryption_passphrase"} or set(secrets_root["postgres"]) != {"admin_password"} or set(secrets_root["meilisearch"]) != {"master_key"} or set(secrets_root["stalwart"]) != {"database_password", "admin_password", "mailbox_password", "relay_password"} or set(secrets_root["zabbix"]) != {"database_password", "admin_password"}:
-        raise InstallerError("Encrypted configuration has missing or unknown keys")
-    for section, key in expected.items():
-        if not isinstance(secrets_root.get(section), dict) or not isinstance(secrets_root[section].get(key), str) or not secrets_root[section][key]:
-            raise InstallerError(f"Encrypted configuration is missing {section}.{key}")
-    if not isinstance(secrets_root.get("zabbix", {}).get("admin_password"), str) or not secrets_root["zabbix"]["admin_password"]:
-        raise InstallerError("Encrypted configuration is missing zabbix.admin_password")
-    for key in ("admin_password", "mailbox_password", "relay_password"):
-        if not isinstance(secrets_root.get("stalwart", {}).get(key), str) or not secrets_root["stalwart"][key]:
-            raise InstallerError(f"Encrypted configuration is missing stalwart.{key}")
+    for section, keys in schemas.items():
+        if not isinstance(secrets_root.get(section), dict) or set(secrets_root[section]) != keys:
+            raise InstallerError("Encrypted configuration has missing or unknown keys")
+        for key in keys:
+            if not isinstance(secrets_root[section].get(key), str) or not secrets_root[section][key]:
+                raise InstallerError(f"Encrypted configuration is missing {section}.{key}")
     if len(secrets_root["meilisearch"]["master_key"].encode()) < 16:
         raise InstallerError("The Meilisearch master key must contain at least 16 bytes")
+    if len(secrets_root["onlyoffice"]["jwt_secret"]) < 32:
+        raise InstallerError("The OnlyOffice JWT secret must contain at least 32 characters")
+    if len(secrets_root["grist"]["session_secret"]) < 32:
+        raise InstallerError("The Grist session secret must contain at least 32 characters")
+    if len(secrets_root["grist"]["boot_key"]) < 16:
+        raise InstallerError("The Grist boot key must contain at least 16 characters")
+    if len(secrets_root["affine"]["database_password"]) < 16:
+        raise InstallerError("The AFFiNE database password must contain at least 16 characters")
     passphrase_length = len(secrets_root["storage"]["encryption_passphrase"].encode())
     if not 8 <= passphrase_length <= 512:
         raise InstallerError("The storage passphrase must contain 8 to 512 bytes")

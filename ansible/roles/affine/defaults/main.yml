@@ -1,0 +1,17 @@
+---
+affine_namespace: private-cloud
+affine_service_name: affine
+affine_public_service_name: affine-public
+affine_postgres_service: postgres
+affine_redis_service_name: affine-redis
+affine_migration_job_name: affine-migration-0273
+affine_secret_name: affine-credentials
+affine_dataset: tank/secure/backup/k0s/services/affine
+affine_dataset_mountpoint: /tank/secure/backup/k0s/services/affine
+affine_pv_name: affine-data
+affine_pvc_name: affine-data
+affine_pv_capacity: 10Ti
+affine_image: ghcr.io/toeverything/affine:0.27.3
+affine_redis_image: redis:8.2.1-alpine
+affine_pgvector_version: 0.8.6
+affine_kubeconfig: /run/private-cloud/kubeconfig

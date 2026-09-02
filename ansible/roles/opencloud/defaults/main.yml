@@ -1,0 +1,23 @@
+---
+opencloud_namespace: private-cloud
+opencloud_service_name: opencloud
+opencloud_public_service_name: opencloud-public
+opencloud_secret_name: opencloud-credentials
+opencloud_apps_config_name: opencloud-apps
+opencloud_app_registry_config_name: opencloud-app-registry
+opencloud_csp_config_name: opencloud-csp
+opencloud_dataset: tank/secure/backup/k0s/services/opencloud
+opencloud_dataset_mountpoint: /tank/secure/backup/k0s/services/opencloud
+opencloud_pv_name: opencloud-data
+opencloud_pvc_name: opencloud-data
+opencloud_bleve_pvc_name: bleve-data
+opencloud_bleve_pv_name: bleve-data
+opencloud_bleve_dataset_mountpoint: /tank/secure/backup/k0s/services/bleve
+opencloud_pv_capacity: 10Ti
+opencloud_image: opencloudeu/opencloud-rolling:7.5.0
+opencloud_drawio_installer_image: alpine:3.22.1
+opencloud_drawio_version: 2.2.0
+opencloud_drawio_url: https://github.com/opencloud-eu/web-extensions/releases/download/draw-io-v2.2.0/draw-io-2.2.0.zip
+opencloud_drawio_checksum: 49c3aa32aa517f2a90f249b5470b38dc18b7d006841c442f64335d660b551d0c
+opencloud_tika_url: http://tika:9998
+opencloud_kubeconfig: /run/private-cloud/kubeconfig

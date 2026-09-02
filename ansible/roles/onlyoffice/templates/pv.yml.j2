@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ onlyoffice_pv_name }}
+  labels:
+    app.kubernetes.io/name: onlyoffice
+spec:
+  capacity:
+    storage: {{ onlyoffice_pv_capacity }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: {{ onlyoffice_namespace }}
+    name: {{ onlyoffice_pvc_name }}
+  local:
+    path: {{ onlyoffice_dataset_mountpoint }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ onlyoffice_node_name | quote }}

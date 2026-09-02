@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grist
+  namespace: private-cloud
+  labels:
+    app.kubernetes.io/name: grist
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grist
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grist
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: grist
+          image: gristlabs/grist:1.7.16
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: APP_HOME_URL, value: "https://grist.example.com"}
+            - {name: APP_DOC_URL, value: "https://grist.example.com"}
+            - {name: GRIST_DEFAULT_EMAIL, value: "admin@example.com"}
+            - {name: GRIST_SANDBOX_FLAVOR, value: pyodide}
+            - {name: GRIST_SINGLE_PORT, value: "true"}
+            - {name: TYPEORM_TYPE, value: postgres}
+            - {name: TYPEORM_HOST, value: postgres}
+            - {name: TYPEORM_PORT, value: "5432"}
+            - {name: TYPEORM_DATABASE, value: grist}
+            - {name: TYPEORM_USERNAME, value: grist}
+            - name: TYPEORM_PASSWORD
+              valueFrom: {secretKeyRef: {name: grist-credentials, key: GRIST_DB_PASSWORD}}
+            - name: GRIST_SESSION_SECRET
+              valueFrom: {secretKeyRef: {name: grist-credentials, key: GRIST_SESSION_SECRET}}
+            - name: GRIST_BOOT_KEY
+              valueFrom: {secretKeyRef: {name: grist-credentials, key: GRIST_BOOT_KEY}}
+          ports:
+            - {name: http, containerPort: 8484, protocol: TCP}
+          resources:
+            requests: {memory: 2Gi}
+            limits: {memory: 2Gi}
+          readinessProbe:
+            httpGet: {path: /, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /, port: http}
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          volumeMounts:
+            - {name: data, mountPath: /persist}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: grist-data

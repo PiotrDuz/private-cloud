@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ onlyoffice_service_name }}
+  namespace: {{ onlyoffice_namespace }}
+  labels:
+    app.kubernetes.io/name: onlyoffice
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: onlyoffice
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: onlyoffice
+    spec:
+      terminationGracePeriodSeconds: 300
+      containers:
+        - name: onlyoffice
+          image: {{ onlyoffice_image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: WOPI_ENABLED
+              value: "true"
+            - name: USE_UNAUTHORIZED_STORAGE
+              value: "false"
+            - name: JWT_ENABLED
+              value: "true"
+            - name: JWT_HEADER
+              value: Authorization
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ onlyoffice_secret_name }}
+                  key: JWT_SECRET
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          resources:
+            requests:
+              memory: {{ private_cloud.onlyoffice.max_ram }}
+            limits:
+              memory: {{ private_cloud.onlyoffice.max_ram }}
+          readinessProbe:
+            httpGet:
+              path: /hosting/discovery
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /hosting/discovery
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/bash
+                  - -c
+                  - /usr/bin/documentserver-prepare4shutdown.sh
+          volumeMounts:
+            - name: data
+              mountPath: /var/log/onlyoffice
+              subPath: logs
+            - name: data
+              mountPath: /var/www/onlyoffice/Data
+              subPath: data
+            - name: data
+              mountPath: /var/lib/onlyoffice
+              subPath: lib
+            - name: data
+              mountPath: /var/lib/postgresql
+              subPath: postgresql
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ onlyoffice_pvc_name }}

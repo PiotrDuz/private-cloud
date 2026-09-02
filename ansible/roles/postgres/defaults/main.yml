@@ -9,7 +9,8 @@ postgres_dataset_mountpoint: /tank/secure/backup/k0s/services/postgres
 postgres_pv_capacity: 10Ti
 postgres_admin_database: postgres
 postgres_admin_username: postgres
-postgres_image: postgres:18.4-bookworm
+postgres_image: pgvector/pgvector:0.8.6-pg18-bookworm
+postgres_pgvector_version: 0.8.6
 postgres_kubeconfig: /run/private-cloud/kubeconfig
 postgres_zfs_properties:
   recordsize: 8K

@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ opencloud_pv_name }}
+  labels:
+    app.kubernetes.io/name: opencloud
+spec:
+  capacity:
+    storage: {{ opencloud_pv_capacity }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: {{ opencloud_namespace }}
+    name: {{ opencloud_pvc_name }}
+  local:
+    path: {{ opencloud_dataset_mountpoint }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ opencloud_node_name | quote }}
