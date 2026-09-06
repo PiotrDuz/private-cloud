@@ -5,8 +5,6 @@
       - private_cloud.opencloud.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.opencloud.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - private_cloud.opencloud.hostname | length > 0
-      - private_cloud.opencloud.node_port | int >= 30000
-      - private_cloud.opencloud.node_port | int <= 32767
       - private_cloud.onlyoffice.hostname | length > 0
       - private_cloud_secrets.opencloud.admin_password | length > 0
     fail_msg: OpenCloud configuration is invalid.
@@ -114,21 +112,11 @@
   when: not opencloud_secret_present | bool
   no_log: true
 
-- name: Render OpenCloud manifests from the authoritative base
+- name: Render OpenCloud manifests from Jinja templates
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
   vars:
     manifest_service: opencloud
-    manifest_base: "{{ role_path }}/../../../k0s-services/opencloud/kustomize/base"
-    manifest_kustomize_command: "{{ opencloud_kustomize_command }}"
-    manifest_values:
-      dataset_path: "{{ opencloud_dataset_mountpoint }}"
-      node_name: "{{ opencloud_node_name }}"
-      image: "{{ opencloud_image }}"
-      drawio_image: "{{ opencloud_drawio_installer_image }}"
-      memory: "{{ private_cloud.opencloud.max_ram }}"
-      hostname: "{{ private_cloud.opencloud.hostname }}"
-      onlyoffice_hostname: "{{ private_cloud.onlyoffice.hostname }}"
-      node_port: "{{ private_cloud.opencloud.node_port | int }}"
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/opencloud/templates"
 
 - name: Select OpenCloud manifest stages
   ansible.builtin.set_fact:

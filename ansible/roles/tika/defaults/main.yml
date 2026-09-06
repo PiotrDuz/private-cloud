@@ -6,9 +6,4 @@ tika_dataset_mountpoint: /tank/secure/backup/k0s/services/tika
 tika_pv_name: tika-data
 tika_pvc_name: tika-data
 tika_pv_capacity: 10Ti
-tika_image: apache/tika:3.3.1.0
 tika_kubeconfig: /run/private-cloud/kubeconfig
-tika_kustomize_command:
-  - k0s
-  - kubectl
-  - kustomize

@@ -10,10 +10,4 @@ opencloud_bleve_pvc_name: bleve-data
 opencloud_bleve_pv_name: bleve-data
 opencloud_bleve_dataset_mountpoint: /tank/secure/backup/k0s/services/bleve
 opencloud_pv_capacity: 10Ti
-opencloud_image: opencloudeu/opencloud-rolling:7.5.0
-opencloud_drawio_installer_image: alpine:3.22.1
 opencloud_kubeconfig: /run/private-cloud/kubeconfig
-opencloud_kustomize_command:
-  - k0s
-  - kubectl
-  - kustomize

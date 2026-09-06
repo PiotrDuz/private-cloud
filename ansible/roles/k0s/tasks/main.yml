@@ -1,13 +1,14 @@
 ---
-- name: Require k0s configuration from private_cloud
+- name: Require the repository-managed k0s release and configured quotas
   ansible.builtin.assert:
     that:
-      - private_cloud.k0s.version is defined
-      - private_cloud.k0s.sha256 is defined
+      - k0s_release_version is string
+      - k0s_release_version | length > 0
+      - k0s_release_sha256 is match('^[0-9a-f]{64}$')
       - private_cloud.k0s.config_quota is defined
       - private_cloud.k0s.images_quota is defined
       - private_cloud.k0s.ephemeral_quota is defined
-    fail_msg: k0s desired state was not supplied by preflight.
+    fail_msg: The k0s release pin or configured quotas are invalid.
 
 - name: Install Python Kubernetes bindings for subsequent API roles
   ansible.builtin.apt:
@@ -152,8 +153,8 @@
 - name: Reject an unmanaged k0s version or checksum change
   ansible.builtin.assert:
     that:
-      - k0s_installed_version.stdout | trim == private_cloud.k0s.version
-      - k0s_binary_stat.stat.checksum == private_cloud.k0s.sha256
+      - k0s_installed_version.stdout | trim == k0s_release_version
+      - k0s_binary_stat.stat.checksum == k0s_release_sha256
     fail_msg: >-
       Installed k0s does not match the configured version and checksum. Back up the cluster,
       follow the k0s upgrade procedure to reach the configured release, verify node readiness,
@@ -162,12 +163,12 @@
 
 - name: Download the configured k0s release only when the binary is absent
   ansible.builtin.get_url:
-    url: "{{ k0s_release_url }}/{{ private_cloud.k0s.version | urlencode }}/k0s-{{ private_cloud.k0s.version }}-amd64"
+    url: "{{ k0s_release_url }}/{{ k0s_release_version | urlencode }}/k0s-{{ k0s_release_version }}-amd64"
     dest: "{{ k0s_binary_path }}"
     owner: root
     group: root
     mode: '0700'
-    checksum: "sha256:{{ private_cloud.k0s.sha256 }}"
+    checksum: "sha256:{{ k0s_release_sha256 }}"
     force: true
   when: not k0s_binary_stat.stat.exists
 
@@ -182,7 +183,7 @@
     that:
       - k0s_binary_final.stat.exists
       - k0s_binary_final.stat.executable
-      - k0s_binary_final.stat.checksum == private_cloud.k0s.sha256
+      - k0s_binary_final.stat.checksum == k0s_release_sha256
     fail_msg: k0s was not installed at the configured path.
 
 - name: Check whether the initial k0s configuration exists

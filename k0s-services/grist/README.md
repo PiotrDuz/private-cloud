@@ -11,16 +11,11 @@ The Grist service is managed by `ansible/roles/grist`.
 - PostgreSQL stores Grist metadata and the PV stores documents.
 - Pyodide isolates user formulas without privileged container access.
 - The service listens inside the cluster on port `8484`.
-- The configured NodePort publishes the service over HTTP.
-- Forward the Grist hostname to the configured NodePort through the TLS proxy.
+- Fixed NodePort `30848` publishes the service over HTTP.
+- Forward the Grist hostname to NodePort `30848` through the TLS proxy.
 - Preserve WebSockets in the TLS proxy.
 - Use the boot key for initial administrator setup.
 
 ## Manifest review
 
-- The Kustomize base is the authoritative public workload definition.
-- Install Kustomize to render without root or a cluster.
-
-```bash
-python3 ansible/render_manifests.py grist --base k0s-services/grist/kustomize/base --values k0s-services/grist/site-values.example.yaml
-```
+- Ansible renders the `templates/*.yaml.j2` workload files during deployment.

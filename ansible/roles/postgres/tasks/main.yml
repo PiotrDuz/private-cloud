@@ -81,93 +81,19 @@
       - postgres_nodes.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
     fail_msg: "Managed storage host {{ ansible_hostname }} is not a Ready Kubernetes node for PostgreSQL."
 
-- name: Inspect existing PostgreSQL resources
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ postgres_kubeconfig }}"
-    api_version: "{{ item.api_version }}"
-    kind: "{{ item.kind }}"
-    name: "{{ item.name }}"
-    namespace: "{{ item.namespace | default(omit) }}"
-  loop:
-    - {api_version: v1, kind: PersistentVolume, name: postgres-local-pv}
-    - {api_version: v1, kind: PersistentVolumeClaim, name: postgres-data, namespace: private-cloud}
-    - {api_version: v1, kind: Secret, name: postgres-admin-credentials, namespace: private-cloud}
-  register: postgres_existing
-  changed_when: false
-  no_log: true
-
-- name: Reject incompatible PostgreSQL persistent volume
-  ansible.builtin.assert:
-    that:
-      - postgres_existing.results[0].resources | length == 0 or postgres_existing.results[0].resources[0].spec.local.path == postgres_dataset_mountpoint
-      - postgres_existing.results[0].resources | length == 0 or postgres_existing.results[0].resources[0].spec.capacity.storage == postgres_pv_capacity
-      - postgres_existing.results[0].resources | length == 0 or postgres_node_name in postgres_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
-    fail_msg: Existing PostgreSQL PersistentVolume conflicts with the configured local storage.
-
-- name: Reject incompatible PostgreSQL persistent volume claim
-  ansible.builtin.assert:
-    that:
-      - postgres_existing.results[1].resources | length == 0 or postgres_existing.results[1].resources[0].spec.resources.requests.storage == postgres_pv_capacity
-      - postgres_existing.results[1].resources | length == 0 or postgres_existing.results[1].resources[0].spec.volumeName == postgres_pv_name
-    fail_msg: Existing PostgreSQL PersistentVolumeClaim conflicts with the fixed 10Ti volume.
-
-- name: Reject incompatible PostgreSQL credentials secret
-  ansible.builtin.assert:
-    that:
-      - postgres_existing.results[2].resources | length == 0 or postgres_existing.results[2].resources[0].data.POSTGRES_DB | b64decode == postgres_admin_database
-      - postgres_existing.results[2].resources | length == 0 or postgres_existing.results[2].resources[0].data.POSTGRES_USER | b64decode == postgres_admin_username
-      - postgres_existing.results[2].resources | length == 0 or postgres_existing.results[2].resources[0].data.POSTGRES_PASSWORD | b64decode == private_cloud_secrets.postgres.admin_password
-    fail_msg: Existing PostgreSQL credentials secret conflicts with the configured credentials.
-  no_log: true
-
-- name: Find an existing PostgreSQL pod before rollout
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ postgres_kubeconfig }}"
-    api_version: v1
-    kind: Pod
-    namespace: "{{ postgres_namespace }}"
-    label_selectors:
-      - app.kubernetes.io/name=postgres
-  register: postgres_existing_pods
-  changed_when: false
-
-- name: Read checksums from an existing PostgreSQL cluster
-  kubernetes.core.k8s_exec:
-    kubeconfig: "{{ postgres_kubeconfig }}"
-    namespace: "{{ postgres_namespace }}"
-    pod: "{{ postgres_existing_pods.resources[0].metadata.name }}"
-    command: psql -At -U postgres -d postgres -c "SHOW data_checksums;"
-  register: postgres_existing_checksums
-  when: postgres_existing_pods.resources | length > 0
-  changed_when: false
-
-- name: Reject an existing PostgreSQL cluster with checksums enabled
-  ansible.builtin.assert:
-    that: postgres_existing_checksums.stdout | trim == 'off'
-    fail_msg: Existing PostgreSQL data checksums are enabled; refusing migration.
-  when: postgres_existing_pods.resources | length > 0
 
 - name: Apply PostgreSQL credentials secret
   kubernetes.core.k8s:
     kubeconfig: "{{ postgres_kubeconfig }}"
     state: present
     definition: "{{ lookup('template', 'secret.yml.j2') | from_yaml }}"
-  register: postgres_secret_apply
-  when: postgres_existing.results[2].resources | length == 0
   no_log: true
 
-- name: Render PostgreSQL manifests from the authoritative base
+- name: Render PostgreSQL manifests from Jinja templates
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
   vars:
     manifest_service: postgres
-    manifest_base: "{{ role_path }}/../../../k0s-services/postgres/kustomize/base"
-    manifest_kustomize_command: "{{ postgres_kustomize_command }}"
-    manifest_values:
-      dataset_path: "{{ postgres_dataset_mountpoint }}"
-      node_name: "{{ postgres_node_name }}"
-      image: "{{ postgres_image }}"
-      memory: "{{ private_cloud.postgres.max_ram }}"
-      shared_buffers: "{{ postgres_shared_buffers }}"
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/postgres/templates"
 
 - name: Select PostgreSQL manifest stages
   ansible.builtin.set_fact:
@@ -176,9 +102,7 @@
          | selectattr("kind", "in", ["PersistentVolume", "PersistentVolumeClaim"]) | list }}
     postgres_workload_manifests: >-
       {{ private_cloud_rendered_manifests
-         | rejectattr("kind", "in", ["PersistentVolume", "PersistentVolumeClaim", "Job"]) | list }}
-    postgres_pgvector_manifests: >-
-      {{ private_cloud_rendered_manifests | selectattr("kind", "equalto", "Job") | list }}
+         | rejectattr("kind", "in", ["PersistentVolume", "PersistentVolumeClaim"]) | list }}
 
 - name: Apply PostgreSQL storage
   kubernetes.core.k8s:
@@ -193,25 +117,8 @@
     definition: "{{ postgres_workload_manifests }}"
   no_log: true
 
-- name: Restart PostgreSQL after a credentials Secret change
-  kubernetes.core.k8s:
-    kubeconfig: "{{ postgres_kubeconfig }}"
-    state: patched
-    definition:
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: "{{ postgres_service_name }}"
-        namespace: "{{ postgres_namespace }}"
-      spec:
-        template:
-          metadata:
-            annotations:
-              private-cloud.example/credentials-restarted-at: "{{ ansible_date_time.iso8601 }}"
-  when: postgres_secret_apply.changed | default(false)
-  no_log: true
 
-- name: Wait for PostgreSQL deployment rollout
+- name: Wait for PostgreSQL deployment
   kubernetes.core.k8s_info:
     kubeconfig: "{{ postgres_kubeconfig }}"
     api_version: apps/v1
@@ -253,27 +160,6 @@
     command: pg_isready -U postgres -d postgres
   changed_when: false
 
-- name: Apply the PostgreSQL pgvector bootstrap job
-  kubernetes.core.k8s:
-    kubeconfig: "{{ postgres_kubeconfig }}"
-    state: present
-    definition: "{{ postgres_pgvector_manifests }}"
-  no_log: true
-
-- name: Wait for the PostgreSQL pgvector bootstrap job
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ postgres_kubeconfig }}"
-    api_version: batch/v1
-    kind: Job
-    name: postgres-pgvector-086
-    namespace: "{{ postgres_namespace }}"
-  register: postgres_pgvector_job
-  until:
-    - postgres_pgvector_job.resources | length > 0
-    - postgres_pgvector_job.resources[0].status.succeeded | default(0) | int >= 1
-  retries: 60
-  delay: 5
-  changed_when: false
 
 - name: Read shared PostgreSQL pgvector status
   kubernetes.core.k8s_exec:
@@ -301,20 +187,10 @@
     kubeconfig: "{{ postgres_kubeconfig }}"
     namespace: "{{ postgres_namespace }}"
     pod: "{{ postgres_pods.resources[0].metadata.name }}"
-    command: psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres -c "CREATE EXTENSION vector;"
+    command: psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS vector;"
   when: postgres_pgvector_installed_version == 'absent'
   changed_when: true
 
-- name: Update pgvector in the PostgreSQL administrator database
-  kubernetes.core.k8s_exec:
-    kubeconfig: "{{ postgres_kubeconfig }}"
-    namespace: "{{ postgres_namespace }}"
-    pod: "{{ postgres_pods.resources[0].metadata.name }}"
-    command: psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres -c "ALTER EXTENSION vector UPDATE;"
-  when:
-    - postgres_pgvector_installed_version != 'absent'
-    - postgres_pgvector_installed_version != postgres_pgvector_version
-  changed_when: true
 
 - name: Verify shared PostgreSQL pgvector
   kubernetes.core.k8s_exec:
@@ -344,7 +220,7 @@
 - name: Verify effective PostgreSQL tuning
   ansible.builtin.assert:
     that: (postgres_effective_settings.stdout | trim) == ((postgres_shared_buffers_bytes | string) + '|off|off|off|off|off')
-    fail_msg: Effective PostgreSQL tuning does not match the migration contract.
+    fail_msg: Effective PostgreSQL tuning does not match the configured settings.
 
 - name: Verify PostgreSQL ZFS tuning
   ansible.builtin.command: zfs get -H -o value {{ item.key }} {{ postgres_dataset }}

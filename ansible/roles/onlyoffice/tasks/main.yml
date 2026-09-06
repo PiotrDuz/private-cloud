@@ -6,9 +6,6 @@
       - private_cloud.onlyoffice.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - (private_cloud.onlyoffice.max_ram | human_to_bytes | int) >= 4294967296
       - private_cloud.onlyoffice.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
-      - private_cloud.onlyoffice.node_port is integer
-      - private_cloud.onlyoffice.node_port >= 30000
-      - private_cloud.onlyoffice.node_port <= 32767
       - private_cloud_secrets.onlyoffice.jwt_secret | length >= 32
     fail_msg: OnlyOffice configuration is invalid.
   no_log: true
@@ -105,18 +102,11 @@
   when: not onlyoffice_secret_present | bool or not onlyoffice_secret_matches | bool
   no_log: true
 
-- name: Render OnlyOffice manifests from the authoritative base
+- name: Render OnlyOffice manifests from Jinja templates
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
   vars:
     manifest_service: onlyoffice
-    manifest_base: "{{ role_path }}/../../../k0s-services/onlyoffice/kustomize/base"
-    manifest_kustomize_command: "{{ onlyoffice_kustomize_command }}"
-    manifest_values:
-      dataset_path: "{{ onlyoffice_dataset_mountpoint }}"
-      node_name: "{{ onlyoffice_node_name }}"
-      image: "{{ onlyoffice_image }}"
-      memory: "{{ private_cloud.onlyoffice.max_ram }}"
-      node_port: "{{ private_cloud.onlyoffice.node_port }}"
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/onlyoffice/templates"
 
 - name: Select OnlyOffice manifest stages
   ansible.builtin.set_fact:

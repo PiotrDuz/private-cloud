@@ -6,7 +6,3 @@ bleve_pv_name: bleve-data
 bleve_pvc_name: bleve-data
 bleve_pv_capacity: 10Ti
 bleve_kubeconfig: /run/private-cloud/kubeconfig
-bleve_kustomize_command:
-  - k0s
-  - kubectl
-  - kustomize

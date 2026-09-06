@@ -2,8 +2,7 @@
 
 The OpenCloud service is managed by `ansible/roles/opencloud`.
 
-- The Kustomize base is the authoritative Kubernetes workload definition.
-- Render the public example with `python3 ansible/render_manifests.py opencloud --base k0s-services/opencloud/kustomize/base --values k0s-services/opencloud/site-values.example.yaml`.
+- Ansible renders the `templates/*.yaml.j2` workload files during deployment.
 
 - Configure `private_cloud.opencloud` in the public configuration.
 - Store the administrator password in the encrypted configuration.
@@ -23,5 +22,5 @@ The OpenCloud service is managed by `ansible/roles/opencloud`.
 - The first Draw.io installation requires outbound access to its pinned GitHub release.
 - ConfigMap changes trigger a Deployment rollout through rendered checksums.
 - General caches use memory while the POSIX ID cache uses embedded NATS.
-- Forward public HTTPS traffic to the configured HTTP NodePort.
+- Forward public HTTPS traffic to fixed HTTP NodePort `30920`.
 - Forward `/wopi` and `/collaboration` through the OpenCloud hostname.

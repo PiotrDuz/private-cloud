@@ -68,15 +68,11 @@
       - bleve_existing_storage.results[1].resources | length == 0 or bleve_existing_storage.results[1].resources[0].spec.volumeName == bleve_pv_name
     fail_msg: Existing Bleve persistent storage conflicts with the configured local storage.
 
-- name: Render Bleve manifests from the authoritative base
+- name: Render Bleve manifests from Jinja templates
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
   vars:
     manifest_service: bleve
-    manifest_base: "{{ role_path }}/../../../k0s-services/bleve/kustomize/base"
-    manifest_kustomize_command: "{{ bleve_kustomize_command }}"
-    manifest_values:
-      dataset_path: "{{ bleve_dataset_mountpoint }}"
-      node_name: "{{ bleve_node_name }}"
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/bleve/templates"
 
 - name: Apply Bleve storage
   kubernetes.core.k8s:

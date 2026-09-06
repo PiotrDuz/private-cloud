@@ -83,17 +83,11 @@
         or tika_existing_storage.results[1].resources[0].spec.volumeName == tika_pv_name
     fail_msg: Existing Apache Tika persistent storage conflicts with the configured local storage.
 
-- name: Render Apache Tika manifests from the authoritative base
+- name: Render Apache Tika manifests from Jinja templates
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
   vars:
     manifest_service: tika
-    manifest_base: "{{ role_path }}/../../../k0s-services/tika/kustomize/base"
-    manifest_kustomize_command: "{{ tika_kustomize_command }}"
-    manifest_values:
-      dataset_path: "{{ tika_dataset_mountpoint }}"
-      node_name: "{{ tika_node_name }}"
-      image: "{{ tika_image }}"
-      memory: "{{ private_cloud.tika.max_ram }}"
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/tika/templates"
 
 - name: Select Apache Tika manifest stages
   ansible.builtin.set_fact:

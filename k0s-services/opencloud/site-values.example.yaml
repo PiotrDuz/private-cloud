@@ -1,8 +1,0 @@
-dataset_path: /tank/secure/backup/k0s/services/opencloud
-node_name: replace-with-k0s-node
-image: opencloudeu/opencloud-rolling:7.5.0
-drawio_image: alpine:3.22.1
-memory: 4Gi
-hostname: cloud.example.com
-onlyoffice_hostname: onlyoffice.example.com
-node_port: 30920

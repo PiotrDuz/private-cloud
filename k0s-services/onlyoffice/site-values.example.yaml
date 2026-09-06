@@ -1,5 +1,0 @@
-dataset_path: /tank/secure/backup/k0s/services/onlyoffice
-node_name: replace-with-k0s-node
-image: onlyoffice/documentserver:9.4.0.1
-memory: 4Gi
-node_port: 30082

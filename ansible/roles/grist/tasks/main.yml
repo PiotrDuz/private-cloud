@@ -5,13 +5,10 @@
       - private_cloud.grist.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.grist.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - (private_cloud.grist.max_ram | human_to_bytes | int) >= 536870912
-      - private_cloud.grist.database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
-      - private_cloud.grist.database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - grist_database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - grist_database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
       - private_cloud.grist.default_email is match('^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$')
       - private_cloud.grist.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
-      - private_cloud.grist.node_port is integer
-      - private_cloud.grist.node_port >= 30000
-      - private_cloud.grist.node_port <= 32767
       - private_cloud_secrets.grist.database_password | length > 0
       - private_cloud_secrets.grist.session_secret | length >= 32
       - private_cloud_secrets.grist.boot_key | length >= 16
@@ -132,7 +129,7 @@
     pod: "{{ grist_postgres_pods.resources[0].metadata.name }}"
     command: >-
       psql -At -U postgres -d postgres -c
-      "SELECT rolcanlogin FROM pg_roles WHERE rolname = '{{ private_cloud.grist.database_username | replace("'", "''") }}';"
+      "SELECT rolcanlogin FROM pg_roles WHERE rolname = '{{ grist_database_username | replace("'", "''") }}';"
   register: grist_role_exists
   changed_when: false
   no_log: true
@@ -170,7 +167,7 @@
     pod: "{{ grist_postgres_pods.resources[0].metadata.name }}"
     command: >-
       psql -At -U postgres -d postgres -c
-      "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '{{ private_cloud.grist.database_name | replace("'", "''") }}';"
+      "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '{{ grist_database_name | replace("'", "''") }}';"
   register: grist_database_exists
   changed_when: false
   no_log: true
@@ -180,7 +177,7 @@
     kubeconfig: "{{ grist_kubeconfig }}"
     namespace: "{{ grist_namespace }}"
     pod: "{{ grist_postgres_pods.resources[0].metadata.name }}"
-    command: createdb -U postgres -O {{ private_cloud.grist.database_username }} {{ private_cloud.grist.database_name }}
+    command: createdb -U postgres -O {{ grist_database_username }} {{ grist_database_name }}
   when: grist_database_exists.stdout | trim == ''
   changed_when: true
   no_log: true
@@ -192,10 +189,10 @@
     pod: "{{ grist_postgres_pods.resources[0].metadata.name }}"
     command: >-
       psql -At -U postgres -d postgres -c
-      "ALTER DATABASE \"{{ private_cloud.grist.database_name }}\" OWNER TO \"{{ private_cloud.grist.database_username }}\";"
+      "ALTER DATABASE \"{{ grist_database_name }}\" OWNER TO \"{{ grist_database_username }}\";"
   when:
     - grist_database_exists.stdout | trim != ''
-    - grist_database_exists.stdout | trim != private_cloud.grist.database_username
+    - grist_database_exists.stdout | trim != grist_database_username
   changed_when: true
   no_log: true
 
@@ -208,23 +205,11 @@
   when: not grist_secret_present | bool or not grist_secret_matches | bool
   no_log: true
 
-- name: Render Grist manifests from the authoritative base
+- name: Render Grist manifests from Jinja templates
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
   vars:
     manifest_service: grist
-    manifest_base: "{{ role_path }}/../../../k0s-services/grist/kustomize/base"
-    manifest_kustomize_command: "{{ grist_kustomize_command }}"
-    manifest_values:
-      dataset_path: "{{ grist_dataset_mountpoint }}"
-      node_name: "{{ grist_node_name }}"
-      image: "{{ grist_image }}"
-      memory: "{{ private_cloud.grist.max_ram }}"
-      hostname: "{{ private_cloud.grist.hostname }}"
-      default_email: "{{ private_cloud.grist.default_email }}"
-      database_name: "{{ private_cloud.grist.database_name }}"
-      database_username: "{{ private_cloud.grist.database_username }}"
-      postgres_service: "{{ grist_postgres_service }}"
-      node_port: "{{ private_cloud.grist.node_port }}"
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/grist/templates"
 
 - name: Select Grist manifest stages
   ansible.builtin.set_fact:

@@ -38,7 +38,7 @@ KUBECONFIG_FILE = RUNTIME_DIRECTORY / "kubeconfig"
 INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
 SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate")
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 CURRENT_SECRETS_SCHEMA_VERSION = 1
 SECRET_SCHEMAS = {
     "storage": {"encryption_passphrase"},
@@ -64,7 +64,6 @@ SECRET_STAGES = {
 }
 QUOTA_PATTERN = re.compile(r"[1-9][0-9]*[KMGTPE]")
 RAM_PATTERN = re.compile(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)")
-IDENTIFIER_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 DOMAIN_PATTERN = re.compile(r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}")
 EMAIL_PATTERN = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}")
 MAILBOX_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._+-]{0,62}[A-Za-z0-9])?")
@@ -140,50 +139,6 @@ def load_yaml(path: Path) -> dict[str, Any]:
 def dump_yaml(value: Mapping[str, Any]) -> str:
     return yaml.safe_dump(value, default_flow_style=False, sort_keys=False)
 
-
-def migrate_public_configuration(configuration: Mapping[str, Any], defaults: Mapping[str, Any]) -> dict[str, Any]:
-    version = configuration.get("schema_version", 0)
-    if type(version) is not int or version < 0:
-        raise InstallerError("Public configuration schema_version must be a non-negative integer")
-    if version > CURRENT_SCHEMA_VERSION:
-        raise InstallerError(f"Public configuration schema version {version} is newer than supported version {CURRENT_SCHEMA_VERSION}")
-    migrated = json.loads(json.dumps(configuration))
-    while version < CURRENT_SCHEMA_VERSION:
-        if version == 0:
-            migrated = _migrate_public_v0_to_v1(migrated, defaults)
-        elif version == 1:
-            migrated = _migrate_public_v1_to_v2(migrated, defaults)
-        else:
-            raise InstallerError(f"No migration is available from public configuration schema version {version}")
-        version = migrated["schema_version"]
-    return migrated
-
-
-def migrate_secrets_configuration(configuration: Mapping[str, Any]) -> dict[str, Any]:
-    allowed = {"secrets_schema_version", "private_cloud_secrets"}
-    if not set(configuration) <= allowed:
-        raise InstallerError("Encrypted configuration has unknown top-level keys")
-    version = configuration.get("secrets_schema_version", 0)
-    if type(version) is not int or version < 0:
-        raise InstallerError("Encrypted configuration secrets_schema_version must be a non-negative integer")
-    if version > CURRENT_SECRETS_SCHEMA_VERSION:
-        raise InstallerError(
-            f"Encrypted configuration schema version {version} is newer than supported version {CURRENT_SECRETS_SCHEMA_VERSION}"
-        )
-    migrated = json.loads(json.dumps(configuration))
-    while version < CURRENT_SECRETS_SCHEMA_VERSION:
-        if version == 0:
-            migrated = _migrate_secrets_v0_to_v1(migrated)
-        else:
-            raise InstallerError(f"No migration is available from encrypted configuration schema version {version}")
-        version = migrated["secrets_schema_version"]
-    secrets_root = migrated.get("private_cloud_secrets")
-    if not isinstance(secrets_root, dict) or not set(secrets_root) <= set(SECRET_SCHEMAS):
-        raise InstallerError("Encrypted configuration has unknown or malformed sections")
-    for section, values in secrets_root.items():
-        if not isinstance(values, dict) or not set(values) <= SECRET_SCHEMAS[section]:
-            raise InstallerError("Encrypted configuration has unknown or malformed keys")
-    return migrated
 
 
 def prompt_line(prompt: str, default: str | None = None, input_stream: TextIO | None = None) -> str:
@@ -269,13 +224,11 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         if any(not re.fullmatch(r"/dev/disk/by-id/[A-Za-z0-9_.:+-]+", disk) for disk in disks):
             raise InstallerError("ZFS disks must use stable /dev/disk/by-id paths")
     k0s = cloud["k0s"]
-    if not isinstance(k0s, dict) or set(k0s) != {"version", "sha256", "config_quota", "images_quota", "ephemeral_quota"}:
+    if not isinstance(k0s, dict) or set(k0s) != {"config_quota", "images_quota", "ephemeral_quota"}:
         raise InstallerError("k0s configuration has missing or unknown keys")
-    for key in ("version", "sha256", "config_quota", "images_quota", "ephemeral_quota"):
+    for key in ("config_quota", "images_quota", "ephemeral_quota"):
         if not isinstance(k0s, dict) or not isinstance(k0s.get(key), str) or not k0s[key]:
             raise InstallerError(f"Missing k0s.{key}")
-    if not re.fullmatch(r"[0-9a-f]{64}", k0s["sha256"]):
-        raise InstallerError("k0s.sha256 must be a lowercase SHA-256 digest")
     for key in ("config_quota", "images_quota", "ephemeral_quota"):
         if not QUOTA_PATTERN.fullmatch(k0s[key]):
             raise InstallerError(f"Invalid k0s.{key}")
@@ -301,7 +254,7 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if not isinstance(bleve, dict) or set(bleve) != {"storage_size"} or not QUOTA_PATTERN.fullmatch(str(bleve.get("storage_size", ""))):
         raise InstallerError("Invalid Bleve storage configuration")
     onlyoffice = cloud["onlyoffice"]
-    expected_onlyoffice = {"storage_size", "max_ram", "hostname", "node_port"}
+    expected_onlyoffice = {"storage_size", "max_ram", "hostname"}
     if not isinstance(onlyoffice, dict) or set(onlyoffice) != expected_onlyoffice:
         raise InstallerError("OnlyOffice configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(onlyoffice.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(onlyoffice.get("max_ram", ""))):
@@ -310,45 +263,35 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("OnlyOffice max_ram must be at least 4Gi")
     if not isinstance(onlyoffice.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(onlyoffice["hostname"]):
         raise InstallerError("Invalid onlyoffice.hostname")
-    if type(onlyoffice.get("node_port")) is not int or not 30000 <= onlyoffice["node_port"] <= 32767:
-        raise InstallerError("Invalid onlyoffice.node_port")
     opencloud = cloud["opencloud"]
-    expected_opencloud = {"storage_size", "max_ram", "hostname", "node_port"}
+    expected_opencloud = {"storage_size", "max_ram", "hostname"}
     if not isinstance(opencloud, dict) or set(opencloud) != expected_opencloud:
         raise InstallerError("OpenCloud configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(opencloud.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(opencloud.get("max_ram", ""))):
         raise InstallerError("Invalid OpenCloud size configuration")
     if not isinstance(opencloud.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(opencloud["hostname"]):
         raise InstallerError("Invalid opencloud.hostname")
-    if type(opencloud.get("node_port")) is not int or not 30000 <= opencloud["node_port"] <= 32767:
-        raise InstallerError("Invalid opencloud.node_port")
-    if opencloud["hostname"] == onlyoffice["hostname"] or opencloud["node_port"] == onlyoffice["node_port"]:
+    if opencloud["hostname"] == onlyoffice["hostname"]:
         raise InstallerError("OpenCloud and OnlyOffice endpoints must differ")
     grist = cloud["grist"]
-    expected_grist = {"storage_size", "max_ram", "database_name", "database_username", "default_email", "hostname", "node_port"}
+    expected_grist = {"storage_size", "max_ram", "default_email", "hostname"}
     if not isinstance(grist, dict) or set(grist) != expected_grist:
         raise InstallerError("Grist configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(grist.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(grist.get("max_ram", ""))):
         raise InstallerError("Invalid Grist size configuration")
     if ram_to_bytes(grist["max_ram"]) < 536870912:
         raise InstallerError("Grist max_ram must be at least 512Mi")
-    if not IDENTIFIER_PATTERN.fullmatch(str(grist.get("database_name", ""))) or not IDENTIFIER_PATTERN.fullmatch(str(grist.get("database_username", ""))):
-        raise InstallerError("Grist database identifiers are invalid")
-    if grist["database_name"].lower() in {"postgres", "template0", "template1"} or grist["database_username"].lower() in {"postgres", "replication"} or grist["database_username"].lower().startswith("pg_"):
-        raise InstallerError("Grist cannot use a PostgreSQL system database or role")
     if not isinstance(grist.get("default_email"), str) or not EMAIL_PATTERN.fullmatch(grist["default_email"]):
         raise InstallerError("Invalid grist.default_email")
     if not isinstance(grist.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(grist["hostname"]):
         raise InstallerError("Invalid grist.hostname")
-    if type(grist.get("node_port")) is not int or not 30000 <= grist["node_port"] <= 32767:
-        raise InstallerError("Invalid grist.node_port")
     manticore = cloud["manticore"]
     if not isinstance(manticore, dict) or set(manticore) != {"storage_size", "max_ram"}:
         raise InstallerError("Manticore configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(manticore.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(manticore.get("max_ram", ""))):
         raise InstallerError("Invalid Manticore size configuration")
     affine = cloud["affine"]
-    expected_affine = {"storage_size", "max_ram", "redis_max_ram", "database_name", "database_username", "hostname", "node_port"}
+    expected_affine = {"storage_size", "max_ram", "redis_max_ram", "hostname"}
     if not isinstance(affine, dict) or set(affine) != expected_affine:
         raise InstallerError("AFFiNE configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(affine.get("storage_size", ""))):
@@ -358,30 +301,19 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
             raise InstallerError(f"Invalid affine.{key}")
     if ram_to_bytes(affine["max_ram"]) < 2147483648 or ram_to_bytes(affine["redis_max_ram"]) < 134217728:
         raise InstallerError("AFFiNE memory limits are too small")
-    if not IDENTIFIER_PATTERN.fullmatch(str(affine.get("database_name", ""))) or not IDENTIFIER_PATTERN.fullmatch(str(affine.get("database_username", ""))):
-        raise InstallerError("AFFiNE database identifiers are invalid")
-    if affine["database_name"].lower() in {"postgres", "template0", "template1"} or affine["database_username"].lower() in {"postgres", "replication"} or affine["database_username"].lower().startswith("pg_"):
-        raise InstallerError("AFFiNE cannot use a PostgreSQL system database or role")
     if not isinstance(affine.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(affine["hostname"]):
         raise InstallerError("Invalid affine.hostname")
-    if type(affine.get("node_port")) is not int or not 30000 <= affine["node_port"] <= 32767:
-        raise InstallerError("Invalid affine.node_port")
     public_hostnames = [onlyoffice["hostname"], opencloud["hostname"], grist["hostname"], affine["hostname"]]
     if len(public_hostnames) != len(set(public_hostnames)):
         raise InstallerError("Every public application hostname must be unique")
     expected_stalwart = {
-        "storage_size", "max_ram", "database_name", "database_username", "domain", "forwarding_domain", "hostname",
+        "storage_size", "max_ram", "domain", "forwarding_domain", "hostname",
         "acme_contact", "admin_username", "mailbox_username", "relay_host", "relay_port", "relay_implicit_tls", "relay_username",
-        "https_node_port", "smtp_node_port", "submissions_node_port", "submission_node_port", "imaps_node_port",
     }
     if not isinstance(stalwart, dict) or set(stalwart) != expected_stalwart:
         raise InstallerError("Stalwart configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(stalwart.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(stalwart.get("max_ram", ""))):
         raise InstallerError("Invalid Stalwart size configuration")
-    if not IDENTIFIER_PATTERN.fullmatch(str(stalwart.get("database_name", ""))) or not IDENTIFIER_PATTERN.fullmatch(str(stalwart.get("database_username", ""))):
-        raise InstallerError("Stalwart database identifiers are invalid")
-    if stalwart["database_name"].lower() in {"postgres", "template0", "template1"} or stalwart["database_username"].lower() in {"postgres", "replication"} or stalwart["database_username"].lower().startswith("pg_"):
-        raise InstallerError("Stalwart cannot use a PostgreSQL system database or role")
     for key in ("domain", "forwarding_domain", "hostname", "relay_host"):
         if not isinstance(stalwart.get(key), str) or not DOMAIN_PATTERN.fullmatch(stalwart[key]):
             raise InstallerError(f"Invalid stalwart.{key}")
@@ -401,35 +333,17 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Stalwart administrator and mailbox usernames must differ")
     if type(stalwart.get("relay_implicit_tls")) is not bool or type(stalwart.get("relay_port")) is not int or not 1 <= stalwart["relay_port"] <= 65535:
         raise InstallerError("Invalid Stalwart relay configuration")
-    stalwart_node_ports = [stalwart[key] for key in ("https_node_port", "smtp_node_port", "submissions_node_port", "submission_node_port", "imaps_node_port")]
-    if any(type(port) is not int or not 30000 <= port <= 32767 for port in stalwart_node_ports) or len(set(stalwart_node_ports)) != len(stalwart_node_ports):
-        raise InstallerError("Stalwart NodePorts must be valid and unique")
     zabbix = cloud["zabbix"]
-    expected_zabbix = {"storage_size", "database_name", "database_username", "server_node_port", "web_node_port", "hostname", "admin_username", "agent_server_active"}
+    expected_zabbix = {"storage_size", "admin_username"}
     if not isinstance(zabbix, dict) or set(zabbix) != expected_zabbix:
         raise InstallerError("Missing zabbix configuration")
-    for key in ("database_name", "database_username", "hostname", "admin_username", "agent_server_active"):
+    for key in ("admin_username",):
         if not isinstance(zabbix.get(key), str) or not zabbix[key]:
             raise InstallerError(f"Missing zabbix.{key}")
-    if any(character in zabbix["hostname"] or character in zabbix["admin_username"] for character in ("\r", "\n")):
-        raise InstallerError("Zabbix hostname and administrator name must be single-line values")
-    if not IDENTIFIER_PATTERN.fullmatch(zabbix["database_name"]) or not IDENTIFIER_PATTERN.fullmatch(zabbix["database_username"]):
-        raise InstallerError("Zabbix database identifiers are invalid")
-    if zabbix["database_name"].lower() in {"postgres", "template0", "template1"} or zabbix["database_username"].lower() in {"postgres", "replication"} or zabbix["database_username"].lower().startswith("pg_"):
-        raise InstallerError("Zabbix cannot use a PostgreSQL system database or role")
+    if any(character in zabbix["admin_username"] for character in ("\r", "\n")):
+        raise InstallerError("Zabbix administrator name must be a single-line value")
     if not QUOTA_PATTERN.fullmatch(str(zabbix.get("storage_size", ""))):
         raise InstallerError("Invalid zabbix.storage_size")
-    active_server = re.fullmatch(r"[^\s,]+(?::([0-9]{1,5}))?", zabbix["agent_server_active"])
-    if len(zabbix["hostname"]) > 128 or active_server is None or (active_server.group(1) is not None and not 1 <= int(active_server.group(1)) <= 65535):
-        raise InstallerError("Invalid Zabbix hostname or active server")
-    for key in ("server_node_port", "web_node_port"):
-        if type(zabbix.get(key)) is not int or not 30000 <= zabbix[key] <= 32767:
-            raise InstallerError(f"Invalid zabbix.{key}")
-    if zabbix["server_node_port"] == zabbix["web_node_port"]:
-        raise InstallerError("Zabbix NodePorts must differ")
-    external_node_ports = stalwart_node_ports + [zabbix["server_node_port"], zabbix["web_node_port"], onlyoffice["node_port"], opencloud["node_port"], grist["node_port"], affine["node_port"]]
-    if len(external_node_ports) != len(set(external_node_ports)):
-        raise InstallerError("Every public NodePort must be unique")
 
 
 def validate_secrets_configuration(configuration: Mapping[str, Any], stages: Mapping[str, bool]) -> None:
@@ -575,61 +489,6 @@ def ram_to_bytes(value: str) -> int:
     units = {"Ki": 1024, "Mi": 1024 ** 2, "Gi": 1024 ** 3, "Ti": 1024 ** 4}
     return int(value[:-2]) * units[value[-2:]]
 
-
-def _migrate_public_v0_to_v1(configuration: dict[str, Any], defaults: Mapping[str, Any]) -> dict[str, Any]:
-    if set(configuration) != {"private_cloud"} or not isinstance(configuration.get("private_cloud"), dict):
-        raise InstallerError("Unversioned public configuration must contain only private_cloud")
-    default_cloud = defaults.get("private_cloud")
-    if defaults.get("schema_version") != 2 or not isinstance(default_cloud, dict):
-        raise InstallerError("The example configuration cannot provide migration defaults")
-    cloud = configuration["private_cloud"]
-    stages = cloud.get("stages")
-    if not isinstance(stages, dict):
-        raise InstallerError("Unversioned public configuration must contain a stages mapping")
-    for section, default_value in default_cloud.items():
-        if section == "manticore":
-            continue
-        if section not in cloud:
-            cloud[section] = json.loads(json.dumps(default_value))
-        elif isinstance(default_value, dict) and isinstance(cloud[section], dict):
-            for key, value in default_value.items():
-                if section == "stages" and key == "manticore":
-                    continue
-                if key not in cloud[section]:
-                    cloud[section][key] = False if section == "stages" else json.loads(json.dumps(value))
-    configuration["schema_version"] = 1
-    return configuration
-
-
-def _migrate_public_v1_to_v2(configuration: dict[str, Any], defaults: Mapping[str, Any]) -> dict[str, Any]:
-    old_sections = {"stages", "storage", "k0s", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "affine", "stalwart", "zabbix"}
-    old_stages = {"zfs", "k0s", "postgres", "meilisearch", "stalwart", "tika", "bleve", "onlyoffice", "opencloud", "grist", "affine", "zabbix_server", "zabbix_agent"}
-    cloud = configuration.get("private_cloud")
-    default_cloud = defaults.get("private_cloud")
-    if set(configuration) != {"schema_version", "private_cloud"} or configuration.get("schema_version") != 1:
-        raise InstallerError("Schema version 1 public configuration is malformed")
-    if not isinstance(cloud, dict) or set(cloud) != old_sections:
-        raise InstallerError("Schema version 1 public configuration has missing or unknown sections")
-    if not isinstance(cloud.get("stages"), dict) or set(cloud["stages"]) != old_stages:
-        raise InstallerError("Schema version 1 stage configuration is incomplete")
-    if defaults.get("schema_version") != 2 or not isinstance(default_cloud, dict):
-        raise InstallerError("The example configuration cannot provide schema version 2 migration defaults")
-    if not isinstance(default_cloud.get("manticore"), dict):
-        raise InstallerError("The example configuration is missing Manticore migration defaults")
-    if not isinstance(default_cloud.get("k0s"), dict) or not isinstance(default_cloud["k0s"].get("sha256"), str):
-        raise InstallerError("The example configuration is missing the k0s checksum migration default")
-    cloud["stages"]["manticore"] = False
-    cloud["manticore"] = json.loads(json.dumps(default_cloud["manticore"]))
-    cloud["k0s"]["sha256"] = default_cloud["k0s"]["sha256"]
-    configuration["schema_version"] = 2
-    return configuration
-
-
-def _migrate_secrets_v0_to_v1(configuration: dict[str, Any]) -> dict[str, Any]:
-    if set(configuration) != {"private_cloud_secrets"} or not isinstance(configuration.get("private_cloud_secrets"), dict):
-        raise InstallerError("Unversioned encrypted configuration must contain only private_cloud_secrets")
-    configuration["secrets_schema_version"] = 1
-    return configuration
 
 
 def _write_command_failure_log(args: Sequence[str], stdout: str, stderr: str) -> Path:

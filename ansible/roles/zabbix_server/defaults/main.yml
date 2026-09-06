@@ -1,5 +1,7 @@
 ---
 zabbix_namespace: private-cloud
+zabbix_database_name: zabbix
+zabbix_database_username: zabbix
 zabbix_database_secret_name: zabbix-postgres-credentials
 zabbix_dataset: tank/secure/backup/k0s/services/zabbix
 zabbix_dataset_mountpoint: /tank/secure/backup/k0s/services/zabbix
@@ -8,14 +10,8 @@ zabbix_pvc_name: zabbix-server-data
 zabbix_pv_capacity: 10Ti
 zabbix_postgres_service: postgres
 zabbix_kubeconfig: /run/private-cloud/kubeconfig
-zabbix_server_image: zabbix/zabbix-server-pgsql:ubuntu-7.4.12
-zabbix_web_image: zabbix/zabbix-web-nginx-pgsql:ubuntu-7.4.12
 zabbix_host_group: Private cloud
 zabbix_dashboard_name: Private cloud ZFS storage
-zabbix_kustomize_command:
-  - k0s
-  - kubectl
-  - kustomize
 zabbix_template_choices:
   - [Linux by Zabbix agent active]
   - [SMART by Zabbix agent active 2, SMART by Zabbix agent 2 active]

@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 private_cloud:
   stages:
     zfs: true
@@ -20,8 +20,6 @@ private_cloud:
       - /dev/disk/by-id/replace-with-first-disk
       - /dev/disk/by-id/replace-with-second-disk
   k0s:
-    version: v1.36.2+k0s.0
-    sha256: 8b5d985f803df27acb44f900b2574a5b48e600bd2f87a3335d2a853b888e9298
     config_quota: 1G
     images_quota: 10G
     ephemeral_quota: 10G
@@ -40,20 +38,15 @@ private_cloud:
     storage_size: 20G
     max_ram: 4Gi
     hostname: onlyoffice.example.com
-    node_port: 30082
   opencloud:
     storage_size: 100G
     max_ram: 4Gi
     hostname: cloud.example.com
-    node_port: 30920
   grist:
     storage_size: 50G
     max_ram: 2Gi
-    database_name: grist
-    database_username: grist
     default_email: admin@example.com
     hostname: grist.example.com
-    node_port: 30848
   manticore:
     storage_size: 50G
     max_ram: 1Gi
@@ -61,15 +54,10 @@ private_cloud:
     storage_size: 100G
     max_ram: 4Gi
     redis_max_ram: 512Mi
-    database_name: affine
-    database_username: affine
     hostname: affine.example.com
-    node_port: 30310
   stalwart:
     storage_size: 100G
     max_ram: 2Gi
-    database_name: stalwart
-    database_username: stalwart
     domain: example.com
     forwarding_domain: inbound.example.com
     hostname: mail.example.com
@@ -80,17 +68,6 @@ private_cloud:
     relay_port: 465
     relay_implicit_tls: true
     relay_username: user@example.com
-    https_node_port: 30443
-    smtp_node_port: 30025
-    submissions_node_port: 30465
-    submission_node_port: 30587
-    imaps_node_port: 30993
   zabbix:
     storage_size: 5G
-    database_name: zabbix
-    database_username: zabbix
-    server_node_port: 31051
-    web_node_port: 30080
-    hostname: private-cloud-zabbix
     admin_username: Admin
-    agent_server_active: 127.0.0.1:31051

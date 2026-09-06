@@ -1,7 +1,10 @@
 ---
-# Implementation constants. Desired state is supplied by private_cloud.
+# Repository-managed release pin and implementation constants.
 k0s_binary_path: /usr/local/bin/k0s
 k0s_release_url: https://github.com/k0sproject/k0s/releases/download
+# Commit k0s upgrades and their matching checksum here.
+k0s_release_version: v1.36.2+k0s.0
+k0s_release_sha256: 8b5d985f803df27acb44f900b2574a5b48e600bd2f87a3335d2a853b888e9298
 k0s_root_dataset: tank/secure
 k0s_config_dataset: tank/secure/backup/k0s/config
 k0s_images_dataset: tank/secure/no-backup/k0s/images

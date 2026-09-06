@@ -77,17 +77,11 @@
       - manticore_existing.results[1].resources | length == 0 or manticore_existing.results[1].resources[0].spec.volumeName == manticore_pv_name
     fail_msg: Existing Manticore persistent storage conflicts with the configured local storage.
 
-- name: Render Manticore manifests from the authoritative base
+- name: Render Manticore manifests from Jinja templates
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
   vars:
     manifest_service: manticore
-    manifest_base: "{{ role_path }}/../../../k0s-services/manticore/kustomize/base"
-    manifest_kustomize_command: "{{ manticore_kustomize_command }}"
-    manifest_values:
-      dataset_path: "{{ manticore_dataset_mountpoint }}"
-      node_name: "{{ manticore_node_name }}"
-      image: "{{ manticore_image }}"
-      memory: "{{ private_cloud.manticore.max_ram }}"
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/manticore/templates"
 
 - name: Select Manticore manifest stages
   ansible.builtin.set_fact:

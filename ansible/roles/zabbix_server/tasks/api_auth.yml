@@ -1,6 +1,6 @@
 - name: Set Zabbix API endpoint
   ansible.builtin.set_fact:
-    zabbix_api_url: "http://127.0.0.1:{{ private_cloud.zabbix.web_node_port }}/api_jsonrpc.php"
+    zabbix_api_url: "http://127.0.0.1:30080/api_jsonrpc.php"
 
 - name: Authenticate with configured Zabbix administrator
   ansible.builtin.uri:

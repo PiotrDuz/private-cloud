@@ -100,17 +100,11 @@
   when: not meilisearch_secret_present | bool or not meilisearch_secret_matches | bool
   no_log: true
 
-- name: Render Meilisearch manifests from the authoritative base
+- name: Render Meilisearch manifests from Jinja templates
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
   vars:
     manifest_service: meilisearch
-    manifest_base: "{{ role_path }}/../../../k0s-services/meilisearch/kustomize/base"
-    manifest_kustomize_command: "{{ meilisearch_kustomize_command }}"
-    manifest_values:
-      dataset_path: "{{ meilisearch_dataset_mountpoint }}"
-      node_name: "{{ meilisearch_node_name }}"
-      image: "{{ meilisearch_image }}"
-      memory: "{{ private_cloud.meilisearch.max_ram }}"
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/meilisearch/templates"
 
 - name: Select Meilisearch manifest stages
   ansible.builtin.set_fact:

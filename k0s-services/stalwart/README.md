@@ -2,8 +2,7 @@
 
 The Stalwart service is managed by `ansible/roles/stalwart`.
 
-- The Kustomize base is the authoritative Kubernetes workload definition.
-- Render the public example with `python3 ansible/render_manifests.py stalwart --base k0s-services/stalwart/kustomize/base --values k0s-services/stalwart/site-values.example.yaml`.
+- Ansible renders the `templates/*.yaml.j2` workload files during deployment.
 
 - Configure `private_cloud.stalwart` in the public configuration.
 - Store database, mailbox, administrator, and relay passwords in the encrypted configuration.
@@ -19,5 +18,5 @@ The Stalwart service is managed by `ansible/roles/stalwart`.
 - Gmail uses the primary mailbox address and mailbox password.
 - Gmail IMAP uses the configured hostname on port `993` with SSL.
 - Gmail SMTP uses the configured hostname on port `465` with SSL or `587` with STARTTLS.
-- Forward public ports `443`, `25`, `465`, `587`, and `993` to their configured NodePorts.
+- Forward public ports `443`, `25`, `465`, `587`, and `993` to NodePorts `30443`, `30025`, `30465`, `30587`, and `30993`.
 - Public port `443` must reach Stalwart before certificate issuance.

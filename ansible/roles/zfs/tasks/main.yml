@@ -307,10 +307,10 @@
   changed_when: false
   when: zfs_pool_check.rc == 0 and zfs_secure_check.rc != 0 and zfs_create_intent_matches
 
-- name: Refuse an existing pool during initial migration
+- name: Refuse an existing pool during initial installation
   ansible.builtin.assert:
     that: zfs_pool_check.rc != 0 or ((private_cloud_runtime | default({})).storage_create_confirmation is not defined)
-    fail_msg: The initial migration cannot adopt an existing tank pool.
+    fail_msg: The initial installation cannot adopt an existing tank pool.
   when:
     - zfs_pool_check.rc == 0
     - not (zfs_secure_check.rc != 0 and zfs_create_intent_matches)

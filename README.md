@@ -25,6 +25,16 @@ sudo python3 ansible/install.py
 - The Vault password is never stored by the installer.
 - The `CREATE tank` authorization is requested only before new pool creation.
 
+## Kubernetes manifests
+
+- `k0s-services/<service>/templates/*.yaml.j2` contains each service definition.
+- The owning Ansible role renders and applies those templates directly.
+- User-configurable values are in the public and encrypted configuration files.
+- NodePorts are fixed in the owning service templates.
+- The k0s release pin is in `ansible/roles/k0s/defaults/main.yml`.
+- Zabbix host settings are in `ansible/service_catalog.yml`.
+- The project is greenfield and has no configuration migrations or compatibility paths.
+
 ## Lifecycle
 
 - Create collects and validates the complete configuration.
@@ -43,7 +53,4 @@ sudo python3 ansible/install.py
 ## Operations
 
 - Read [the operations contract](docs/OPERATIONS.md) before storing irreplaceable data.
-- Record the site-specific values in [the operator record](docs/OPERATOR_RECORD.md).
 - Treat backup, public networking, and external monitoring as operator work until automation implements them.
-- Use [the recovery runbook](docs/RECOVERY.md) for disk or host failure and upgrade rollback.
-- Follow [the contribution guide](CONTRIBUTING.md) for repository changes.

@@ -1,6 +1,0 @@
-dataset_path: /tank/secure/backup/k0s/services/zabbix
-node_name: replace-with-k0s-node
-server_image: zabbix/zabbix-server-pgsql:ubuntu-7.4.12
-web_image: zabbix/zabbix-web-nginx-pgsql:ubuntu-7.4.12
-server_node_port: 31051
-web_node_port: 30080

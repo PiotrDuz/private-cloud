@@ -37,8 +37,6 @@ from install_helpers import (
     encrypt_secrets,
     ensure_runtime_directory,
     load_yaml,
-    migrate_public_configuration,
-    migrate_secrets_configuration,
     pool_exists,
     prompt_choice,
     prompt_int,
@@ -84,14 +82,13 @@ def run_installation() -> dict[str, Any]:
         stored_public = load_yaml(PUBLIC_CONFIGURATION) if PUBLIC_CONFIGURATION.is_file() else None
         existing_public = None
         if stored_public is not None:
-            existing_public = migrate_public_configuration(stored_public, default_public_configuration())
-            resolve_affine_indexer_migration(stored_public, existing_public)
+            existing_public = stored_public
             validate_public_configuration(existing_public)
         mode = choose_mode(existing_public is not None)
         if mode == "create" and existing_public is not None:
             raise InstallerError("A public configuration already exists; choose update, reapply, or rotate")
         if mode == "create" and pool_exists():
-            raise InstallerError("An existing tank pool cannot be adopted during initial migration")
+            raise InstallerError("An existing tank pool cannot be adopted during initial installation")
         if mode == "create":
             require_commands(["lsblk"])
         if mode in {"update", "reapply", "rotate"} and existing_public is None:
@@ -110,8 +107,9 @@ def run_installation() -> dict[str, Any]:
             write_password_file(old_password, OLD_VAULT_PASSWORD_FILE)
             decrypt_secrets(SECRETS_CONFIGURATION, TEMP_SECRET_FILE, VAULT_PASSWORD_FILE)
             stored_secrets = load_yaml(TEMP_SECRET_FILE)
+            validate_secrets_configuration(stored_secrets, {})
             original_secrets = _copy_mapping(stored_secrets)
-            secrets_configuration = migrate_secrets_configuration(stored_secrets)
+            secrets_configuration = stored_secrets
         else:
             secrets_configuration = {"secrets_schema_version": 1, "private_cloud_secrets": {}}
 
@@ -189,21 +187,6 @@ def choose_mode(has_public: bool) -> str:
     return prompt_choice("Configuration action", MODES, default)
 
 
-def resolve_affine_indexer_migration(stored: dict[str, Any], migrated: dict[str, Any]) -> None:
-    if stored.get("schema_version", 0) >= 2 or not migrated["private_cloud"]["stages"]["affine"]:
-        return
-    choice = prompt_choice(
-        "AFFiNE now requires Manticore (enable-manticore/disable-affine/cancel)",
-        ("enable-manticore", "disable-affine", "cancel"),
-        "cancel",
-    )
-    if choice == "enable-manticore":
-        migrated["private_cloud"]["stages"]["manticore"] = True
-    elif choice == "disable-affine":
-        migrated["private_cloud"]["stages"]["affine"] = False
-    else:
-        raise InstallerError("Configuration migration cancelled; no changes made")
-
 
 def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> dict[str, Any]:
     if existing is not None and mode in {"reapply", "rotate"}:
@@ -225,7 +208,7 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
         existing_disks = [] if mode == "create" else cloud["storage"]["disks"]
         cloud["storage"]["disks"] = prompt_disks(existing_disks)
     if "k0s" in sections:
-        for key in ("version", "sha256", "config_quota", "images_quota", "ephemeral_quota"):
+        for key in ("config_quota", "images_quota", "ephemeral_quota"):
             cloud["k0s"][key] = prompt_line(f"k0s {key}", cloud["k0s"][key])
     if "postgres" in sections:
         for key in ("volume_size", "max_ram"):
@@ -241,34 +224,26 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
     if "onlyoffice" in sections:
         for key in ("storage_size", "max_ram", "hostname"):
             cloud["onlyoffice"][key] = prompt_line(f"OnlyOffice {key}", cloud["onlyoffice"][key])
-        cloud["onlyoffice"]["node_port"] = prompt_int("OnlyOffice node_port", cloud["onlyoffice"]["node_port"])
     if "opencloud" in sections:
         for key in ("storage_size", "max_ram", "hostname"):
             cloud["opencloud"][key] = prompt_line(f"OpenCloud {key}", cloud["opencloud"][key])
-        cloud["opencloud"]["node_port"] = prompt_int("OpenCloud node_port", cloud["opencloud"]["node_port"])
     if "grist" in sections:
-        for key in ("storage_size", "max_ram", "database_name", "database_username", "default_email", "hostname"):
+        for key in ("storage_size", "max_ram", "default_email", "hostname"):
             cloud["grist"][key] = prompt_line(f"Grist {key}", cloud["grist"][key])
-        cloud["grist"]["node_port"] = prompt_int("Grist node_port", cloud["grist"]["node_port"])
     if "manticore" in sections:
         for key in ("storage_size", "max_ram"):
             cloud["manticore"][key] = prompt_line(f"Manticore {key}", cloud["manticore"][key])
     if "affine" in sections:
-        for key in ("storage_size", "max_ram", "redis_max_ram", "database_name", "database_username", "hostname"):
+        for key in ("storage_size", "max_ram", "redis_max_ram", "hostname"):
             cloud["affine"][key] = prompt_line(f"AFFiNE {key}", cloud["affine"][key])
-        cloud["affine"]["node_port"] = prompt_int("AFFiNE node_port", cloud["affine"]["node_port"])
     if "stalwart" in sections:
-        for key in ("storage_size", "max_ram", "database_name", "database_username", "domain", "forwarding_domain", "hostname", "acme_contact", "admin_username", "mailbox_username", "relay_host", "relay_username"):
+        for key in ("storage_size", "max_ram", "domain", "forwarding_domain", "hostname", "acme_contact", "admin_username", "mailbox_username", "relay_host", "relay_username"):
             cloud["stalwart"][key] = prompt_line(f"Stalwart {key}", cloud["stalwart"][key])
         cloud["stalwart"]["relay_port"] = prompt_int("Stalwart relay_port", cloud["stalwart"]["relay_port"])
         cloud["stalwart"]["relay_implicit_tls"] = prompt_bool("Stalwart relay_implicit_tls", cloud["stalwart"]["relay_implicit_tls"])
-        for key in ("https_node_port", "smtp_node_port", "submissions_node_port", "submission_node_port", "imaps_node_port"):
-            cloud["stalwart"][key] = prompt_int(f"Stalwart {key}", cloud["stalwart"][key])
     if "zabbix" in sections:
-        for key in ("storage_size", "database_name", "database_username", "hostname", "admin_username", "agent_server_active"):
+        for key in ("storage_size", "admin_username"):
             cloud["zabbix"][key] = prompt_line(f"Zabbix {key}", cloud["zabbix"][key])
-        for key in ("server_node_port", "web_node_port"):
-            cloud["zabbix"][key] = prompt_int(f"Zabbix {key}", cloud["zabbix"][key])
     return result
 
 

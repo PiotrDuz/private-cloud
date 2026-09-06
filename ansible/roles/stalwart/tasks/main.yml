@@ -4,8 +4,8 @@
     that:
       - private_cloud.stalwart.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.stalwart.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
-      - private_cloud.stalwart.database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
-      - private_cloud.stalwart.database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - stalwart_database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - stalwart_database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
       - private_cloud_secrets.stalwart.database_password | length > 0
       - private_cloud_secrets.stalwart.admin_password | length > 0
       - private_cloud_secrets.stalwart.mailbox_password | length > 0
@@ -125,7 +125,7 @@
     pod: "{{ stalwart_postgres_pods.resources[0].metadata.name }}"
     command: >-
       psql -At -U postgres -d postgres -c
-      "SELECT rolcanlogin FROM pg_roles WHERE rolname = '{{ private_cloud.stalwart.database_username | replace("'", "''") }}';"
+      "SELECT rolcanlogin FROM pg_roles WHERE rolname = '{{ stalwart_database_username | replace("'", "''") }}';"
   register: stalwart_role_exists
   changed_when: false
   no_log: true
@@ -163,7 +163,7 @@
     pod: "{{ stalwart_postgres_pods.resources[0].metadata.name }}"
     command: >-
       psql -At -U postgres -d postgres -c
-      "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '{{ private_cloud.stalwart.database_name | replace("'", "''") }}';"
+      "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '{{ stalwart_database_name | replace("'", "''") }}';"
   register: stalwart_database_exists
   changed_when: false
   no_log: true
@@ -173,7 +173,7 @@
     kubeconfig: "{{ stalwart_kubeconfig }}"
     namespace: "{{ stalwart_namespace }}"
     pod: "{{ stalwart_postgres_pods.resources[0].metadata.name }}"
-    command: createdb -U postgres -O {{ private_cloud.stalwart.database_username }} {{ private_cloud.stalwart.database_name }}
+    command: createdb -U postgres -O {{ stalwart_database_username }} {{ stalwart_database_name }}
   when: stalwart_database_exists.stdout | trim == ''
   changed_when: true
   no_log: true
@@ -185,10 +185,10 @@
     pod: "{{ stalwart_postgres_pods.resources[0].metadata.name }}"
     command: >-
       psql -At -U postgres -d postgres -c
-      "ALTER DATABASE \"{{ private_cloud.stalwart.database_name }}\" OWNER TO \"{{ private_cloud.stalwart.database_username }}\";"
+      "ALTER DATABASE \"{{ stalwart_database_name }}\" OWNER TO \"{{ stalwart_database_username }}\";"
   when:
     - stalwart_database_exists.stdout | trim != ''
-    - stalwart_database_exists.stdout | trim != private_cloud.stalwart.database_username
+    - stalwart_database_exists.stdout | trim != stalwart_database_username
   changed_when: true
   no_log: true
 
@@ -205,26 +205,11 @@
       {{ (lookup('template', 'plan.ndjson.j2') ~ lookup('template', 'runtime-secret.yml.j2')) | hash('sha256') }}
   no_log: true
 
-- name: Render Stalwart manifests from the authoritative base
+- name: Render Stalwart manifests from Jinja templates
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
   vars:
     manifest_service: stalwart
-    manifest_base: "{{ role_path }}/../../../k0s-services/stalwart/kustomize/base"
-    manifest_kustomize_command: "{{ stalwart_kustomize_command }}"
-    manifest_values:
-      dataset_path: "{{ stalwart_dataset_mountpoint }}"
-      node_name: "{{ stalwart_node_name }}"
-      image: "{{ stalwart_image }}"
-      cli_image: "{{ stalwart_cli_image }}"
-      memory: "{{ private_cloud.stalwart.max_ram }}"
-      hostname: "{{ private_cloud.stalwart.hostname }}"
-      database_name: "{{ private_cloud.stalwart.database_name }}"
-      database_username: "{{ private_cloud.stalwart.database_username }}"
-      https_node_port: "{{ private_cloud.stalwart.https_node_port | int }}"
-      smtp_node_port: "{{ private_cloud.stalwart.smtp_node_port | int }}"
-      submissions_node_port: "{{ private_cloud.stalwart.submissions_node_port | int }}"
-      submission_node_port: "{{ private_cloud.stalwart.submission_node_port | int }}"
-      imaps_node_port: "{{ private_cloud.stalwart.imaps_node_port | int }}"
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/stalwart/templates"
 
 - name: Select Stalwart manifest stages
   ansible.builtin.set_fact:

@@ -4,7 +4,7 @@
     method: POST
     body_format: json
     headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
-    body: {jsonrpc: '2.0', method: host.get, params: {output: [hostid, host, status, tls_accept, tls_connect], selectGroups: [groupid], selectParentTemplates: [templateid], filter: {host: ["{{ private_cloud.zabbix.hostname }}"]}}, id: 14}
+    body: {jsonrpc: '2.0', method: host.get, params: {output: [hostid, host, status, tls_accept, tls_connect], selectGroups: [groupid], selectParentTemplates: [templateid], filter: {host: ["{{ private_cloud_zabbix_hostname }}"]}}, id: 14}
     status_code: 200
     return_content: true
   register: zabbix_host_get
@@ -28,8 +28,8 @@
       method: host.create
       params:
         groups: [{groupid: "{{ zabbix_group_id }}"}]
-        host: "{{ private_cloud.zabbix.hostname }}"
-        name: "{{ private_cloud.zabbix.hostname }}"
+        host: "{{ private_cloud_zabbix_hostname }}"
+        name: "{{ private_cloud_zabbix_hostname }}"
         status: 0
         templates: "{{ zabbix_template_objects }}"
         tls_accept: 1
@@ -59,8 +59,8 @@
       method: host.update
       params:
         hostid: "{{ zabbix_host_id }}"
-        host: "{{ private_cloud.zabbix.hostname }}"
-        name: "{{ private_cloud.zabbix.hostname }}"
+        host: "{{ private_cloud_zabbix_hostname }}"
+        name: "{{ private_cloud_zabbix_hostname }}"
         status: 0
         tls_accept: 1
         tls_connect: 1

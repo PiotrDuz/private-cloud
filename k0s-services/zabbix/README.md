@@ -2,8 +2,7 @@
 
 The Zabbix server and web frontend are managed by `ansible/roles/zabbix_server`.
 
-- The Kustomize base is the authoritative Kubernetes workload definition.
-- Render the public example with `python3 ansible/render_manifests.py zabbix --base k0s-services/zabbix/kustomize/base --values k0s-services/zabbix/site-values.example.yaml`.
+- Ansible renders the `templates/*.yaml.j2` workload files during deployment.
 
 - Configure `private_cloud.zabbix` in the public configuration.
 - Store database and administrator passwords in the encrypted configuration.
@@ -11,8 +10,10 @@ The Zabbix server and web frontend are managed by `ansible/roles/zabbix_server`.
 - The service dataset is `tank/secure/backup/k0s/services/zabbix`.
 - The dataset uses the configured quota.
 - The local PV and PVC advertise a fixed `10Ti` capacity.
-- Zabbix Server uses the configured server NodePort.
-- The web frontend uses the configured web NodePort.
+- Zabbix Server uses fixed NodePort `31051`.
+- The web frontend uses fixed NodePort `30080`.
+- The monitored host name is fixed as `private-cloud-zabbix`.
+- The host agent connects to `127.0.0.1:31051`.
 - The role imports the ZFS and memory ECC templates.
 - The role links the active Linux, SMART, ZFS, and ECC templates.
 - Publish the frontend through HTTPS and a protected network.

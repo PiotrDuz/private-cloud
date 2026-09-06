@@ -1,1 +1,1 @@
-ALTER ROLE "{{ private_cloud.zabbix.database_username }}" LOGIN PASSWORD '{{ private_cloud_secrets.zabbix.database_password | replace("'", "''") }}';
+ALTER ROLE "{{ zabbix_database_username }}" LOGIN PASSWORD '{{ private_cloud_secrets.zabbix.database_password | replace("'", "''") }}';

@@ -15,6 +15,7 @@
     5. install k0s
     6. make sure k0s starts after zfs is muounted and unlocked on system startup
     7. Set explicit quotas for config, images, and ephemeral leaf datasets
+    8. Keep Kubernetes manifests as Jinja templates under k0s-services and render them directly with Ansible.
 3. Setup postgres service (in k0s-services parent folder)
     1. create postgres zfs dataset under tank/secure/backup/k0s/services/postgres
     2. Tune dataset and postgres config. Use URL as a reference, but implement only featured mentioned below: https://vadosware.io/post/everything-ive-seen-on-optimizing-postgres-on-zfs-on-linux/#tuning-shared_buffers
@@ -103,6 +104,6 @@
     2. Create an AFFiNE database with pgvector enabled in the shared PostgreSQL service
     3. Configure the server-side indexer to use Manticore Search
     4. Use Redis for Affine
-    5. deploy a versioned migration Job
+    5. Prepare the fresh AFFiNE database schema before the server starts
     6. Persist AFFiNE blobs and configuration on its PV
     7. Expose AFFiNE for the user-provided domain through a valid TLS reverse proxy

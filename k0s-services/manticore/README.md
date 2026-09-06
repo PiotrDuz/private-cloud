@@ -2,8 +2,7 @@
 
 The Manticore service is managed by `ansible/roles/manticore`.
 
-- The Kustomize base is the authoritative Kubernetes workload definition.
-- Render the public example with `python3 ansible/render_manifests.py manticore --base k0s-services/manticore/kustomize/base --values k0s-services/manticore/site-values.example.yaml`.
+- Ansible renders the `templates/*.yaml.j2` workload files during deployment.
 - Configure `private_cloud.manticore` in the public configuration.
 - Run `sudo python3 ansible/install.py` from the repository root.
 - The service dataset is `tank/secure/backup/k0s/services/manticore`.

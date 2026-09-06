@@ -1,19 +1,34 @@
 ---
-- name: Render Kubernetes manifests with Kustomize for {{ manifest_service }}
-  ansible.builtin.command:
-    argv:
-      - python3
-      - "{{ playbook_dir }}/render_manifests.py"
-      - "{{ manifest_service }}"
-      - --base
-      - "{{ manifest_base }}"
-      - --kustomize-command
-      - "{{ manifest_kustomize_command | to_json }}"
-    stdin: "{{ manifest_values | to_nice_yaml }}"
-    stdin_add_newline: true
-  register: private_cloud_rendered_manifest_command
+- name: Find Kubernetes manifest templates for {{ manifest_service }}
+  ansible.builtin.set_fact:
+    private_cloud_manifest_templates: >-
+      {{ query('ansible.builtin.fileglob', manifest_template_dir ~ '/*.yaml.j2') | sort }}
   changed_when: false
 
-- name: Parse Kubernetes manifests for {{ manifest_service }}
+- name: Require Kubernetes manifest templates for {{ manifest_service }}
+  ansible.builtin.assert:
+    that: private_cloud_manifest_templates | length > 0
+    fail_msg: "No Kubernetes manifest templates found in {{ manifest_template_dir }}."
+
+- name: Initialize rendered Kubernetes manifests for {{ manifest_service }}
   ansible.builtin.set_fact:
-    private_cloud_rendered_manifests: "{{ private_cloud_rendered_manifest_command.stdout | from_yaml_all | list }}"
+    private_cloud_rendered_manifests: []
+  changed_when: false
+
+- name: Render Kubernetes manifest templates for {{ manifest_service }}
+  ansible.builtin.set_fact:
+    private_cloud_rendered_manifests: >-
+      {{ private_cloud_rendered_manifests
+         + (lookup('ansible.builtin.template', item) | from_yaml_all | select | list) }}
+  loop: "{{ private_cloud_manifest_templates }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  no_log: true
+
+- name: Reject Secret resources in rendered {{ manifest_service }} manifests
+  ansible.builtin.assert:
+    that:
+      - private_cloud_rendered_manifests | selectattr('kind', 'equalto', 'Secret') | list | length == 0
+      - private_cloud_rendered_manifests | selectattr('kind', 'equalto', 'List') | map(attribute='items') | flatten | selectattr('kind', 'equalto', 'Secret') | list | length == 0
+    fail_msg: "Public Kubernetes manifest templates cannot emit Secret resources."
+  no_log: true

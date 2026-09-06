@@ -1,1 +1,1 @@
-ALTER ROLE "{{ private_cloud.grist.database_username }}" LOGIN PASSWORD '{{ private_cloud_secrets.grist.database_password | replace("'", "''") }}';
+ALTER ROLE "{{ grist_database_username }}" LOGIN PASSWORD '{{ private_cloud_secrets.grist.database_password | replace("'", "''") }}';

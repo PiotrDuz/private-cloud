@@ -12,9 +12,4 @@ The Bleve storage is managed by `ansible/roles/bleve`.
 
 ## Manifest review
 
-- The Kustomize base is the authoritative public workload definition.
-- Install Kustomize to render without root or a cluster.
-
-```bash
-python3 ansible/render_manifests.py bleve --base k0s-services/bleve/kustomize/base --values k0s-services/bleve/site-values.example.yaml
-```
+- Ansible renders the `templates/*.yaml.j2` workload files during deployment.

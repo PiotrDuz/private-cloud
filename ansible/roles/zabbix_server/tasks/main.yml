@@ -3,19 +3,14 @@
   ansible.builtin.assert:
     that:
       - private_cloud.zabbix.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
-      - private_cloud.zabbix.database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
-      - private_cloud.zabbix.database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
-      - private_cloud.zabbix.database_name | lower not in ['postgres', 'template0', 'template1']
-      - private_cloud.zabbix.database_username | lower not in ['postgres', 'replication']
-      - not (private_cloud.zabbix.database_username | lower).startswith('pg_')
-      - private_cloud.zabbix.server_node_port | int >= 30000
-      - private_cloud.zabbix.server_node_port | int <= 32767
-      - private_cloud.zabbix.web_node_port | int >= 30000
-      - private_cloud.zabbix.web_node_port | int <= 32767
-      - private_cloud.zabbix.server_node_port | int != private_cloud.zabbix.web_node_port | int
-      - private_cloud.zabbix.hostname | length > 0
-      - private_cloud.zabbix.hostname | length <= 128
-      - private_cloud.zabbix.hostname is match('^[^\r\n]+$')
+      - zabbix_database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - zabbix_database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - zabbix_database_name | lower not in ['postgres', 'template0', 'template1']
+      - zabbix_database_username | lower not in ['postgres', 'replication']
+      - not (zabbix_database_username | lower).startswith('pg_')
+      - private_cloud_zabbix_hostname | length > 0
+      - private_cloud_zabbix_hostname | length <= 128
+      - private_cloud_zabbix_hostname is match('^[^\r\n]+$')
       - private_cloud.zabbix.admin_username is match('^[^\r\n]+$')
       - private_cloud_secrets.zabbix.database_password | length > 0
       - private_cloud_secrets.zabbix.admin_password | length > 0
@@ -113,8 +108,8 @@
 - name: Reject incompatible unmanaged Zabbix database secret
   ansible.builtin.assert:
     that:
-      - zabbix_existing_storage.results[2].resources | length == 0 or (zabbix_existing_storage.results[2].resources[0].data.POSTGRES_DB is defined and zabbix_existing_storage.results[2].resources[0].data.POSTGRES_DB | b64decode == private_cloud.zabbix.database_name)
-      - zabbix_existing_storage.results[2].resources | length == 0 or (zabbix_existing_storage.results[2].resources[0].data.POSTGRES_USER is defined and zabbix_existing_storage.results[2].resources[0].data.POSTGRES_USER | b64decode == private_cloud.zabbix.database_username)
+      - zabbix_existing_storage.results[2].resources | length == 0 or (zabbix_existing_storage.results[2].resources[0].data.POSTGRES_DB is defined and zabbix_existing_storage.results[2].resources[0].data.POSTGRES_DB | b64decode == zabbix_database_name)
+      - zabbix_existing_storage.results[2].resources | length == 0 or (zabbix_existing_storage.results[2].resources[0].data.POSTGRES_USER is defined and zabbix_existing_storage.results[2].resources[0].data.POSTGRES_USER | b64decode == zabbix_database_username)
       - not zabbix_database_secret_present | bool or zabbix_database_secret_password_matches | bool or zabbix_database_secret_managed | bool
     fail_msg: Existing Zabbix database secret conflicts with the configured credentials.
   no_log: true
@@ -142,7 +137,7 @@
     pod: "{{ zabbix_postgres_pods.resources[0].metadata.name }}"
     command: >-
       psql -At -U postgres -d postgres -c
-      "SELECT rolcanlogin FROM pg_roles WHERE rolname = '{{ private_cloud.zabbix.database_username | replace("'", "''") }}';"
+      "SELECT rolcanlogin FROM pg_roles WHERE rolname = '{{ zabbix_database_username | replace("'", "''") }}';"
   register: zabbix_role_exists
   changed_when: false
   no_log: true
@@ -180,7 +175,7 @@
     pod: "{{ zabbix_postgres_pods.resources[0].metadata.name }}"
     command: >-
       psql -At -U postgres -d postgres -c
-      "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '{{ private_cloud.zabbix.database_name | replace("'", "''") }}';"
+      "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '{{ zabbix_database_name | replace("'", "''") }}';"
   register: zabbix_database_exists
   changed_when: false
   no_log: true
@@ -190,7 +185,7 @@
     kubeconfig: "{{ zabbix_kubeconfig }}"
     namespace: "{{ zabbix_namespace }}"
     pod: "{{ zabbix_postgres_pods.resources[0].metadata.name }}"
-    command: createdb -U postgres -O {{ private_cloud.zabbix.database_username }} {{ private_cloud.zabbix.database_name }}
+    command: createdb -U postgres -O {{ zabbix_database_username }} {{ zabbix_database_name }}
   when: zabbix_database_exists.stdout | trim == ''
   changed_when: true
   no_log: true
@@ -202,10 +197,10 @@
     pod: "{{ zabbix_postgres_pods.resources[0].metadata.name }}"
     command: >-
       psql -At -U postgres -d postgres -c
-      "ALTER DATABASE \"{{ private_cloud.zabbix.database_name }}\" OWNER TO \"{{ private_cloud.zabbix.database_username }}\";"
+      "ALTER DATABASE \"{{ zabbix_database_name }}\" OWNER TO \"{{ zabbix_database_username }}\";"
   when:
     - zabbix_database_exists.stdout | trim != ''
-    - zabbix_database_exists.stdout | trim != private_cloud.zabbix.database_username
+    - zabbix_database_exists.stdout | trim != zabbix_database_username
   changed_when: true
   no_log: true
 
@@ -218,19 +213,11 @@
   when: not zabbix_database_secret_present | bool or not zabbix_database_secret_managed | bool or not zabbix_database_secret_password_matches | bool
   no_log: true
 
-- name: Render Zabbix manifests from the authoritative base
+- name: Render Zabbix manifests from Jinja templates
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
   vars:
     manifest_service: zabbix
-    manifest_base: "{{ role_path }}/../../../k0s-services/zabbix/kustomize/base"
-    manifest_kustomize_command: "{{ zabbix_kustomize_command }}"
-    manifest_values:
-      dataset_path: "{{ zabbix_dataset_mountpoint }}"
-      node_name: "{{ zabbix_node_name }}"
-      server_image: "{{ zabbix_server_image }}"
-      web_image: "{{ zabbix_web_image }}"
-      server_node_port: "{{ private_cloud.zabbix.server_node_port | int }}"
-      web_node_port: "{{ private_cloud.zabbix.web_node_port | int }}"
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/zabbix/templates"
 
 - name: Select Zabbix manifest stages
   ansible.builtin.set_fact:
@@ -314,7 +301,7 @@
 
 - name: Verify Zabbix API readiness
   ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ private_cloud.zabbix.web_node_port }}/api_jsonrpc.php"
+    url: "http://127.0.0.1:30080/api_jsonrpc.php"
     method: POST
     body_format: json
     body: {jsonrpc: '2.0', method: apiinfo.version, params: {}, id: 1}

@@ -1,4 +1,8 @@
 ---
+# Commit Zabbix host endpoint changes here.
+private_cloud_zabbix_hostname: private-cloud-zabbix
+private_cloud_zabbix_agent_server_active: 127.0.0.1:31051
+
 private_cloud_dataset_catalog:
   - {name: config, stage: k0s, dataset: tank/secure/backup/k0s/config, color: 42A5F5}
   - {name: images, stage: k0s, dataset: tank/secure/no-backup/k0s/images, color: 66BB6A}

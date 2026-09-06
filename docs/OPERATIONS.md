@@ -6,7 +6,6 @@ The installer creates a RAIDZ1 pool, an encrypted dataset hierarchy, quotas, loc
 
 The installer does not currently schedule snapshots, replicate backups, restore data, configure public DNS, terminate application TLS, change firewall or NAT rules, configure an external heartbeat, or deliver alert notifications.
 
-Complete [the operator record](OPERATOR_RECORD.md) before production use.
 
 ## Implementation references
 
@@ -15,11 +14,14 @@ Complete [the operator record](OPERATOR_RECORD.md) before production use.
 | Pool creation, encryption key, datasets, and scrub | [ZFS role](../ansible/roles/zfs/tasks/main.yml) |
 | k0s datasets, quotas, and controller setup | [k0s role](../ansible/roles/k0s/tasks/main.yml) |
 | PostgreSQL image and ZFS properties | [PostgreSQL defaults](../ansible/roles/postgres/defaults/main.yml) |
-| PostgreSQL durability and resource settings | [PostgreSQL workload](../k0s-services/postgres/kustomize/base/deployment.yaml) |
+| PostgreSQL durability and resource settings | [PostgreSQL workload](../k0s-services/postgres/templates/deployment.yaml.j2) |
 | Stalwart ACME, domains, accounts, and relay plan | [Stalwart plan](../ansible/roles/stalwart/templates/plan.ndjson.j2) |
-| Stalwart public NodePorts | [Stalwart service](../k0s-services/stalwart/kustomize/base/public-service.yaml) |
-| Draw.io extension download and remote editor | [OpenCloud workload](../k0s-services/opencloud/kustomize/base/deployment.yaml) and [app configuration](../k0s-services/opencloud/kustomize/base/apps-configmap.yaml) |
-| Site values and stage selection | [Example configuration](../ansible/config/private-cloud.example.yml) |
+| Stalwart public NodePorts | [Stalwart service](../k0s-services/stalwart/templates/public-service.yaml.j2) |
+| Draw.io extension download and remote editor | [OpenCloud workload](../k0s-services/opencloud/templates/deployment.yaml.j2) and [app configuration](../k0s-services/opencloud/templates/apps-configmap.yaml.j2) |
+| Public values, secrets, and stage selection | [Example configuration](../ansible/config/private-cloud.example.yml) |
+| Jinja manifest rendering | [Shared renderer](../ansible/tasks/render_manifests.yml) |
+| k0s release pin | [k0s defaults](../ansible/roles/k0s/defaults/main.yml) |
+| Zabbix host settings | [Service catalog](../ansible/service_catalog.yml) |
 
 ## Backup and restore
 
@@ -51,8 +53,6 @@ A valid recovery point must preserve database and file relationships:
 - Rebuild disposable indexes only after their sources are authoritative.
 - Reject a mixed-time restore unless an application-specific recovery procedure proves it safe.
 
-AFFiNE migration state and Stalwart message metadata are examples where restoring only files or only the database can produce an inconsistent service.
-
 ### Recovery material
 
 Keep encrypted, offline copies of these items outside the managed host:
@@ -64,7 +64,7 @@ Keep encrypted, offline copies of these items outside the managed host:
 - The repository revision used for deployment.
 - Host bootstrap, network, firewall, and DNS records.
 - Backup credentials and restoration instructions.
-- The completed operator record.
+- Deployment records for the host, network, and recovery process.
 
 Store the Vault password, ZFS key, and backup credentials so one compromised copy does not expose every backup.
 
@@ -82,11 +82,11 @@ A k0s backup does not include application PV data, so it cannot replace the coor
 
 Copy the k0s archive to the independent destination and protect it as sensitive cluster material.
 
-Restore it with the matching k0s version and data-directory layout before rebinding application volumes.
+Restore it with the k0s version pinned in the deployed repository revision and the matching data-directory layout before rebinding application volumes.
 
 ## Public networking
 
-The Kubernetes manifests expose NodePorts, but the repository does not provide the public edge.
+The Kubernetes manifests expose fixed NodePorts, but the repository does not provide the public edge.
 
 Before exposure, the operator must provide:
 
@@ -123,7 +123,7 @@ Do not deploy competing TCP 443 forwards.
 
 Forward only the mail ports required by the accepted client and delivery design.
 
-The current manifests expose SMTP 25, submissions 465, submission 587, IMAPS 993, and HTTPS 443 through configured NodePorts.
+The current manifests expose SMTP 25, submissions 465, submission 587, IMAPS 993, and HTTPS 443 through fixed NodePorts.
 
 Publish and verify all of these records:
 
@@ -164,11 +164,10 @@ Any host, pool, controller, or PostgreSQL outage can affect every service.
 
 RAIDZ1 is a [single-parity layout](https://openzfs.github.io/openzfs-docs/man/master/7/zpoolconcepts.7.html) that tolerates one unavailable member in the vdev, but it is not a host-level availability mechanism or a backup.
 
-The automation fixes RAIDZ1 as the pool topology, so production acceptance requires a written rationale in the operator record.
+The automation fixes RAIDZ1 as the pool topology, so production acceptance requires a written rationale in the deployment records.
 
 Do not accept RAIDZ1 until its single-parity exposure and expected resilver time fit the recorded RPO and RTO.
 
-Follow [the recovery runbook](RECOVERY.md) for replacement and recovery ordering.
 
 ## PostgreSQL durability and upgrades
 
@@ -183,28 +182,6 @@ Re-enable `full_page_writes` before moving PostgreSQL through a storage layer wh
 Disabled data checksums are a separate loss of corruption detection and are not justified by the full-page-write assumption; PostgreSQL provides [`pg_checksums`](https://www.postgresql.org/docs/current/app-pgchecksums.html) to manage and verify them on a stopped cluster.
 
 Record and periodically review both decisions.
-
-Do not change the PostgreSQL major image family through a routine reapply.
-
-Before a major upgrade:
-
-- Confirm every application and extension supports the target major version.
-- Create and verify a coordinated recovery point.
-- Rehearse `pg_upgrade` or logical dump and restore on equivalent data.
-- Budget temporary disk space and downtime.
-- Retain the old data directory without mutation until acceptance passes.
-- Validate every database, role, extension, and application after migration.
-
-PostgreSQL documents [`pg_upgrade`](https://www.postgresql.org/docs/current/pgupgrade.html) for major-version storage changes.
-
-For an application upgrade with a schema migration:
-
-- Capture the coordinated recovery point before the migration.
-- Keep the previous application image and configuration available.
-- Do not start the old image against a partially migrated schema.
-- Treat an uncertain migration result as failed.
-- Restore both the database and associated files before retrying.
-- Run service acceptance before deleting the recovery point.
 
 ## Capacity contract
 
@@ -221,7 +198,7 @@ Before enabling stages, reserve capacity for:
 - The operating system and system processes.
 - k0s, kubelet, and container runtime processes.
 - ZFS ARC.
-- Kubernetes workload requests and temporary migration Jobs.
+- Kubernetes workload requests and initialization Jobs.
 - CPU peaks during indexing, extraction, office conversion, and recovery.
 - Container images and unpacked image layers.
 - Container logs and application logs.
