@@ -12,10 +12,17 @@ spec:
     spec:
       automountServiceAccountToken: false
       restartPolicy: OnFailure
+      hostUsers: false
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: database-preparation
           image: ghcr.io/toeverything/affine:0.27.3@sha256:d9d145f9f47b862d1fa96e2a887052b5762846237f75fbb077be990ef646e05c
           imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: false
           command: [sh, -c, 'node ./scripts/self-host-predeploy.js']
           env:
             - {name: REDIS_SERVER_HOST, value: affine-redis}

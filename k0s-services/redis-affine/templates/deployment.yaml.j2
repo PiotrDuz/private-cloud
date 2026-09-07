@@ -1,19 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: affine-redis
+  name: redis-affine
   namespace: private-cloud
-  labels: {app.kubernetes.io/name: affine-redis}
+  labels:
+    app.kubernetes.io/name: redis-affine
 spec:
   replicas: 1
-  strategy: {type: Recreate}
+  strategy:
+    type: Recreate
   selector:
-    matchLabels: {app.kubernetes.io/name: affine-redis}
+    matchLabels:
+      app.kubernetes.io/name: redis-affine
   template:
     metadata:
-      labels: {app.kubernetes.io/name: affine-redis}
+      labels:
+        app.kubernetes.io/name: redis-affine
     spec:
-      serviceAccountName: affine-redis
+      serviceAccountName: redis-affine
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -22,7 +26,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: redis
-          image: redis:8.2.1-alpine
+          image: {{ private_cloud.redis_affine.image | to_json }}
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
@@ -33,8 +37,8 @@ spec:
           ports:
             - {name: redis, containerPort: 6379, protocol: TCP}
           resources:
-            requests: {cpu: 100m, memory: {{ private_cloud.affine.redis_max_ram | to_json }}, ephemeral-storage: 128Mi}
-            limits: {cpu: 1, memory: {{ private_cloud.affine.redis_max_ram | to_json }}, ephemeral-storage: 1Gi}
+            requests: {cpu: 100m, memory: {{ private_cloud.redis_affine.max_ram | to_json }}, ephemeral-storage: 128Mi}
+            limits: {cpu: 1, memory: {{ private_cloud.redis_affine.max_ram | to_json }}, ephemeral-storage: 1Gi}
           startupProbe:
             exec: {command: [redis-cli, ping]}
             periodSeconds: 10
@@ -52,3 +56,8 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 5
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: data
+          emptyDir: {}

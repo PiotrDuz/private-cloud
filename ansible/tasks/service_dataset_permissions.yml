@@ -1,0 +1,16 @@
+---
+- name: Set service dataset ownership
+  ansible.builtin.file:
+    path: "{{ private_cloud_service_dataset_mountpoint }}"
+    state: directory
+    owner: "{{ private_cloud_service_dataset_owner }}"
+    group: "{{ private_cloud_service_dataset_group }}"
+    recurse: true
+
+- name: Restrict the service dataset root
+  ansible.builtin.file:
+    path: "{{ private_cloud_service_dataset_mountpoint }}"
+    state: directory
+    owner: "{{ private_cloud_service_dataset_owner }}"
+    group: "{{ private_cloud_service_dataset_group }}"
+    mode: '0750'

@@ -11,6 +11,7 @@ The AFFiNE service is managed by `ansible/roles/affine`.
 - The dataset uses the configured quota.
 - The local PV and PVC advertise a fixed `10Ti` capacity.
 - The PV stores AFFiNE blobs and configuration.
+- AFFiNE runs as UID 0 inside a user namespace mapped to an unprivileged host UID.
 - AFFiNE uses a dedicated database on the shared pgvector-enabled PostgreSQL service.
 - AFFiNE uses the cluster-local Manticore service for full-text indexing.
 - Redis remains ephemeral and is rebuilt after restart.

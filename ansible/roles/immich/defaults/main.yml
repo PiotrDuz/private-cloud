@@ -1,0 +1,16 @@
+---
+immich_namespace: private-cloud
+immich_service_name: immich
+immich_machine_learning_service_name: immich-machine-learning
+immich_valkey_service_name: immich-valkey
+immich_database_name: immich
+immich_database_username: immich
+immich_postgres_service: postgres
+immich_secret_name: immich-credentials
+immich_dataset: tank/secure/backup/k0s/services/immich
+immich_dataset_mountpoint: /tank/secure/backup/k0s/services/immich
+immich_pv_name: immich-data
+immich_pvc_name: immich-data
+immich_pv_capacity: 10Ti
+immich_pgvector_version: 0.8.6
+immich_kubeconfig: /run/private-cloud/kubeconfig

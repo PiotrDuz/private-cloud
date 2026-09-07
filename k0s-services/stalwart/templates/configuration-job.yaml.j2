@@ -18,10 +18,20 @@ spec:
       serviceAccountName: stalwart-configuration
       automountServiceAccountToken: false
       restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: configure
           image: ghcr.io/stalwartlabs/cli:latest@sha256:fe199affac1d120a8c200ef39ae629765a2976270e0453575c1caf906ee15b52
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
           args: [apply, --file, /configuration/plan.ndjson, --json]
           env:
             - {name: STALWART_URL, value: "http://stalwart:8080"}

@@ -1,0 +1,1 @@
+CREATE ROLE "{{ immich_database_username }}" LOGIN PASSWORD '{{ private_cloud_secrets.immich.database_password | replace("'", "''") }}';

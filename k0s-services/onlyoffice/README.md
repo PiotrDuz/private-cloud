@@ -10,6 +10,7 @@ The OnlyOffice service is managed by `ansible/roles/onlyoffice`.
 - The local PV and PVC advertise a fixed `10Ti` capacity.
 - The PV retains OnlyOffice logs, certificates, file cache, and internal database.
 - The Community Edition container includes its required internal dependencies.
+- OnlyOffice runs as UID 0 inside a user namespace mapped to an unprivileged host UID.
 - The service exposes WOPI discovery inside the cluster and through a NodePort.
 - Forward the OnlyOffice hostname to fixed NodePort `30082` through the TLS proxy.
 - Preserve WebSockets and set `X-Forwarded-Proto` to `https` in the TLS proxy.

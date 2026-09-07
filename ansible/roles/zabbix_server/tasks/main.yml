@@ -56,6 +56,13 @@
     private_cloud_service_dataset_mountpoint: "{{ zabbix_dataset_mountpoint }}"
     private_cloud_service_storage_size: "{{ private_cloud.zabbix.storage_size }}"
 
+- name: Prepare Zabbix dataset permissions
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_permissions.yml"
+  vars:
+    private_cloud_service_dataset_mountpoint: "{{ zabbix_dataset_mountpoint }}"
+    private_cloud_service_dataset_owner: '1997'
+    private_cloud_service_dataset_group: '1995'
+
 - name: Verify the Zabbix service dataset quota
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_quota.yml"
   vars:

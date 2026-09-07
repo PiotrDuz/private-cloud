@@ -20,12 +20,21 @@ spec:
       serviceAccountName: manticore
       automountServiceAccountToken: false
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
         fsGroup: 999
         fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: manticore
           image: manticoresearch/manticore:29.0.2
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
           ports:
             - {name: http, containerPort: 9308, protocol: TCP}
           resources:

@@ -41,6 +41,13 @@
     private_cloud_service_dataset_mountpoint: "{{ meilisearch_dataset_mountpoint }}"
     private_cloud_service_storage_size: "{{ private_cloud.meilisearch.storage_size }}"
 
+- name: Prepare Meilisearch dataset permissions
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_permissions.yml"
+  vars:
+    private_cloud_service_dataset_mountpoint: "{{ meilisearch_dataset_mountpoint }}"
+    private_cloud_service_dataset_owner: '1000'
+    private_cloud_service_dataset_group: '1000'
+
 - name: Verify the Meilisearch service dataset quota
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_quota.yml"
   vars:

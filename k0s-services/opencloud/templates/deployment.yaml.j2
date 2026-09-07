@@ -48,6 +48,7 @@ spec:
               fi
           securityContext:
             runAsNonRoot: true
+            privileged: false
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL]}
             seccompProfile: {type: RuntimeDefault}
@@ -65,6 +66,7 @@ spec:
             - opencloud init || true; opencloud server
           securityContext:
             runAsNonRoot: true
+            privileged: false
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL]}
             seccompProfile: {type: RuntimeDefault}

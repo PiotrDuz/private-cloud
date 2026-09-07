@@ -35,6 +35,9 @@
       - onlyoffice_nodes.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
     fail_msg: "Managed storage host {{ ansible_hostname }} is not a Ready Kubernetes node for OnlyOffice."
 
+- name: Verify OnlyOffice user namespace support
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/user_namespace_compatibility.yml"
+
 - name: Prepare the OnlyOffice service dataset
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
   vars:

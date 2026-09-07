@@ -61,6 +61,13 @@
   ansible.builtin.command: mountpoint -q {{ postgres_dataset_mountpoint }}
   changed_when: false
 
+- name: Prepare PostgreSQL dataset permissions
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_permissions.yml"
+  vars:
+    private_cloud_service_dataset_mountpoint: "{{ postgres_dataset_mountpoint }}"
+    private_cloud_service_dataset_owner: '999'
+    private_cloud_service_dataset_group: '999'
+
 - name: Resolve a Ready Kubernetes node
   kubernetes.core.k8s_info:
     kubeconfig: "{{ postgres_kubeconfig }}"

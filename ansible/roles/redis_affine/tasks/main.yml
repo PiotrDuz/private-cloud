@@ -1,0 +1,57 @@
+---
+- name: Validate Redis for AFFiNE inputs
+  ansible.builtin.assert:
+    that:
+      - private_cloud.redis_affine.image is string
+      - private_cloud.redis_affine.image | length > 0
+      - private_cloud.redis_affine.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - (private_cloud.redis_affine.max_ram | human_to_bytes | int) >= 134217728
+    fail_msg: Redis for AFFiNE configuration is invalid.
+
+- name: Prepare the Redis for AFFiNE kubeconfig
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"
+  vars:
+    private_cloud_kubeconfig: "{{ redis_affine_kubeconfig }}"
+
+- name: Render Redis for AFFiNE manifests from Jinja templates
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: redis-affine
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/redis-affine/templates"
+
+- name: Apply Redis for AFFiNE manifests
+  kubernetes.core.k8s:
+    kubeconfig: "{{ redis_affine_kubeconfig }}"
+    state: present
+    definition: "{{ private_cloud_rendered_manifests }}"
+
+- name: Wait for Redis for AFFiNE deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ redis_affine_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ redis_affine_service_name }}"
+    namespace: "{{ redis_affine_namespace }}"
+  register: redis_affine_deployment
+  until:
+    - redis_affine_deployment.resources | length > 0
+    - redis_affine_deployment.resources[0].status.observedGeneration | default(0) | int >= redis_affine_deployment.resources[0].metadata.generation | int
+    - redis_affine_deployment.resources[0].status.updatedReplicas | default(0) | int == redis_affine_deployment.resources[0].spec.replicas | default(1) | int
+    - redis_affine_deployment.resources[0].status.readyReplicas | default(0) | int == redis_affine_deployment.resources[0].spec.replicas | default(1) | int
+    - redis_affine_deployment.resources[0].status.availableReplicas | default(0) | int == redis_affine_deployment.resources[0].spec.replicas | default(1) | int
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Wait for Redis for AFFiNE service endpoint
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ redis_affine_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    name: "{{ redis_affine_service_name }}"
+    namespace: "{{ redis_affine_namespace }}"
+  register: redis_affine_endpoint
+  until: redis_affine_endpoint.resources | length > 0 and (redis_affine_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0)
+  retries: 60
+  delay: 5
+  changed_when: false

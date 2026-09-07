@@ -46,6 +46,13 @@
     private_cloud_service_dataset_mountpoint: "{{ stalwart_dataset_mountpoint }}"
     private_cloud_service_storage_size: "{{ private_cloud.stalwart.storage_size }}"
 
+- name: Prepare Stalwart dataset permissions
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_permissions.yml"
+  vars:
+    private_cloud_service_dataset_mountpoint: "{{ stalwart_dataset_mountpoint }}"
+    private_cloud_service_dataset_owner: '2000'
+    private_cloud_service_dataset_group: '2000'
+
 - name: Verify the Stalwart service dataset quota
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_quota.yml"
   vars:

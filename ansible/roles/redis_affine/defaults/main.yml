@@ -1,0 +1,4 @@
+---
+redis_affine_namespace: private-cloud
+redis_affine_service_name: redis-affine
+redis_affine_kubeconfig: /run/private-cloud/kubeconfig

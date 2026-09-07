@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-affine
+  namespace: private-cloud
+  labels:
+    app.kubernetes.io/name: redis-affine
+spec:
+  selector:
+    app.kubernetes.io/name: redis-affine
+  ports:
+    - {name: redis, port: 6379, targetPort: redis, protocol: TCP}

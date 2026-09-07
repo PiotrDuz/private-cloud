@@ -1,0 +1,27 @@
+---
+- name: Read the OpenZFS version for user namespaces
+  ansible.builtin.command: zfs version
+  register: private_cloud_user_namespace_zfs_version
+  changed_when: false
+
+- name: Read the containerd version for user namespaces
+  ansible.builtin.command: k0s ctr version
+  register: private_cloud_user_namespace_containerd_version
+  changed_when: false
+
+- name: Require user namespace prerequisites
+  ansible.builtin.assert:
+    that:
+      - ansible_kernel is version('6.3', '>=')
+      - >-
+        private_cloud_user_namespace_zfs_version.stdout_lines[0]
+        | regex_replace('^zfs-', '')
+        | regex_replace('-.*$', '')
+        is version('2.2.0', '>=')
+      - "'Server:' in private_cloud_user_namespace_containerd_version.stdout"
+      - >-
+        private_cloud_user_namespace_containerd_version.stdout
+        | regex_search('Server:[\\s\\S]*?Version:\\s+([0-9]+\\.[0-9]+\\.[0-9]+)', '\\1')
+        | first
+        is version('2.0.0', '>=')
+    fail_msg: Linux 6.3+, OpenZFS 2.2+, and containerd 2.0+ are required for stateful Kubernetes user namespaces.

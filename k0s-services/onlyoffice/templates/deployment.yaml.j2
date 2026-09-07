@@ -19,11 +19,18 @@ spec:
     spec:
       serviceAccountName: onlyoffice
       automountServiceAccountToken: false
+      hostUsers: false
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        seccompProfile: {type: RuntimeDefault}
       terminationGracePeriodSeconds: 300
       containers:
         - name: onlyoffice
           image: onlyoffice/documentserver:9.4.0.1
           imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: false
           env:
             - {name: WOPI_ENABLED, value: "true"}
             - {name: USE_UNAUTHORIZED_STORAGE, value: "false"}

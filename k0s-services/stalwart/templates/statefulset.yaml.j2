@@ -33,6 +33,7 @@ spec:
           args: [--config, /etc/stalwart/config.json]
           securityContext:
             runAsNonRoot: true
+            privileged: false
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL], add: [NET_BIND_SERVICE]}

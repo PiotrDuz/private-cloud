@@ -20,12 +20,21 @@ spec:
       serviceAccountName: tika
       automountServiceAccountToken: false
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 35002
+        runAsGroup: 35002
         fsGroup: 35002
         fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: tika
           image: apache/tika:3.3.1.0
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
           ports:
             - {name: http, containerPort: 9998, protocol: TCP}
           resources:

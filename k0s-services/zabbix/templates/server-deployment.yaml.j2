@@ -23,12 +23,21 @@ spec:
       serviceAccountName: zabbix-server
       automountServiceAccountToken: false
       securityContext:
+        runAsNonRoot: true
         fsGroup: 1995
         fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
       initContainers:
         - name: wait-for-postgres
           image: postgres:18.4-bookworm
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
           command:
             - pg_isready
           args:
@@ -55,6 +64,13 @@ spec:
         - name: server
           image: zabbix/zabbix-server-pgsql:ubuntu-7.4.12
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1997
+            runAsGroup: 1995
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL], add: [NET_RAW]}
           ports:
             - name: zabbix-trapper
               containerPort: 10051
