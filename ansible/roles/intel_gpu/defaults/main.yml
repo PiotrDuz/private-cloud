@@ -1,0 +1,7 @@
+---
+intel_gpu_namespace: kube-system
+intel_gpu_daemonset_name: intel-gpu-plugin
+intel_gpu_kubeconfig: /run/private-cloud/kubeconfig
+intel_gpu_kubelet_device_plugin_path: /tank/secure/k0s/kubelet/device-plugins
+intel_gpu_shared_device_count: 2
+intel_gpu_resource_name: gpu.intel.com/i915

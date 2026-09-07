@@ -4,9 +4,7 @@
     that:
       - private_cloud.affine.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.affine.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
-      - private_cloud.affine.redis_max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - (private_cloud.affine.max_ram | human_to_bytes | int) >= 2147483648
-      - (private_cloud.affine.redis_max_ram | human_to_bytes | int) >= 134217728
       - affine_database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
       - affine_database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
       - private_cloud.affine.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
@@ -174,41 +172,21 @@
     affine_storage_manifests: >-
       {{ private_cloud_rendered_manifests
          | selectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim']) | list }}
-    affine_redis_manifests: >-
-      {{ private_cloud_rendered_manifests
-         | selectattr('metadata.name', 'in', [affine_redis_service_name]) | list }}
     affine_preparation_manifests: >-
       {{ private_cloud_rendered_manifests | selectattr('kind', 'equalto', 'Job') | list }}
     affine_workload_manifests: >-
       {{ private_cloud_rendered_manifests
          | rejectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim', 'Job'])
-         | rejectattr('metadata.name', 'in', [affine_redis_service_name]) | list }}
+         | list }}
     affine_preparation_job_name: affine-database-preparation
 
-- name: Apply AFFiNE storage and Redis
+- name: Apply AFFiNE storage
   kubernetes.core.k8s:
     kubeconfig: "{{ affine_kubeconfig }}"
     state: present
-    definition: "{{ affine_storage_manifests + affine_redis_manifests }}"
+    definition: "{{ affine_storage_manifests }}"
   no_log: true
 
-- name: Wait for the AFFiNE Redis deployment
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ affine_kubeconfig }}"
-    api_version: apps/v1
-    kind: Deployment
-    name: "{{ affine_redis_service_name }}"
-    namespace: "{{ affine_namespace }}"
-  register: affine_redis_deployment
-  until:
-    - affine_redis_deployment.resources | length > 0
-    - affine_redis_deployment.resources[0].status.observedGeneration | default(0) | int >= affine_redis_deployment.resources[0].metadata.generation | int
-    - affine_redis_deployment.resources[0].status.updatedReplicas | default(0) | int == affine_redis_deployment.resources[0].spec.replicas | default(1) | int
-    - affine_redis_deployment.resources[0].status.readyReplicas | default(0) | int == affine_redis_deployment.resources[0].spec.replicas | default(1) | int
-    - affine_redis_deployment.resources[0].status.availableReplicas | default(0) | int == affine_redis_deployment.resources[0].spec.replicas | default(1) | int
-  retries: 90
-  delay: 5
-  changed_when: false
 
 - name: Prepare the fresh AFFiNE database schema
   kubernetes.core.k8s:

@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich
+  namespace: private-cloud
+  labels:
+    app.kubernetes.io/name: immich
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: immich
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: immich
+    spec:
+      serviceAccountName: immich
+      automountServiceAccountToken: false
+      hostUsers: false
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        seccompProfile: {type: RuntimeDefault}
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: immich-server
+          image: ghcr.io/immich-app/immich-server:v3.1.0@sha256:b434cb9287eea1471c9974845914d4dd328c9c2d652e446ed4930f99944f0ceb
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          env:
+            - {name: TZ, value: {{ private_cloud.immich.timezone | to_json }}}
+            - {name: IMMICH_ENV, value: production}
+            - {name: DB_HOSTNAME, value: {{ immich_postgres_service | to_json }}}
+            - {name: DB_PORT, value: "5432"}
+            - {name: DB_DATABASE_NAME, value: {{ immich_database_name | to_json }}}
+            - {name: DB_USERNAME, value: {{ immich_database_username | to_json }}}
+            - {name: DB_VECTOR_EXTENSION, value: vectorchord}
+            - name: DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: immich-credentials, key: DB_PASSWORD}}
+            - {name: REDIS_HOSTNAME, value: {{ immich_valkey_service_name | to_json }}}
+            - {name: REDIS_PORT, value: "6379"}
+          ports:
+            - {name: http, containerPort: 2283, protocol: TCP}
+          resources:
+            requests: {cpu: 500m, memory: {{ private_cloud.immich.max_ram | to_json }}, ephemeral-storage: 512Mi}
+            limits: {cpu: {{ private_cloud.immich.max_cpu | to_json }}, memory: {{ private_cloud.immich.max_ram | to_json }}, ephemeral-storage: 4Gi}
+          startupProbe:
+            httpGet: {path: /api/server/ping, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /api/server/ping, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /api/server/ping, port: http}
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          volumeMounts:
+            - {name: data, mountPath: /data, subPath: library}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: immich-data}

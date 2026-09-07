@@ -111,7 +111,7 @@ def run_installation() -> dict[str, Any]:
             original_secrets = _copy_mapping(stored_secrets)
             secrets_configuration = stored_secrets
         else:
-            secrets_configuration = {"secrets_schema_version": 1, "private_cloud_secrets": {}}
+            secrets_configuration = {"secrets_schema_version": 2, "private_cloud_secrets": {}}
 
         secrets_configuration = collect_missing_secrets(secrets_configuration, public)
         validate_secrets_configuration(secrets_configuration, stages)
@@ -193,9 +193,9 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
         return existing
     source = existing or default_public_configuration()
     if mode == "update":
-        sections = prompt_line("Sections to change (stages, storage, k0s, postgres, meilisearch, tika, bleve, onlyoffice, opencloud, grist, manticore, affine, stalwart, zabbix)", "").split()
+        sections = prompt_line("Sections to change (stages, storage, k0s, postgres, meilisearch, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, stalwart, zabbix)", "").split()
     else:
-        sections = ["stages", "storage", "k0s", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "affine", "stalwart", "zabbix"]
+        sections = ["stages", "storage", "k0s", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix"]
     result = _copy_mapping(source)
     stages = result["private_cloud"]["stages"]
     if "stages" in sections:
@@ -233,9 +233,14 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
     if "manticore" in sections:
         for key in ("storage_size", "max_ram"):
             cloud["manticore"][key] = prompt_line(f"Manticore {key}", cloud["manticore"][key])
+    if "redis_affine" in sections:
+        cloud["redis_affine"]["max_ram"] = prompt_line("Redis for AFFiNE max_ram", cloud["redis_affine"]["max_ram"])
     if "affine" in sections:
-        for key in ("storage_size", "max_ram", "redis_max_ram", "hostname"):
+        for key in ("storage_size", "max_ram", "hostname"):
             cloud["affine"][key] = prompt_line(f"AFFiNE {key}", cloud["affine"][key])
+    if "immich" in sections:
+        for key in ("storage_size", "hostname", "timezone", "max_ram", "max_cpu", "machine_learning_max_ram", "machine_learning_max_cpu", "machine_learning_accelerator", "valkey_max_ram", "valkey_max_cpu"):
+            cloud["immich"][key] = prompt_line(f"Immich {key}", cloud["immich"][key])
     if "stalwart" in sections:
         for key in ("storage_size", "max_ram", "domain", "forwarding_domain", "hostname", "acme_contact", "admin_username", "mailbox_username", "relay_host", "relay_username"):
             cloud["stalwart"][key] = prompt_line(f"Stalwart {key}", cloud["stalwart"][key])
@@ -288,6 +293,7 @@ def collect_missing_secrets(configuration: dict[str, Any], public: dict[str, Any
         ("grist", "session_secret"): "Grist session secret",
         ("grist", "boot_key"): "Grist boot key",
         ("affine", "database_password"): "AFFiNE database password",
+        ("immich", "database_password"): "Immich database password",
         ("stalwart", "database_password"): "Stalwart database password",
         ("stalwart", "admin_password"): "Stalwart administrator password",
         ("stalwart", "mailbox_password"): "Stalwart mailbox password",
@@ -318,6 +324,7 @@ def update_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         ("grist", "session_secret"),
         ("grist", "boot_key"),
         ("affine", "database_password"),
+        ("immich", "database_password"),
         ("zabbix", "database_password"),
     ):
         if stages[SECRET_STAGES[section]] and prompt_bool(f"Change {section}.{key}", False):
@@ -327,12 +334,12 @@ def update_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
 
 def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> dict[str, Any]:
     result = _copy_mapping(configuration)
-    selected = prompt_line("Secrets to rotate (meilisearch stalwart_database stalwart_admin mailbox relay onlyoffice grist_database grist_session grist_boot affine_database zabbix_database)", "all").split()
-    supported = {"all", "meilisearch", "stalwart_database", "stalwart_admin", "mailbox", "relay", "onlyoffice", "grist_database", "grist_session", "grist_boot", "affine_database", "zabbix_database"}
+    selected = prompt_line("Secrets to rotate (meilisearch stalwart_database stalwart_admin mailbox relay onlyoffice grist_database grist_session grist_boot affine_database immich_database zabbix_database)", "all").split()
+    supported = {"all", "meilisearch", "stalwart_database", "stalwart_admin", "mailbox", "relay", "onlyoffice", "grist_database", "grist_session", "grist_boot", "affine_database", "immich_database", "zabbix_database"}
     if set(selected) - supported:
         raise InstallerError("Unsupported credential rotation requested")
     if "all" in selected:
-        selected = ["meilisearch", "stalwart_database", "stalwart_admin", "mailbox", "relay", "onlyoffice", "grist_database", "grist_session", "grist_boot", "affine_database", "zabbix_database"]
+        selected = ["meilisearch", "stalwart_database", "stalwart_admin", "mailbox", "relay", "onlyoffice", "grist_database", "grist_session", "grist_boot", "affine_database", "immich_database", "zabbix_database"]
     mapping = {
         "meilisearch": ("meilisearch", "master_key"),
         "stalwart_database": ("stalwart", "database_password"),
@@ -345,6 +352,7 @@ def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         "grist_session": ("grist", "session_secret"),
         "grist_boot": ("grist", "boot_key"),
         "affine_database": ("affine", "database_password"),
+        "immich_database": ("immich", "database_password"),
     }
     for name in selected:
         if name in mapping:
@@ -380,6 +388,7 @@ def configured_secret_markers() -> dict[str, Any]:
         "opencloud": {"admin_password": "configured"},
         "grist": {"database_password": "configured", "session_secret": "configured", "boot_key": "configured"},
         "affine": {"database_password": "configured"},
+        "immich": {"database_password": "configured"},
         "zabbix": {"database_password": "configured", "admin_password": "configured"},
     }
 

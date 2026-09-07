@@ -13,6 +13,7 @@
 - Linux capabilities are dropped unless a workload documents a required capability.
 - Zabbix server retains `NET_RAW` for ICMP checks.
 - Ansible aligns persistent dataset ownership with each workload UID and GID.
-- AFFiNE and OnlyOffice retain UID 0 inside Kubernetes user namespaces.
+- AFFiNE, Immich, and OnlyOffice retain UID 0 inside Kubernetes user namespaces.
 - User-namespaced root maps to an unprivileged and pod-specific host UID.
 - Stateful user namespaces require Linux 6.3+, OpenZFS 2.2+, and containerd 2.0+.
+- The Intel GPU plugin publishes shared `gpu.intel.com/i915` resources for OpenVINO and media workloads.

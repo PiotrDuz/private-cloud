@@ -213,6 +213,50 @@
     that: postgres_pgvector_effective.stdout | trim == postgres_pgvector_version
     fail_msg: The shared PostgreSQL vector extension is not enabled at the configured version.
 
+- name: Read shared PostgreSQL VectorChord status
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ postgres_kubeconfig }}"
+    namespace: "{{ postgres_namespace }}"
+    pod: "{{ postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT COALESCE((SELECT extversion FROM pg_extension WHERE extname = 'vchord'), 'absent') || '|' || COALESCE((SELECT default_version FROM pg_available_extensions WHERE name = 'vchord'), 'unavailable');"
+  register: postgres_vectorchord_status
+  changed_when: false
+
+- name: Classify shared PostgreSQL VectorChord status
+  ansible.builtin.set_fact:
+    postgres_vectorchord_installed_version: "{{ (postgres_vectorchord_status.stdout | trim).split('|')[0] }}"
+    postgres_vectorchord_available_version: "{{ (postgres_vectorchord_status.stdout | trim).split('|')[1] }}"
+
+- name: Require the configured VectorChord version
+  ansible.builtin.assert:
+    that: postgres_vectorchord_available_version == postgres_vectorchord_version
+    fail_msg: The shared PostgreSQL image does not provide the configured VectorChord version.
+
+- name: Enable VectorChord in the PostgreSQL administrator database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ postgres_kubeconfig }}"
+    namespace: "{{ postgres_namespace }}"
+    pod: "{{ postgres_pods.resources[0].metadata.name }}"
+    command: psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS vchord CASCADE;"
+  when: postgres_vectorchord_installed_version == 'absent'
+  changed_when: true
+
+- name: Verify shared PostgreSQL VectorChord
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ postgres_kubeconfig }}"
+    namespace: "{{ postgres_namespace }}"
+    pod: "{{ postgres_pods.resources[0].metadata.name }}"
+    command: psql -At -U postgres -d postgres -c "SELECT extversion FROM pg_extension WHERE extname = 'vchord';"
+  register: postgres_vectorchord_effective
+  changed_when: false
+
+- name: Assert shared PostgreSQL VectorChord
+  ansible.builtin.assert:
+    that: postgres_vectorchord_effective.stdout | trim == postgres_vectorchord_version
+    fail_msg: The shared PostgreSQL VectorChord extension is not enabled at the configured version.
+
 - name: Read effective PostgreSQL settings
   kubernetes.core.k8s_exec:
     kubeconfig: "{{ postgres_kubeconfig }}"

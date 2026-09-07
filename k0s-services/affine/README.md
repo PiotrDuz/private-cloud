@@ -14,7 +14,7 @@ The AFFiNE service is managed by `ansible/roles/affine`.
 - AFFiNE runs as UID 0 inside a user namespace mapped to an unprivileged host UID.
 - AFFiNE uses a dedicated database on the shared pgvector-enabled PostgreSQL service.
 - AFFiNE uses the cluster-local Manticore service for full-text indexing.
-- Redis remains ephemeral and is rebuilt after restart.
+- AFFiNE uses the independently managed `redis-affine` cache service.
 - A database preparation Job initializes the fresh AFFiNE schema before the server starts.
 - The preparation Job and server use the same Manticore indexer settings.
 - The service listens inside the cluster on port `3010`.

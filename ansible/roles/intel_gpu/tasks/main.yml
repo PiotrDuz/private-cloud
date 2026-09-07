@@ -1,0 +1,88 @@
+---
+- name: Validate Intel GPU role constants
+  ansible.builtin.assert:
+    that:
+      - intel_gpu_shared_device_count | int >= 2
+      - intel_gpu_kubelet_device_plugin_path == '/tank/secure/k0s/kubelet/device-plugins'
+    fail_msg: Intel GPU role constants are invalid.
+
+- name: Install Intel integrated graphics firmware
+  ansible.builtin.apt:
+    name: "{{ 'firmware-intel-graphics' if ansible_facts.distribution == 'Debian' else 'linux-firmware-intel-graphics' }}"
+    state: present
+    update_cache: true
+
+- name: Load the Intel integrated graphics driver during boot
+  ansible.builtin.copy:
+    content: "i915\n"
+    dest: /etc/modules-load.d/private-cloud-intel-gpu.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Load the Intel integrated graphics driver
+  ansible.builtin.command: modprobe i915
+  changed_when: false
+
+- name: Inspect the Intel GPU render device
+  ansible.builtin.stat:
+    path: /dev/dri/renderD128
+  register: intel_gpu_render_device
+
+- name: Require the Intel GPU render device
+  ansible.builtin.assert:
+    that:
+      - intel_gpu_render_device.stat.exists
+      - intel_gpu_render_device.stat.ischr | default(false)
+    fail_msg: The Intel i915 render device /dev/dri/renderD128 is unavailable.
+
+- name: Record the Intel GPU render group
+  ansible.builtin.set_fact:
+    intel_gpu_render_group_id: "{{ intel_gpu_render_device.stat.gid | int }}"
+
+- name: Prepare the Intel GPU kubeconfig
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"
+  vars:
+    private_cloud_kubeconfig: "{{ intel_gpu_kubeconfig }}"
+
+- name: Render Intel GPU manifests from Jinja templates
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: intel-gpu
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/intel-gpu/templates"
+
+- name: Apply the Intel GPU device plugin
+  kubernetes.core.k8s:
+    kubeconfig: "{{ intel_gpu_kubeconfig }}"
+    state: present
+    definition: "{{ private_cloud_rendered_manifests }}"
+
+- name: Wait for the Intel GPU device plugin
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ intel_gpu_kubeconfig }}"
+    api_version: apps/v1
+    kind: DaemonSet
+    name: "{{ intel_gpu_daemonset_name }}"
+    namespace: "{{ intel_gpu_namespace }}"
+  register: intel_gpu_daemonset
+  until:
+    - intel_gpu_daemonset.resources | length == 1
+    - intel_gpu_daemonset.resources[0].status.desiredNumberScheduled | default(0) | int > 0
+    - intel_gpu_daemonset.resources[0].status.numberReady | default(0) | int == intel_gpu_daemonset.resources[0].status.desiredNumberScheduled | int
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Wait for shared Intel GPU resources
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ intel_gpu_kubeconfig }}"
+    api_version: v1
+    kind: Node
+    name: "{{ ansible_hostname }}"
+  register: intel_gpu_nodes
+  until:
+    - intel_gpu_nodes.resources | length == 1
+    - (intel_gpu_nodes.resources[0].status.allocatable[intel_gpu_resource_name] | default('0') | int) >= (intel_gpu_shared_device_count | int)
+  retries: 60
+  delay: 5
+  changed_when: false

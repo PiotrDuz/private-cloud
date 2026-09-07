@@ -43,6 +43,14 @@
           when: private_cloud.stages.k0s | bool
           tags: [k0s]
 
+        - name: Configure the Intel GPU device plugin
+          ansible.builtin.include_role:
+            name: intel_gpu
+            apply:
+              tags: [intel_gpu]
+          when: private_cloud.stages.intel_gpu | bool
+          tags: [intel_gpu]
+
         - name: Deploy PostgreSQL
           ansible.builtin.include_role:
             name: postgres
@@ -115,6 +123,14 @@
           when: private_cloud.stages.manticore | bool
           tags: [manticore]
 
+        - name: Deploy Redis for AFFiNE
+          ansible.builtin.include_role:
+            name: redis_affine
+            apply:
+              tags: [redis_affine]
+          when: private_cloud.stages.redis_affine | bool
+          tags: [redis_affine]
+
         - name: Deploy AFFiNE
           ansible.builtin.include_role:
             name: affine
@@ -122,6 +138,14 @@
               tags: [affine]
           when: private_cloud.stages.affine | bool
           tags: [affine]
+
+        - name: Deploy Immich
+          ansible.builtin.include_role:
+            name: immich
+            apply:
+              tags: [immich]
+          when: private_cloud.stages.immich | bool
+          tags: [immich]
 
         - name: Deploy Zabbix server
           ansible.builtin.include_role:

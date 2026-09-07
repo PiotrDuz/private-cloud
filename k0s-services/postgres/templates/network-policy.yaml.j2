@@ -18,6 +18,9 @@ spec:
               app.kubernetes.io/name: affine-database-preparation
         - podSelector:
             matchLabels:
+              app.kubernetes.io/name: immich
+        - podSelector:
+            matchLabels:
               app.kubernetes.io/name: grist
         - podSelector:
             matchLabels:

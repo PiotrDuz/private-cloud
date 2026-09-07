@@ -1,0 +1,431 @@
+---
+- name: Validate Immich inputs
+  ansible.builtin.assert:
+    that:
+      - private_cloud.immich.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.immich.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - private_cloud.immich.machine_learning_max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - private_cloud.immich.valkey_max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - private_cloud.immich.max_cpu is match('^([1-9][0-9]*m|[1-9][0-9]*)$')
+      - private_cloud.immich.machine_learning_max_cpu is match('^([1-9][0-9]*m|[1-9][0-9]*)$')
+      - private_cloud.immich.valkey_max_cpu is match('^([1-9][0-9]*m|[1-9][0-9]*)$')
+      - (not private_cloud.immich.max_cpu.endswith('m')) or (private_cloud.immich.max_cpu[:-1] | int) >= 500
+      - (not private_cloud.immich.machine_learning_max_cpu.endswith('m')) or (private_cloud.immich.machine_learning_max_cpu[:-1] | int) >= 250
+      - (not private_cloud.immich.valkey_max_cpu.endswith('m')) or (private_cloud.immich.valkey_max_cpu[:-1] | int) >= 100
+      - (private_cloud.immich.max_ram | human_to_bytes | int) >= 2147483648
+      - (private_cloud.immich.machine_learning_max_ram | human_to_bytes | int) >= 1073741824
+      - (private_cloud.immich.valkey_max_ram | human_to_bytes | int) >= 134217728
+      - private_cloud.immich.machine_learning_accelerator in ['cpu', 'openvino']
+      - private_cloud.immich.machine_learning_accelerator != 'openvino' or private_cloud.stages.intel_gpu | bool
+      - private_cloud.immich.timezone is match('^[A-Za-z_+-]+/[A-Za-z_+/-]+$')
+      - immich_database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - immich_database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - private_cloud.immich.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$')
+      - private_cloud_secrets.immich.database_password | length >= 16
+    fail_msg: Immich configuration is invalid.
+  no_log: true
+
+- name: Prepare the Immich kubeconfig
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"
+  vars:
+    private_cloud_kubeconfig: "{{ immich_kubeconfig }}"
+
+- name: Resolve a Ready Kubernetes node
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    api_version: v1
+    kind: Node
+    name: "{{ ansible_hostname }}"
+  register: immich_nodes
+  changed_when: false
+
+- name: Select the managed storage node
+  ansible.builtin.set_fact:
+    immich_node_name: "{{ ansible_hostname }}"
+
+- name: Require the managed storage node to be Ready
+  ansible.builtin.assert:
+    that:
+      - immich_nodes.resources | length == 1
+      - immich_nodes.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    fail_msg: "Managed storage host {{ ansible_hostname }} is not a Ready Kubernetes node for Immich."
+
+- name: Inspect the local Intel GPU render device
+  ansible.builtin.stat:
+    path: /dev/dri/renderD128
+  register: immich_intel_gpu_render_device
+  when: private_cloud.immich.machine_learning_accelerator == "openvino"
+
+- name: Require the local Intel GPU render device
+  ansible.builtin.assert:
+    that:
+      - immich_intel_gpu_render_device.stat.exists
+      - immich_intel_gpu_render_device.stat.ischr | default(false)
+    fail_msg: The Intel i915 render device /dev/dri/renderD128 is unavailable.
+  when: private_cloud.immich.machine_learning_accelerator == "openvino"
+
+- name: Record the local Intel GPU render group
+  ansible.builtin.set_fact:
+    intel_gpu_render_group_id: "{{ immich_intel_gpu_render_device.stat.gid | int }}"
+  when: private_cloud.immich.machine_learning_accelerator == "openvino"
+
+- name: Require Intel GPU support for Immich machine learning
+  ansible.builtin.assert:
+    that:
+      - (immich_nodes.resources[0].status.allocatable['gpu.intel.com/i915'] | default('0') | int) >= 1
+    fail_msg: >-
+      Managed storage host {{ ansible_hostname }} does not advertise the required Intel i915 GPU resource.
+      Enable the Intel GPU stage and verify the integrated GPU is available at /dev/dri/renderD128.
+  when: private_cloud.immich.machine_learning_accelerator == 'openvino'
+
+- name: Verify Immich user namespace support
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/user_namespace_compatibility.yml"
+
+- name: Prepare the Immich service dataset
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: Immich
+    private_cloud_service_dataset: "{{ immich_dataset }}"
+    private_cloud_service_dataset_mountpoint: "{{ immich_dataset_mountpoint }}"
+    private_cloud_service_storage_size: "{{ private_cloud.immich.storage_size }}"
+
+- name: Ensure the Immich library directory exists
+  ansible.builtin.file:
+    path: "{{ immich_dataset_mountpoint }}/library"
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Verify the Immich service dataset quota
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_quota.yml"
+  vars:
+    private_cloud_service_name: Immich
+    private_cloud_service_dataset: "{{ immich_dataset }}"
+    private_cloud_service_storage_size: "{{ private_cloud.immich.storage_size }}"
+
+- name: Inspect existing Immich storage and credentials
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ item.namespace | default(omit) }}"
+  loop:
+    - {api_version: v1, kind: PersistentVolume, name: immich-data}
+    - {api_version: v1, kind: PersistentVolumeClaim, name: immich-data, namespace: private-cloud}
+    - {api_version: v1, kind: Secret, name: immich-credentials, namespace: private-cloud}
+  register: immich_existing
+  changed_when: false
+  no_log: true
+
+- name: Reject incompatible Immich persistent storage
+  ansible.builtin.assert:
+    that:
+      - immich_existing.results[0].resources | length == 0 or immich_existing.results[0].resources[0].spec.local.path == immich_dataset_mountpoint
+      - immich_existing.results[0].resources | length == 0 or immich_existing.results[0].resources[0].spec.capacity.storage == immich_pv_capacity
+      - immich_existing.results[0].resources | length == 0 or immich_node_name in immich_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - immich_existing.results[1].resources | length == 0 or immich_existing.results[1].resources[0].spec.resources.requests.storage == immich_pv_capacity
+      - immich_existing.results[1].resources | length == 0 or immich_existing.results[1].resources[0].spec.volumeName == immich_pv_name
+    fail_msg: Existing Immich persistent storage conflicts with the configured local storage.
+
+- name: Classify the existing Immich credentials
+  ansible.builtin.set_fact:
+    immich_secret_present: "{{ immich_existing.results[2].resources | length > 0 }}"
+    immich_secret_managed: >-
+      {{ immich_existing.results[2].resources | length > 0 and
+         ((immich_existing.results[2].resources[0].metadata.annotations | default({})).get('private-cloud.example/managed-by', '') == 'ansible') }}
+    immich_database_password_matches: >-
+      {{ immich_existing.results[2].resources | length > 0 and
+         immich_existing.results[2].resources[0].data.DB_PASSWORD is defined and
+         (immich_existing.results[2].resources[0].data.DB_PASSWORD | b64decode == private_cloud_secrets.immich.database_password) }}
+  no_log: true
+
+- name: Reject incompatible unmanaged Immich credentials
+  ansible.builtin.assert:
+    that: not immich_secret_present | bool or immich_database_password_matches | bool or immich_secret_managed | bool
+    fail_msg: Existing Immich credentials conflict with the configured secrets.
+  no_log: true
+
+- name: Locate PostgreSQL pod for Immich database bootstrap
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ immich_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=postgres
+  register: immich_postgres_pods
+  until:
+    - immich_postgres_pods.resources | length > 0
+    - immich_postgres_pods.resources[0].status.containerStatuses | default([]) | selectattr('ready', 'equalto', true) | list | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Check the Immich PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT rolcanlogin FROM pg_roles WHERE rolname = '{{ immich_database_username | replace("'", "''") }}';"
+  register: immich_role_exists
+  changed_when: false
+  no_log: true
+
+- name: Create the Immich PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'printf %s {{ lookup('template', 'create-role.sql.j2') | b64encode }} |
+      base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
+  when: immich_role_exists.stdout | trim == ''
+  changed_when: true
+  no_log: true
+
+- name: Update the Immich PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'printf %s {{ lookup('template', 'alter-role.sql.j2') | b64encode }} |
+      base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
+  when:
+    - immich_role_exists.stdout | trim != ''
+    - immich_role_exists.stdout | trim == 'f' or not immich_database_password_matches | bool
+  changed_when: true
+  no_log: true
+
+- name: Check the Immich PostgreSQL database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '{{ immich_database_name | replace("'", "''") }}';"
+  register: immich_database_exists
+  changed_when: false
+  no_log: true
+
+- name: Create the Immich PostgreSQL database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
+    command: createdb -U postgres -O {{ immich_database_username }} {{ immich_database_name }}
+  when: immich_database_exists.stdout | trim == ''
+  changed_when: true
+  no_log: true
+
+- name: Set Immich database owner when needed
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "ALTER DATABASE \"{{ immich_database_name }}\" OWNER TO \"{{ immich_database_username }}\";"
+  when:
+    - immich_database_exists.stdout | trim != ''
+    - immich_database_exists.stdout | trim != immich_database_username
+  changed_when: true
+  no_log: true
+
+- name: Enable pgvector in the Immich database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
+    command: psql -v ON_ERROR_STOP=1 -At -U postgres -d {{ immich_database_name }} -c "CREATE EXTENSION IF NOT EXISTS vector;"
+  changed_when: true
+
+- name: Verify Immich pgvector
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
+    command: psql -At -U postgres -d {{ immich_database_name }} -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';"
+  register: immich_pgvector_effective
+  changed_when: false
+
+- name: Assert Immich pgvector
+  ansible.builtin.assert:
+    that: immich_pgvector_effective.stdout | trim == immich_pgvector_version
+    fail_msg: The vector extension is not enabled in the Immich database.
+
+- name: Enable VectorChord in the Immich database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
+    command: psql -v ON_ERROR_STOP=1 -At -U postgres -d {{ immich_database_name }} -c "CREATE EXTENSION IF NOT EXISTS vchord CASCADE;"
+  changed_when: true
+
+- name: Verify Immich VectorChord
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
+    command: psql -At -U postgres -d {{ immich_database_name }} -c "SELECT extversion FROM pg_extension WHERE extname = 'vchord';"
+  register: immich_vectorchord_effective
+  changed_when: false
+
+- name: Assert Immich VectorChord
+  ansible.builtin.assert:
+    that: immich_vectorchord_effective.stdout | trim == immich_vectorchord_version
+    fail_msg: The VectorChord extension is not enabled in the Immich database.
+
+- name: Enable earthdistance in the Immich database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
+    command: psql -v ON_ERROR_STOP=1 -At -U postgres -d {{ immich_database_name }} -c "CREATE EXTENSION IF NOT EXISTS earthdistance CASCADE;"
+  changed_when: true
+
+- name: Verify Immich earthdistance
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
+    command: psql -At -U postgres -d {{ immich_database_name }} -c "SELECT extname FROM pg_extension WHERE extname = 'earthdistance';"
+  register: immich_earthdistance_effective
+  changed_when: false
+
+- name: Assert Immich earthdistance
+  ansible.builtin.assert:
+    that: immich_earthdistance_effective.stdout | trim == 'earthdistance'
+    fail_msg: The earthdistance extension is not enabled in the Immich database.
+
+- name: Apply Immich credentials
+  kubernetes.core.k8s:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'secret.yml.j2') | from_yaml }}"
+  register: immich_secret_apply
+  when: not immich_secret_present | bool or not immich_database_password_matches | bool
+  no_log: true
+
+- name: Render Immich manifests from Jinja templates
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: immich
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/immich/templates"
+
+- name: Select Immich manifest stages
+  ansible.builtin.set_fact:
+    immich_storage_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | selectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim']) | list }}
+    immich_valkey_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | selectattr('metadata.name', 'equalto', immich_valkey_service_name) | list }}
+    immich_workload_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | rejectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim'])
+         | rejectattr('metadata.name', 'equalto', immich_valkey_service_name) | list }}
+
+- name: Apply Immich storage and Valkey
+  kubernetes.core.k8s:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    state: present
+    definition: "{{ immich_storage_manifests + immich_valkey_manifests }}"
+  no_log: true
+
+- name: Wait for the Immich Valkey deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ immich_valkey_service_name }}"
+    namespace: "{{ immich_namespace }}"
+  register: immich_valkey_deployment
+  until:
+    - immich_valkey_deployment.resources | length > 0
+    - immich_valkey_deployment.resources[0].status.observedGeneration | default(0) | int >= immich_valkey_deployment.resources[0].metadata.generation | int
+    - immich_valkey_deployment.resources[0].status.updatedReplicas | default(0) | int == immich_valkey_deployment.resources[0].spec.replicas | default(1) | int
+    - immich_valkey_deployment.resources[0].status.readyReplicas | default(0) | int == immich_valkey_deployment.resources[0].spec.replicas | default(1) | int
+    - immich_valkey_deployment.resources[0].status.availableReplicas | default(0) | int == immich_valkey_deployment.resources[0].spec.replicas | default(1) | int
+  retries: 90
+  delay: 5
+  changed_when: false
+
+- name: Apply Immich workload and services
+  kubernetes.core.k8s:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    state: present
+    definition: "{{ immich_workload_manifests }}"
+  no_log: true
+
+- name: Restart Immich after a credentials change
+  kubernetes.core.k8s:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    state: patched
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ immich_service_name }}"
+        namespace: "{{ immich_namespace }}"
+      spec:
+        template:
+          metadata:
+            annotations:
+              private-cloud.example/credentials-restarted-at: "{{ ansible_date_time.iso8601 }}"
+  when: immich_secret_apply.changed | default(false)
+  no_log: true
+
+- name: Wait for Immich machine learning
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ immich_machine_learning_service_name }}"
+    namespace: "{{ immich_namespace }}"
+  register: immich_machine_learning_deployment
+  until:
+    - immich_machine_learning_deployment.resources | length > 0
+    - immich_machine_learning_deployment.resources[0].status.observedGeneration | default(0) | int >= immich_machine_learning_deployment.resources[0].metadata.generation | int
+    - immich_machine_learning_deployment.resources[0].status.updatedReplicas | default(0) | int == immich_machine_learning_deployment.resources[0].spec.replicas | default(1) | int
+    - immich_machine_learning_deployment.resources[0].status.readyReplicas | default(0) | int == immich_machine_learning_deployment.resources[0].spec.replicas | default(1) | int
+    - immich_machine_learning_deployment.resources[0].status.availableReplicas | default(0) | int == immich_machine_learning_deployment.resources[0].spec.replicas | default(1) | int
+  retries: 90
+  delay: 5
+  changed_when: false
+
+- name: Wait for Immich deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ immich_service_name }}"
+    namespace: "{{ immich_namespace }}"
+  register: immich_deployment
+  until:
+    - immich_deployment.resources | length > 0
+    - immich_deployment.resources[0].status.observedGeneration | default(0) | int >= immich_deployment.resources[0].metadata.generation | int
+    - immich_deployment.resources[0].status.updatedReplicas | default(0) | int == immich_deployment.resources[0].spec.replicas | default(1) | int
+    - immich_deployment.resources[0].status.readyReplicas | default(0) | int == immich_deployment.resources[0].spec.replicas | default(1) | int
+    - immich_deployment.resources[0].status.availableReplicas | default(0) | int == immich_deployment.resources[0].spec.replicas | default(1) | int
+  retries: 90
+  delay: 5
+  changed_when: false
+
+- name: Wait for Immich service endpoint
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    name: "{{ immich_service_name }}"
+    namespace: "{{ immich_namespace }}"
+  register: immich_endpoint
+  until: immich_endpoint.resources | length > 0 and (immich_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0)
+  retries: 90
+  delay: 5
+  changed_when: false

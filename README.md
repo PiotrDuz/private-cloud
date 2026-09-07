@@ -9,6 +9,7 @@ The supported installer collects the full configuration and runs one unattended 
 - Install Python 3, PyYAML, Ansible, and the Python Kubernetes client.
 - Install the collections from `ansible/requirements.yml`.
 - Run the installer from an interactive root terminal.
+- Enable the Intel integrated GPU in firmware for the default Immich OpenVINO acceleration.
 
 The ZFS role enforces the OpenZFS 2.3 minimum before it changes storage because the PostgreSQL dataset uses the [`prefetch` property](https://openzfs.github.io/openzfs-docs/man/v2.3/7/zfsprops.7.html).
 
@@ -33,6 +34,8 @@ sudo python3 ansible/install.py
 - NodePorts are fixed in the owning service templates.
 - The k0s release pin is in `ansible/roles/k0s/defaults/main.yml`.
 - Zabbix host settings are in `ansible/service_catalog.yml`.
+- Redis for AFFiNE, Intel GPU support, and Immich are independent installer stages.
+- Immich uses the shared PostgreSQL service with pgvector and VectorChord.
 - The project is greenfield and has no configuration migrations or compatibility paths.
 
 ## Lifecycle

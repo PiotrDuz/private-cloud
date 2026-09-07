@@ -2,7 +2,7 @@
 - name: Require the supported public schema version
   ansible.builtin.assert:
     that:
-      - schema_version == 3
+      - schema_version == 4
     fail_msg: Public configuration schema version is unsupported
 
 - name: Require supported Debian-family target
@@ -21,14 +21,14 @@
   ansible.builtin.assert:
     that:
       - private_cloud is mapping
-      - (private_cloud.keys() | list | difference(['stages', 'storage', 'k0s', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'affine', 'stalwart', 'zabbix']) | length) == 0
-      - (['stages', 'storage', 'k0s', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'affine', 'stalwart', 'zabbix'] | difference(private_cloud.keys() | list) | length) == 0
+      - (private_cloud.keys() | list | difference(['stages', 'storage', 'k0s', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'redis_affine', 'affine', 'immich', 'stalwart', 'zabbix']) | length) == 0
+      - (['stages', 'storage', 'k0s', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'redis_affine', 'affine', 'immich', 'stalwart', 'zabbix'] | difference(private_cloud.keys() | list) | length) == 0
     fail_msg: Public configuration has missing or unknown sections
 
 - name: Require exact nested public schema
   ansible.builtin.assert:
     that:
-      - (private_cloud.stages.keys() | list | sort) == ['affine', 'bleve', 'grist', 'k0s', 'manticore', 'meilisearch', 'onlyoffice', 'opencloud', 'postgres', 'stalwart', 'tika', 'zabbix_agent', 'zabbix_server', 'zfs']
+      - (private_cloud.stages.keys() | list | sort) == ['affine', 'bleve', 'grist', 'immich', 'intel_gpu', 'k0s', 'manticore', 'meilisearch', 'onlyoffice', 'opencloud', 'postgres', 'redis_affine', 'stalwart', 'tika', 'zabbix_agent', 'zabbix_server', 'zfs']
       - (private_cloud.storage.keys() | list) == ['disks']
       - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'images_quota']
       - (private_cloud.postgres.keys() | list | sort) == ['max_ram', 'volume_size']
@@ -39,7 +39,9 @@
       - (private_cloud.opencloud.keys() | list | sort) == ['hostname', 'max_ram', 'storage_size']
       - (private_cloud.grist.keys() | list | sort) == ['default_email', 'hostname', 'max_ram', 'storage_size']
       - (private_cloud.manticore.keys() | list | sort) == ['max_ram', 'storage_size']
-      - (private_cloud.affine.keys() | list | sort) == ['hostname', 'max_ram', 'redis_max_ram', 'storage_size']
+      - (private_cloud.redis_affine.keys() | list) == ['max_ram']
+      - (private_cloud.affine.keys() | list | sort) == ['hostname', 'max_ram', 'storage_size']
+      - (private_cloud.immich.keys() | list | sort) == ['hostname', 'machine_learning_accelerator', 'machine_learning_max_cpu', 'machine_learning_max_ram', 'max_cpu', 'max_ram', 'storage_size', 'timezone', 'valkey_max_cpu', 'valkey_max_ram']
       - (private_cloud.stalwart.keys() | list | sort) == ['acme_contact', 'admin_username', 'domain', 'forwarding_domain', 'hostname', 'mailbox_username', 'max_ram', 'relay_host', 'relay_implicit_tls', 'relay_port', 'relay_username', 'storage_size']
       - (private_cloud.zabbix.keys() | list | sort) == ['admin_username', 'storage_size']
     fail_msg: Public configuration has missing or unknown nested keys
@@ -47,7 +49,7 @@
 - name: Require the supported encrypted schema version
   ansible.builtin.assert:
     that:
-      - secrets_schema_version == 1
+      - secrets_schema_version == 2
     fail_msg: Encrypted configuration schema version is unsupported
   no_log: true
 
@@ -55,7 +57,7 @@
   ansible.builtin.assert:
     that:
       - private_cloud_secrets is mapping
-      - (private_cloud_secrets.keys() | list | difference(['affine', 'grist', 'meilisearch', 'onlyoffice', 'opencloud', 'postgres', 'stalwart', 'storage', 'zabbix']) | length) == 0
+      - (private_cloud_secrets.keys() | list | difference(['affine', 'grist', 'immich', 'meilisearch', 'onlyoffice', 'opencloud', 'postgres', 'stalwart', 'storage', 'zabbix']) | length) == 0
     fail_msg: Encrypted configuration has unknown sections
   no_log: true
 
@@ -75,6 +77,7 @@
     - {name: opencloud, keys: [admin_password]}
     - {name: grist, keys: [boot_key, database_password, session_secret]}
     - {name: affine, keys: [database_password]}
+    - {name: immich, keys: [database_password]}
   no_log: true
 
 - name: Require Boolean stage flags
@@ -82,7 +85,7 @@
     that:
       - private_cloud.stages[item] is boolean
     fail_msg: Every stage flag must be Boolean
-  loop: [zfs, k0s, postgres, meilisearch, stalwart, tika, bleve, onlyoffice, opencloud, grist, manticore, affine, zabbix_server, zabbix_agent]
+  loop: [zfs, k0s, intel_gpu, postgres, meilisearch, stalwart, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, zabbix_server, zabbix_agent]
 
 - name: Require stage dependencies
   ansible.builtin.assert:
@@ -189,21 +192,48 @@
       - private_cloud.manticore.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
     fail_msg: Manticore configuration is invalid
 
+- name: Require Redis for AFFiNE values
+  ansible.builtin.assert:
+    that:
+      - private_cloud.redis_affine.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - (private_cloud.redis_affine.max_ram | human_to_bytes | int) >= 134217728
+    fail_msg: Redis for AFFiNE configuration is invalid
+
 - name: Require AFFiNE values
   ansible.builtin.assert:
     that:
       - private_cloud.affine.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.affine.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
-      - private_cloud.affine.redis_max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - (private_cloud.affine.max_ram | human_to_bytes | int) >= 2147483648
-      - (private_cloud.affine.redis_max_ram | human_to_bytes | int) >= 134217728
       - private_cloud.affine.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
     fail_msg: AFFiNE configuration is invalid
+
+- name: Require Immich values
+  ansible.builtin.assert:
+    that:
+      - private_cloud.immich.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.immich.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - private_cloud.immich.machine_learning_max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - private_cloud.immich.valkey_max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - (private_cloud.immich.max_ram | human_to_bytes | int) >= 2147483648
+      - (private_cloud.immich.machine_learning_max_ram | human_to_bytes | int) >= 1073741824
+      - (private_cloud.immich.valkey_max_ram | human_to_bytes | int) >= 134217728
+      - private_cloud.immich.max_cpu is match('^([1-9][0-9]*m|[1-9][0-9]*)$')
+      - private_cloud.immich.machine_learning_max_cpu is match('^([1-9][0-9]*m|[1-9][0-9]*)$')
+      - private_cloud.immich.valkey_max_cpu is match('^([1-9][0-9]*m|[1-9][0-9]*)$')
+      - (not private_cloud.immich.max_cpu.endswith('m')) or (private_cloud.immich.max_cpu[:-1] | int) >= 500
+      - (not private_cloud.immich.machine_learning_max_cpu.endswith('m')) or (private_cloud.immich.machine_learning_max_cpu[:-1] | int) >= 250
+      - (not private_cloud.immich.valkey_max_cpu.endswith('m')) or (private_cloud.immich.valkey_max_cpu[:-1] | int) >= 100
+      - private_cloud.immich.machine_learning_accelerator in ['cpu', 'openvino']
+      - private_cloud.immich.machine_learning_accelerator != 'openvino' or private_cloud.stages.intel_gpu | bool
+      - private_cloud.immich.timezone is match('^[A-Za-z_+-]+/[A-Za-z_+/-]+$')
+      - private_cloud.immich.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
+    fail_msg: Immich configuration is invalid
 
 - name: Require unique public application hostnames
   ansible.builtin.assert:
     that:
-      - ([private_cloud.onlyoffice.hostname, private_cloud.opencloud.hostname, private_cloud.grist.hostname, private_cloud.affine.hostname] | unique | length) == 4
+      - ([private_cloud.onlyoffice.hostname, private_cloud.opencloud.hostname, private_cloud.grist.hostname, private_cloud.affine.hostname, private_cloud.immich.hostname] | unique | length) == 5
     fail_msg: Every public application hostname must be unique
 
 - name: Require Stalwart values
@@ -334,6 +364,15 @@
       - private_cloud_secrets.affine.database_password | length >= 16
     fail_msg: Required encrypted secrets are missing
   when: private_cloud.stages.affine | bool
+  no_log: true
+
+- name: Require Immich secret when Immich is enabled
+  ansible.builtin.assert:
+    that:
+      - private_cloud_secrets.immich.database_password is string
+      - private_cloud_secrets.immich.database_password | length >= 16
+    fail_msg: Required encrypted secrets are missing
+  when: private_cloud.stages.immich | bool
   no_log: true
 
 - name: Require Stalwart secrets when Stalwart is enabled
@@ -638,6 +677,7 @@
       grist_dataset: tank/secure/backup/k0s/services/grist
       manticore_dataset: tank/secure/backup/k0s/services/manticore
       affine_dataset: tank/secure/backup/k0s/services/affine
+      immich_dataset: tank/secure/backup/k0s/services/immich
       stalwart_dataset: tank/secure/backup/k0s/services/stalwart
       zabbix_dataset: tank/secure/backup/k0s/services/zabbix
 
@@ -656,6 +696,7 @@
     - { dataset: 'tank/secure/backup/k0s/services/grist', quota: '{{ private_cloud.grist.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/manticore', quota: '{{ private_cloud.manticore.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/affine', quota: '{{ private_cloud.affine.storage_size }}' }
+    - { dataset: 'tank/secure/backup/k0s/services/immich', quota: '{{ private_cloud.immich.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/stalwart', quota: '{{ private_cloud.stalwart.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/zabbix', quota: '{{ private_cloud.zabbix.storage_size }}' }
   register: preflight_existing_usage
@@ -691,7 +732,9 @@
         (private_cloud.stages.opencloud | ternary(private_cloud.opencloud.max_ram | human_to_bytes, 0)) +
         (private_cloud.stages.grist | ternary(private_cloud.grist.max_ram | human_to_bytes, 0)) +
         (private_cloud.stages.manticore | ternary(private_cloud.manticore.max_ram | human_to_bytes, 0)) +
-        (private_cloud.stages.affine | ternary((private_cloud.affine.max_ram | human_to_bytes) + (private_cloud.affine.redis_max_ram | human_to_bytes), 0)) +
+        (private_cloud.stages.redis_affine | ternary(private_cloud.redis_affine.max_ram | human_to_bytes, 0)) +
+        (private_cloud.stages.affine | ternary(private_cloud.affine.max_ram | human_to_bytes, 0)) +
+        (private_cloud.stages.immich | ternary((private_cloud.immich.max_ram | human_to_bytes) + (private_cloud.immich.machine_learning_max_ram | human_to_bytes) + (private_cloud.immich.valkey_max_ram | human_to_bytes), 0)) +
         (private_cloud.stages.stalwart | ternary(private_cloud.stalwart.max_ram | human_to_bytes, 0)) +
         (private_cloud.stages.zabbix_server | ternary(1610612736, 0))
       }}
@@ -731,7 +774,9 @@
       onlyoffice: "{{ private_cloud.onlyoffice }}"
       opencloud: "{{ private_cloud.opencloud }}"
       grist: "{{ private_cloud.grist }}"
+      redis_affine: "{{ private_cloud.redis_affine }}"
       affine: "{{ private_cloud.affine }}"
+      immich: "{{ private_cloud.immich }}"
       stalwart: "{{ private_cloud.stalwart }}"
       zabbix: "{{ private_cloud.zabbix }}"
       secrets:
@@ -744,6 +789,7 @@
         grist_session_secret: configured
         grist_boot_key: configured
         affine_database_password: configured
+        immich_database_password: configured
         stalwart_database_password: configured
         stalwart_admin_password: configured
         stalwart_mailbox_password: configured

@@ -16,6 +16,8 @@
     6. make sure k0s starts after zfs is muounted and unlocked on system startup
     7. Set explicit quotas for config, images, and ephemeral leaf datasets
     8. Keep Kubernetes manifests as Jinja templates under k0s-services and render them directly with Ansible.
+    9. Load the Intel i915 driver and install the matching firmware for integrated graphics
+    10. Deploy the Intel Kubernetes GPU plugin with shared allocations for machine learning and media workloads
 3. Setup postgres service (in k0s-services parent folder)
     1. create postgres zfs dataset under tank/secure/backup/k0s/services/postgres
     2. Tune dataset and postgres config. Use URL as a reference, but implement only featured mentioned below: https://vadosware.io/post/everything-ive-seen-on-optimizing-postgres-on-zfs-on-linux/#tuning-shared_buffers
@@ -30,7 +32,7 @@
         - Tune wal_init_zero & wal_recycle
         - Setting logbias=latency (instead of logbias=throughput)
     3. postgres service with its own kubernetess volume linked with dataset is deployed in k0s
-    4. Install, enable, and verify pgvector in the shared PostgreSQL service
+    4. Use the TensorChord PostgreSQL 18 image and verify pgvector and VectorChord
 4. Setup ZABBIX
     1. Run zabbix metrics gatherer on host (install, make sure it starts with system)
         - zfs errors
@@ -97,13 +99,25 @@
 12. Setup MANTICORE SEARCH
     1. Create a Manticore Search dataset under tank/secure/backup/k0s/services/manticore with a quota
     2. Deploy Manticore Search in k0s with its own 10Ti PV
-13. Setup REDIS for AFFINE 
-    1. Doesnt need dataset, is just a cache
+13. Setup REDIS for AFFiNE
+    1. Deploy `redis-affine` as an independent k0s service for AFFiNE
+    2. Keep Redis data ephemeral without a dataset, PV, or PVC
+    3. Restrict Redis ingress to the AFFiNE server and database preparation Job
 14. Setup AFFINE
     1. Deploy AFFiNE with its own dataset under tank/secure/backup/k0s/services/affine, 10Ti PV, and quota
     2. Create an AFFiNE database with pgvector enabled in the shared PostgreSQL service
     3. Configure the server-side indexer to use Manticore Search
-    4. Use Redis for Affine
+    4. Use the independent `redis-affine` service
     5. Prepare the fresh AFFiNE database schema before the server starts
     6. Persist AFFiNE blobs and configuration on its PV
     7. Expose AFFiNE for the user-provided domain through a valid TLS reverse proxy
+15. Setup IMMICH
+    1. Deploy Immich with its own dataset under tank/secure/backup/k0s/services/immich, 10Ti PV, and quota
+    2. Create an Immich database, login role, and credentials Secret in the existing PostgreSQL service
+    3. Install and verify pgvector and VectorChord in the shared PostgreSQL service
+    4. Enable pgvector, VectorChord, and earthdistance in the Immich database
+    5. Deploy a disposable Valkey service for Immich background jobs
+    6. Deploy the Immich machine-learning service for face detection and recognition
+    7. Enable Intel OpenVINO acceleration through the shared i915 Kubernetes device resource
+    8. Persist the Immich media library on its PV
+    9. Expose Immich for the user-provided domain through a valid TLS reverse proxy

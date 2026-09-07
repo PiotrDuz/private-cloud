@@ -4,12 +4,11 @@ affine_service_name: affine
 affine_database_name: affine
 affine_database_username: affine
 affine_postgres_service: postgres
-affine_redis_service_name: affine-redis
 affine_secret_name: affine-credentials
 affine_dataset: tank/secure/backup/k0s/services/affine
 affine_dataset_mountpoint: /tank/secure/backup/k0s/services/affine
 affine_pv_name: affine-data
 affine_pvc_name: affine-data
 affine_pv_capacity: 10Ti
-affine_pgvector_version: 0.8.6
+affine_pgvector_version: 0.8.1
 affine_kubeconfig: /run/private-cloud/kubeconfig

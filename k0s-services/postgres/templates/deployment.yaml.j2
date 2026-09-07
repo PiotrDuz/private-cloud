@@ -28,7 +28,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: postgres
-          image: pgvector/pgvector:0.8.6-pg18-bookworm
+          image: ghcr.io/tensorchord/vchord-postgres:pg18-v1.1.1@sha256:700ff05ebdc7e4afd4dd8442e0684293046c3833677fec326550000a04cf8a91
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
@@ -38,6 +38,8 @@ spec:
           args:
             - -c
             - shared_buffers={{ postgres_shared_buffers }}
+            - -c
+            - shared_preload_libraries=vchord.so
             - -c
             - full_page_writes=off
             - -c

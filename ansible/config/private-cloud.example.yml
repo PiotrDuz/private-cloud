@@ -1,8 +1,9 @@
-schema_version: 3
+schema_version: 4
 private_cloud:
   stages:
     zfs: true
     k0s: true
+    intel_gpu: true
     postgres: true
     meilisearch: true
     stalwart: true
@@ -12,7 +13,9 @@ private_cloud:
     opencloud: true
     grist: true
     manticore: true
+    redis_affine: true
     affine: true
+    immich: true
     zabbix_server: true
     zabbix_agent: true
   storage:
@@ -50,11 +53,23 @@ private_cloud:
   manticore:
     storage_size: 50G
     max_ram: 1Gi
+  redis_affine:
+    max_ram: 512Mi
   affine:
     storage_size: 100G
     max_ram: 4Gi
-    redis_max_ram: 512Mi
     hostname: affine.example.com
+  immich:
+    storage_size: 100G
+    hostname: photos.example.com
+    timezone: Etc/UTC
+    max_ram: 4Gi
+    max_cpu: "4"
+    machine_learning_max_ram: 4Gi
+    machine_learning_max_cpu: "4"
+    machine_learning_accelerator: openvino
+    valkey_max_ram: 512Mi
+    valkey_max_cpu: "1"
   stalwart:
     storage_size: 100G
     max_ram: 2Gi

@@ -28,7 +28,7 @@ spec:
           securityContext:
             privileged: false
           env:
-            - {name: REDIS_SERVER_HOST, value: affine-redis}
+            - {name: REDIS_SERVER_HOST, value: redis-affine}
             - {name: AFFINE_INDEXER_ENABLED, value: "true"}
             - {name: AFFINE_INDEXER_SEARCH_PROVIDER, value: manticoresearch}
             - {name: AFFINE_INDEXER_SEARCH_ENDPOINT, value: 'http://manticore:9308'}

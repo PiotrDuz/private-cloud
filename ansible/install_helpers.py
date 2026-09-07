@@ -38,8 +38,8 @@ KUBECONFIG_FILE = RUNTIME_DIRECTORY / "kubeconfig"
 INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
 SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate")
-CURRENT_SCHEMA_VERSION = 3
-CURRENT_SECRETS_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 4
+CURRENT_SECRETS_SCHEMA_VERSION = 2
 SECRET_SCHEMAS = {
     "storage": {"encryption_passphrase"},
     "postgres": {"admin_password"},
@@ -50,6 +50,7 @@ SECRET_SCHEMAS = {
     "opencloud": {"admin_password"},
     "grist": {"database_password", "session_secret", "boot_key"},
     "affine": {"database_password"},
+    "immich": {"database_password"},
 }
 SECRET_STAGES = {
     "storage": "zfs",
@@ -61,6 +62,7 @@ SECRET_STAGES = {
     "opencloud": "opencloud",
     "grist": "grist",
     "affine": "affine",
+    "immich": "immich",
 }
 QUOTA_PATTERN = re.compile(r"[1-9][0-9]*[KMGTPE]")
 RAM_PATTERN = re.compile(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)")
@@ -197,11 +199,11 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if configuration["schema_version"] != CURRENT_SCHEMA_VERSION:
         raise InstallerError(f"Public configuration schema_version must be {CURRENT_SCHEMA_VERSION}")
     cloud = configuration["private_cloud"]
-    expected = {"stages", "storage", "k0s", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "affine", "stalwart", "zabbix"}
+    expected = {"stages", "storage", "k0s", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix"}
     if set(cloud) != expected:
         raise InstallerError("Public configuration has missing or unknown sections")
     stages = cloud["stages"]
-    if not isinstance(stages, dict) or set(stages) != {"zfs", "k0s", "postgres", "meilisearch", "stalwart", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "affine", "zabbix_server", "zabbix_agent"}:
+    if not isinstance(stages, dict) or set(stages) != {"zfs", "k0s", "intel_gpu", "postgres", "meilisearch", "stalwart", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "zabbix_server", "zabbix_agent"}:
         raise InstallerError("Stage configuration is incomplete")
     if any(type(value) is not bool for value in stages.values()):
         raise InstallerError("Every stage flag must be Boolean")
@@ -290,20 +292,49 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Manticore configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(manticore.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(manticore.get("max_ram", ""))):
         raise InstallerError("Invalid Manticore size configuration")
+    redis_affine = cloud["redis_affine"]
+    if not isinstance(redis_affine, dict) or set(redis_affine) != {"max_ram"}:
+        raise InstallerError("Redis for AFFiNE configuration has missing or unknown keys")
+    if not RAM_PATTERN.fullmatch(str(redis_affine.get("max_ram", ""))) or ram_to_bytes(redis_affine["max_ram"]) < 134217728:
+        raise InstallerError("Invalid redis_affine.max_ram")
     affine = cloud["affine"]
-    expected_affine = {"storage_size", "max_ram", "redis_max_ram", "hostname"}
+    expected_affine = {"storage_size", "max_ram", "hostname"}
     if not isinstance(affine, dict) or set(affine) != expected_affine:
         raise InstallerError("AFFiNE configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(affine.get("storage_size", ""))):
         raise InstallerError("Invalid AFFiNE storage configuration")
-    for key in ("max_ram", "redis_max_ram"):
+    for key in ("max_ram",):
         if not RAM_PATTERN.fullmatch(str(affine.get(key, ""))):
             raise InstallerError(f"Invalid affine.{key}")
-    if ram_to_bytes(affine["max_ram"]) < 2147483648 or ram_to_bytes(affine["redis_max_ram"]) < 134217728:
-        raise InstallerError("AFFiNE memory limits are too small")
+    if ram_to_bytes(affine["max_ram"]) < 2147483648:
+        raise InstallerError("AFFiNE memory limit is too small")
     if not isinstance(affine.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(affine["hostname"]):
         raise InstallerError("Invalid affine.hostname")
-    public_hostnames = [onlyoffice["hostname"], opencloud["hostname"], grist["hostname"], affine["hostname"]]
+    immich = cloud["immich"]
+    expected_immich = {"storage_size", "hostname", "timezone", "max_ram", "max_cpu", "machine_learning_max_ram", "machine_learning_max_cpu", "machine_learning_accelerator", "valkey_max_ram", "valkey_max_cpu"}
+    if not isinstance(immich, dict) or set(immich) != expected_immich:
+        raise InstallerError("Immich configuration has missing or unknown keys")
+    if not QUOTA_PATTERN.fullmatch(str(immich.get("storage_size", ""))):
+        raise InstallerError("Invalid immich.storage_size")
+    for key in ("max_ram", "machine_learning_max_ram", "valkey_max_ram"):
+        if not RAM_PATTERN.fullmatch(str(immich.get(key, ""))):
+            raise InstallerError(f"Invalid immich.{key}")
+    if ram_to_bytes(immich["max_ram"]) < 2147483648 or ram_to_bytes(immich["machine_learning_max_ram"]) < 1073741824 or ram_to_bytes(immich["valkey_max_ram"]) < 134217728:
+        raise InstallerError("Immich memory limits are too small")
+    for key in ("max_cpu", "machine_learning_max_cpu", "valkey_max_cpu"):
+        if not isinstance(immich.get(key), str) or not re.fullmatch(r"(?:[1-9][0-9]*m|[1-9][0-9]*)", immich[key]):
+            raise InstallerError(f"Invalid immich.{key}")
+    if cpu_to_millicores(immich["max_cpu"]) < 500 or cpu_to_millicores(immich["machine_learning_max_cpu"]) < 250 or cpu_to_millicores(immich["valkey_max_cpu"]) < 100:
+        raise InstallerError("Immich CPU limits are below their requests")
+    if immich.get("machine_learning_accelerator") not in {"cpu", "openvino"}:
+        raise InstallerError("Invalid immich.machine_learning_accelerator")
+    if immich["machine_learning_accelerator"] == "openvino" and not stages["intel_gpu"]:
+        raise InstallerError("Immich OpenVINO acceleration requires the Intel GPU stage")
+    if not isinstance(immich.get("timezone"), str) or not re.fullmatch(r"[A-Za-z_+-]+/[A-Za-z_+/-]+", immich["timezone"]):
+        raise InstallerError("Invalid immich.timezone")
+    if not isinstance(immich.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(immich["hostname"]):
+        raise InstallerError("Invalid immich.hostname")
+    public_hostnames = [onlyoffice["hostname"], opencloud["hostname"], grist["hostname"], affine["hostname"], immich["hostname"]]
     if len(public_hostnames) != len(set(public_hostnames)):
         raise InstallerError("Every public application hostname must be unique")
     expected_stalwart = {
@@ -373,6 +404,8 @@ def validate_secrets_configuration(configuration: Mapping[str, Any], stages: Map
         raise InstallerError("The Grist boot key must contain at least 16 characters")
     if "affine" in secrets_root and "database_password" in secrets_root["affine"] and len(secrets_root["affine"]["database_password"]) < 16:
         raise InstallerError("The AFFiNE database password must contain at least 16 characters")
+    if "immich" in secrets_root and "database_password" in secrets_root["immich"] and len(secrets_root["immich"]["database_password"]) < 16:
+        raise InstallerError("The Immich database password must contain at least 16 characters")
     passphrase = secrets_root.get("storage", {}).get("encryption_passphrase")
     if passphrase is not None and not 8 <= len(passphrase.encode()) <= 512:
         raise InstallerError("The storage passphrase must contain 8 to 512 bytes")
@@ -489,6 +522,10 @@ def ram_to_bytes(value: str) -> int:
     units = {"Ki": 1024, "Mi": 1024 ** 2, "Gi": 1024 ** 3, "Ti": 1024 ** 4}
     return int(value[:-2]) * units[value[-2:]]
 
+
+
+def cpu_to_millicores(value: str) -> int:
+    return int(value[:-1]) if value.endswith("m") else int(value) * 1000
 
 
 def _write_command_failure_log(args: Sequence[str], stdout: str, stderr: str) -> Path:

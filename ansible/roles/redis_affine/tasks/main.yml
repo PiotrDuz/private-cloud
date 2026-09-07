@@ -2,8 +2,6 @@
 - name: Validate Redis for AFFiNE inputs
   ansible.builtin.assert:
     that:
-      - private_cloud.redis_affine.image is string
-      - private_cloud.redis_affine.image | length > 0
       - private_cloud.redis_affine.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - (private_cloud.redis_affine.max_ram | human_to_bytes | int) >= 134217728
     fail_msg: Redis for AFFiNE configuration is invalid.

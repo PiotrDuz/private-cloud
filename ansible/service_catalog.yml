@@ -16,11 +16,13 @@ private_cloud_dataset_catalog:
   - {name: grist, stage: grist, dataset: tank/secure/backup/k0s/services/grist, color: 7E57C2}
   - {name: manticore, stage: manticore, dataset: tank/secure/backup/k0s/services/manticore, color: FF7043}
   - {name: affine, stage: affine, dataset: tank/secure/backup/k0s/services/affine, color: 29B6F6}
+  - {name: immich, stage: immich, dataset: tank/secure/backup/k0s/services/immich, color: 7CB342}
   - {name: stalwart, stage: stalwart, dataset: tank/secure/backup/k0s/services/stalwart, color: 5C6BC0}
   - {name: zabbix, stage: zabbix_server, dataset: tank/secure/backup/k0s/services/zabbix, color: EF5350}
 
 private_cloud_stage_dependencies:
   k0s: [zfs]
+  intel_gpu: [k0s]
   postgres: [k0s]
   meilisearch: [k0s]
   stalwart: [postgres, meilisearch]
@@ -30,6 +32,8 @@ private_cloud_stage_dependencies:
   opencloud: [tika, bleve, onlyoffice]
   grist: [postgres]
   manticore: [k0s]
-  affine: [postgres, manticore]
+  redis_affine: [k0s]
+  affine: [postgres, manticore, redis_affine]
+  immich: [postgres]
   zabbix_server: [postgres]
   zabbix_agent: [zabbix_server]
