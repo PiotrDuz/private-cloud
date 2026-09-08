@@ -28,7 +28,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: stalwart
-          image: stalwartlabs/stalwart:v0.16
+          image: {{ stalwart_image }}
           imagePullPolicy: IfNotPresent
           args: [--config, /etc/stalwart/config.json]
           securityContext:
@@ -54,11 +54,7 @@ spec:
                   optional: true
           ports:
             - {name: management, containerPort: 8080, protocol: TCP}
-            - {name: https, containerPort: 443, protocol: TCP}
             - {name: smtp, containerPort: 25, protocol: TCP}
-            - {name: submissions, containerPort: 465, protocol: TCP}
-            - {name: submission, containerPort: 587, protocol: TCP}
-            - {name: imaps, containerPort: 993, protocol: TCP}
           resources:
             requests: {cpu: 250m, memory: {{ private_cloud.stalwart.max_ram | to_json }}, ephemeral-storage: 256Mi}
             limits: {cpu: 2, memory: {{ private_cloud.stalwart.max_ram | to_json }}, ephemeral-storage: 2Gi}

@@ -1,0 +1,111 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: media-vpn-ingress
+  namespace: media
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: media-vpn}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {private-cloud.example/openvpn-guarded: 'true'}
+      ports:
+        - {protocol: TCP, port: 8388}
+        - {protocol: UDP, port: 8388}
+        - {protocol: TCP, port: 53}
+        - {protocol: UDP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: media-vpn-egress
+  namespace: media
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: media-vpn}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: {{ private_cloud.media.openvpn.endpoint_ip }}/32}
+      ports:
+        - protocol: {{ private_cloud.media.openvpn.endpoint_protocol }}
+          port: {{ private_cloud.media.openvpn.endpoint_port }}
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: guarded-egress
+  namespace: media
+spec:
+  podSelector:
+    matchLabels: {private-cloud.example/openvpn-guarded: 'true'}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: media-vpn}
+      ports:
+        - {protocol: TCP, port: 8388}
+        - {protocol: UDP, port: 8388}
+        - {protocol: TCP, port: 53}
+        - {protocol: UDP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: arr-api-ingress
+  namespace: media
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [sonarr, radarr, prowlarr, qbittorrent]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [sonarr, radarr, prowlarr, qbittorrent]
+      ports:
+        - {protocol: TCP, port: 8989}
+        - {protocol: TCP, port: 7878}
+        - {protocol: TCP, port: 9696}
+        - {protocol: TCP, port: 8080}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: arr-api-egress
+  namespace: media
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [sonarr, radarr, prowlarr]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [sonarr, radarr, prowlarr, qbittorrent]
+      ports:
+        - {protocol: TCP, port: 8989}
+        - {protocol: TCP, port: 7878}
+        - {protocol: TCP, port: 9696}
+        - {protocol: TCP, port: 8080}

@@ -1,0 +1,22 @@
+---
+- name: Prepare logging dataset and quota
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: "{{ logging_service.name }}"
+    private_cloud_service_dataset: "{{ logging_service.dataset }}"
+    private_cloud_service_dataset_mountpoint: "/{{ logging_service.dataset }}"
+    private_cloud_service_storage_size: "{{ private_cloud.logging[logging_service.name ~ '_storage_size'] }}"
+
+- name: Prepare logging dataset ownership
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/service_dataset_permissions.yml"
+  vars:
+    private_cloud_service_dataset_mountpoint: "/{{ logging_service.dataset }}"
+    private_cloud_service_dataset_owner: "{{ logging_service.uid | string }}"
+    private_cloud_service_dataset_group: "{{ logging_service.uid | string }}"
+
+- name: Verify logging dataset quota
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/service_dataset_quota.yml"
+  vars:
+    private_cloud_service_name: "{{ logging_service.name }}"
+    private_cloud_service_dataset: "{{ logging_service.dataset }}"
+    private_cloud_service_storage_size: "{{ private_cloud.logging[logging_service.name ~ '_storage_size'] }}"

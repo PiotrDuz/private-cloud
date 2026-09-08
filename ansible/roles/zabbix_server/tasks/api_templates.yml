@@ -1,6 +1,13 @@
+- name: Expand dataset items from the shared catalog
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/../zabbix/build_storage_template.py"]
+    stdin: "{{ {'template_path': zabbix_template_paths[0], 'datasets': private_cloud_dataset_catalog} | to_json }}"
+  register: zabbix_catalog_template
+  changed_when: false
+
 - name: Load the retained ZFS template
   ansible.builtin.set_fact:
-    zabbix_zfs_template_document: "{{ lookup('file', zabbix_template_paths[0]) | from_yaml }}"
+    zabbix_zfs_template_document: "{{ zabbix_catalog_template.stdout | from_json }}"
 
 - name: Initialize enabled ZFS template items
   ansible.builtin.set_fact:

@@ -1,0 +1,48 @@
+---
+- name: Resolve logging monitoring endpoints
+  kubernetes.core.k8s_info:
+    kubeconfig: /run/private-cloud/kubeconfig
+    api_version: v1
+    kind: Service
+    name: "{{ item }}"
+    namespace: observability
+  loop: [loki, alloy, grafana]
+  register: observability_services
+  changed_when: false
+
+- name: Select certificate endpoints
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/observability_certificates.yml"
+
+- name: Copy logging health collector
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../logging/{{ item }}"
+    dest: "/usr/local/libexec/zabbix/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [health.py, health_helpers.py]
+  notify: Restart Zabbix Agent 2
+
+- name: Configure logging health probe targets
+  ansible.builtin.copy:
+    dest: /etc/zabbix/private-cloud-observability.json
+    content: >-
+      {{ {'endpoints': {
+        'loki': 'http://' ~ observability_services.results[0].resources[0].spec.clusterIP ~ ':3100',
+        'alloy': 'http://' ~ observability_services.results[1].resources[0].spec.clusterIP ~ ':12345',
+        'grafana': 'http://' ~ observability_services.results[2].resources[0].spec.clusterIP ~ ':3000'
+      }, 'address': private_cloud.networking.traefik_internal_ip,
+      'certificates': observability_certificates} | to_nice_json }}
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Zabbix Agent 2
+
+- name: Enable logging health user parameter
+  ansible.builtin.copy:
+    dest: /etc/zabbix/zabbix_agent2.d/observability.conf
+    content: "UserParameter=observability.health,/usr/bin/python3 /usr/local/libexec/zabbix/health.py /etc/zabbix/private-cloud-observability.json\n"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Zabbix Agent 2

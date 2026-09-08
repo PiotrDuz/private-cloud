@@ -1,0 +1,147 @@
+---
+- name: Install log rotation support
+  ansible.builtin.apt:
+    name: logrotate
+    state: present
+
+- name: Create logging configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: [/etc/systemd/journald.conf.d, /usr/local/libexec/private-cloud, /var/lib/private-cloud]
+
+- name: Bound persistent system journal
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/private-cloud.conf
+    content: "[Journal]\nStorage=persistent\nSystemMaxUse=1G\nRuntimeMaxUse=128M\nMaxRetentionSec=7day\n"
+    owner: root
+    group: root
+    mode: '0644'
+  register: logging_journal_config
+
+- name: Create persistent journal directory
+  ansible.builtin.command: systemd-tmpfiles --create --prefix /var/log/journal
+  changed_when: false
+
+- name: Restart journal after retention changes
+  ansible.builtin.systemd_service:
+    name: systemd-journald
+    state: restarted
+  when: logging_journal_config.changed
+
+- name: Flush journal to persistent storage
+  ansible.builtin.command: journalctl --flush
+  changed_when: false
+
+- name: Install logging heartbeat
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../logging/heartbeat.py"
+    dest: /usr/local/libexec/private-cloud/log-heartbeat.py
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install heartbeat service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/private-cloud-log-heartbeat.service
+    content: |
+      [Unit]
+      Description=Private cloud log pipeline heartbeat
+      [Service]
+      Type=oneshot
+      DynamicUser=yes
+      ExecStart=/usr/bin/python3 /usr/local/libexec/private-cloud/log-heartbeat.py
+      StandardOutput=journal
+      SyslogLevel=info
+      NoNewPrivileges=yes
+      ProtectSystem=strict
+      ProtectHome=yes
+      PrivateTmp=yes
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install heartbeat timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/private-cloud-log-heartbeat.timer
+    content: |
+      [Unit]
+      Description=Check the logging pipeline every minute
+      [Timer]
+      OnBootSec=30s
+      OnUnitActiveSec=60s
+      AccuracySec=1s
+      [Install]
+      WantedBy=timers.target
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install application log rotation
+  ansible.builtin.template:
+    src: logrotate.conf.j2
+    dest: /etc/private-cloud-logs.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install diagnostic retention helpers
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../logging/{{ item }}"
+    dest: "/usr/local/libexec/private-cloud/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [retain_diagnostics.py, log_retention_helpers.py]
+
+- name: Install application log rotation service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/private-cloud-logrotate.service
+    content: |
+      [Unit]
+      Description=Bound application file logs
+      RequiresMountsFor=/tank/secure/backup/k0s/services
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/sbin/logrotate --state /var/lib/private-cloud/logrotate.status /etc/private-cloud-logs.conf
+      ExecStart=/usr/bin/python3 /usr/local/libexec/private-cloud/retain_diagnostics.py
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install application log rotation timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/private-cloud-logrotate.timer
+    content: |
+      [Unit]
+      Description=Check application file log sizes
+      [Timer]
+      OnBootSec=5m
+      OnUnitActiveSec=15m
+      [Install]
+      WantedBy=timers.target
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable logging timers
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    daemon_reload: true
+    enabled: true
+    state: started
+  loop: [private-cloud-log-heartbeat.timer, private-cloud-logrotate.timer]
+
+- name: Resolve SMTP destinations for notification policies
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/../logging/resolve_smtp.py", "{{ private_cloud.stalwart.relay_host }}"]
+  register: logging_smtp_resolution
+  changed_when: false
+  when: private_cloud.stages.notifications | bool
+
+- name: Select SMTP destinations
+  ansible.builtin.set_fact:
+    logging_smtp_addresses: "{{ (logging_smtp_resolution.stdout | from_json) if private_cloud.stages.notifications else [] }}"

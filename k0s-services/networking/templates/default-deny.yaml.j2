@@ -1,0 +1,13 @@
+{% for namespace in ['private-cloud', 'media', 'edge', 'network-access', 'dns-system', 'observability'] %}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ namespace }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []
+---
+{% endfor %}

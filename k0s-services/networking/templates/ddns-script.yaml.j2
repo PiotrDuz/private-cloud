@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflare-ddns
+  namespace: dns-system
+data:
+  update.py: |
+    import ipaddress
+    import json
+    import os
+    import urllib.parse
+    import urllib.request
+
+    ZONE_ID = {{ private_cloud.networking.cloudflare_zone_id | to_json }}
+    RECORDS = {{ private_cloud.networking.managed_records | to_json }}
+    ADDRESS_URL = {{ private_cloud.networking.public_ip_url | to_json }}
+    API_ROOT = "https://api.cloudflare.com/client/v4"
+
+
+    def main():
+        token = os.environ["CLOUDFLARE_API_TOKEN"]
+        address = discover_address()
+        changed = []
+        for hostname in RECORDS:
+            record = get_record(token, hostname)
+            if record["content"] != address:
+                update_record(token, record["id"], hostname, address)
+                changed.append(hostname)
+        print(json.dumps({"address": address, "updated": changed}))
+
+
+    def discover_address():
+        with urllib.request.urlopen(ADDRESS_URL, timeout=10) as response:
+            value = response.read(64).decode().strip()
+        return str(ipaddress.IPv4Address(value))
+
+
+    def request(token, url, method="GET", body=None):
+        payload = None if body is None else json.dumps(body).encode()
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        with urllib.request.urlopen(urllib.request.Request(url, data=payload, headers=headers, method=method), timeout=20) as response:
+            result = json.load(response)
+        if not result.get("success"):
+            raise RuntimeError("Cloudflare request failed")
+        return result["result"]
+
+
+    def get_record(token, hostname):
+        quoted = urllib.parse.quote(hostname, safe="")
+        records = request(token, f"{API_ROOT}/zones/{ZONE_ID}/dns_records?type=A&name={quoted}")
+        if len(records) != 1:
+            raise RuntimeError(f"Expected one existing A record for {hostname}")
+        return records[0]
+
+
+    def update_record(token, record_id, hostname, address):
+        request(token, f"{API_ROOT}/zones/{ZONE_ID}/dns_records/{record_id}", "PUT", {
+            "type": "A", "name": hostname, "content": address, "ttl": 300, "proxied": False,
+        })
+
+
+    if __name__ == "__main__":
+        main()

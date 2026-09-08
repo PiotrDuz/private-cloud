@@ -1,0 +1,6 @@
+---
+- name: Restart private cloud firewall
+  ansible.builtin.systemd:
+    name: private-cloud-firewall.service
+    state: restarted
+    daemon_reload: true

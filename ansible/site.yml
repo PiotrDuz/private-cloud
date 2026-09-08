@@ -43,6 +43,14 @@
           when: private_cloud.stages.k0s | bool
           tags: [k0s]
 
+        - name: Configure cluster networking and edge access
+          ansible.builtin.include_role:
+            name: networking
+            apply:
+              tags: [networking]
+          when: private_cloud.stages.networking | bool
+          tags: [networking]
+
         - name: Configure the Intel GPU device plugin
           ansible.builtin.include_role:
             name: intel_gpu
@@ -50,6 +58,14 @@
               tags: [intel_gpu]
           when: private_cloud.stages.intel_gpu | bool
           tags: [intel_gpu]
+
+        - name: Deploy the isolated media stack
+          ansible.builtin.include_role:
+            name: media
+            apply:
+              tags: [media]
+          when: private_cloud.stages.media | bool
+          tags: [media]
 
         - name: Deploy PostgreSQL
           ansible.builtin.include_role:
@@ -146,6 +162,14 @@
               tags: [immich]
           when: private_cloud.stages.immich | bool
           tags: [immich]
+
+        - name: Deploy centralized logging
+          ansible.builtin.include_role:
+            name: logging
+            apply:
+              tags: [logging]
+          when: private_cloud.stages.logging | bool
+          tags: [logging]
 
         - name: Deploy Zabbix server
           ansible.builtin.include_role:

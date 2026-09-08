@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-dynamic
+  namespace: edge
+data:
+  tcp.yaml: |
+    tcp:
+      routers:
+        stalwart-smtp:
+          entryPoints: [smtp]
+          rule: HostSNI(`*`)
+          service: stalwart-smtp
+      services:
+        stalwart-smtp:
+          loadBalancer:
+            proxyProtocol:
+              version: 2
+            servers:
+              - address: stalwart.private-cloud.svc.cluster.local:25

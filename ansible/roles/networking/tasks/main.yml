@@ -1,0 +1,158 @@
+---
+- name: Validate networking inputs
+  ansible.builtin.assert:
+    that:
+      - private_cloud.networking.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.networking.acme_email is match('^[^@ ]+@[^@ ]+\.[^@ ]+$')
+      - private_cloud.networking.amneziawg.listen_port | int >= 1
+      - private_cloud.networking.amneziawg.listen_port | int <= 65535
+      - private_cloud.networking.local_network_cidrs | length > 0
+      - private_cloud_secrets.networking.cloudflare_api_token | length >= 20
+      - private_cloud_secrets.networking.cloudflare_ddns_api_token | length >= 20
+      - private_cloud_secrets.networking.amneziawg_private_key | length == 44
+    fail_msg: Networking configuration is invalid.
+  no_log: true
+
+- name: Prepare the Traefik service dataset
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: Traefik
+    private_cloud_service_dataset: "{{ networking_traefik_dataset }}"
+    private_cloud_service_dataset_mountpoint: "{{ networking_traefik_mountpoint }}"
+    private_cloud_service_storage_size: "{{ private_cloud.networking.storage_size }}"
+
+- name: Set Traefik dataset permissions
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_permissions.yml"
+  vars:
+    private_cloud_service_dataset_mountpoint: "{{ networking_traefik_mountpoint }}"
+    private_cloud_service_dataset_owner: 65532
+    private_cloud_service_dataset_group: 65532
+
+- name: Select the Traefik storage node
+  ansible.builtin.set_fact:
+    networking_node_name: "{{ ansible_hostname }}"
+
+- name: Require the configured edge address on the default interface
+  ansible.builtin.assert:
+    that:
+      - ansible_default_ipv4.interface | length > 0
+      - ansible_default_ipv4.address == private_cloud.networking.traefik_internal_ip
+    fail_msg: The Traefik host address must equal the default interface address before the host firewall is enabled.
+
+- name: Install the host firewall package
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+    update_cache: true
+
+- name: Install the private cloud firewall rules
+  ansible.builtin.template:
+    src: private-cloud-firewall.nft.j2
+    dest: "{{ networking_firewall_rules_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+    validate: /usr/sbin/nft -c -f %s
+  notify: Restart private cloud firewall
+
+- name: Install the private cloud firewall service
+  ansible.builtin.template:
+    src: private-cloud-firewall.service.j2
+    dest: "{{ networking_firewall_service_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart private cloud firewall
+
+- name: Enable the private cloud firewall
+  ansible.builtin.systemd:
+    name: private-cloud-firewall.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Install AmneziaWG build dependencies
+  ansible.builtin.apt:
+    name:
+      - build-essential
+      - dkms
+      - git
+      - linux-headers-{{ ansible_kernel }}
+    state: present
+    update_cache: true
+
+- name: Checkout the pinned AmneziaWG kernel module
+  ansible.builtin.git:
+    repo: "{{ networking_amneziawg_module_repository }}"
+    dest: "{{ networking_amneziawg_source }}"
+    version: "{{ networking_amneziawg_module_version }}"
+    depth: 1
+    force: false
+  register: networking_amneziawg_source_state
+
+- name: Install the AmneziaWG DKMS source
+  ansible.builtin.command: make dkms-install
+  args:
+    chdir: "{{ networking_amneziawg_source }}/src"
+  when: networking_amneziawg_source_state.changed
+
+- name: Inspect the AmneziaWG DKMS module
+  ansible.builtin.command: dkms status amneziawg/1.0.0
+  register: networking_amneziawg_dkms
+  changed_when: false
+  failed_when: false
+
+- name: Register the AmneziaWG DKMS module
+  ansible.builtin.command: dkms add -m amneziawg -v 1.0.0
+  when: networking_amneziawg_dkms.rc != 0
+
+- name: Build and install the AmneziaWG DKMS module
+  ansible.builtin.command: "dkms {{ item }} -m amneziawg -v 1.0.0"
+  loop: [build, install]
+  when: "'installed' not in networking_amneziawg_dkms.stdout"
+
+- name: Load the AmneziaWG kernel module
+  community.general.modprobe:
+    name: amneziawg
+    state: present
+    persistent: present
+
+- name: Render networking manifests
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: networking
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/networking/templates"
+
+- name: Apply networking credentials
+  kubernetes.core.k8s:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - cloudflare-secret.yml.j2
+    - ddns-secret.yml.j2
+    - amneziawg-secret.yml.j2
+  no_log: true
+
+- name: Apply networking workloads
+  kubernetes.core.k8s:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    state: present
+    definition: "{{ private_cloud_rendered_manifests }}"
+  no_log: true
+
+- name: Remove superseded application NodePort services
+  kubernetes.core.k8s:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    state: absent
+    api_version: v1
+    kind: Service
+    namespace: private-cloud
+    name: "{{ item }}"
+  loop:
+    - affine-public
+    - grist-public
+    - immich-public
+    - onlyoffice-public
+    - opencloud-public
+    - stalwart-public

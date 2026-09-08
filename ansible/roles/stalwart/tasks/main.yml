@@ -420,12 +420,12 @@
       changed_when: false
   when: stalwart_configuration_required | bool
 
-- name: Wait for Stalwart public service endpoint
+- name: Wait for Stalwart service endpoint
   kubernetes.core.k8s_info:
     kubeconfig: "{{ stalwart_kubeconfig }}"
     api_version: v1
     kind: Endpoints
-    name: "{{ stalwart_public_service_name }}"
+    name: "{{ stalwart_endpoint_service_name }}"
     namespace: "{{ stalwart_namespace }}"
   register: stalwart_endpoint
   until: stalwart_endpoint.resources | length > 0 and (stalwart_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0)

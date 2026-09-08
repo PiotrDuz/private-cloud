@@ -1,0 +1,135 @@
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: traefik
+spec:
+  controller: traefik.io/ingress-controller
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traefik
+  namespace: edge
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: traefik}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: traefik}
+    spec:
+      serviceAccountName: traefik
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: traefik
+          image: {{ networking_traefik_image }}
+          args:
+            - --entryPoints.websecure.address=:8443
+            - --entryPoints.smtp.address=:2525
+            - --log.format=json
+            - --log.level=INFO
+            - --accesslog=true
+            - --accesslog.format=json
+            - --accesslog.fields.headers.defaultmode=drop
+            - --accesslog.fields.names.RequestPath=drop
+            - --accesslog.fields.names.RequestLine=drop
+            - --providers.kubernetesingress=true
+            - --providers.kubernetesingress.namespaces=private-cloud,media
+            - --providers.kubernetesingress.ingressclass=traefik
+            - --providers.kubernetesingress.allowexternalnameservices=false
+            - --providers.file.filename=/etc/traefik/dynamic/tcp.yaml
+            - --providers.file.watch=true
+            - --certificatesresolvers.cloudflare.acme.email={{ private_cloud.networking.acme_email }}
+            - --certificatesresolvers.cloudflare.acme.storage=/data/acme.json
+            - --certificatesresolvers.cloudflare.acme.dnschallenge.provider=cloudflare
+            - --api.dashboard=false
+            - --ping=true
+          env:
+            - name: CF_DNS_API_TOKEN
+              valueFrom: {secretKeyRef: {name: cloudflare-dns-api, key: api-token}}
+          ports:
+            - {name: https, containerPort: 8443, hostPort: 443, protocol: TCP}
+            - {name: smtp, containerPort: 2525, hostPort: 25, protocol: TCP}
+          readinessProbe: {httpGet: {path: /ping, port: 8080}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /ping, port: 8080}, periodSeconds: 10}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: '1', memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: dynamic, mountPath: /etc/traefik/dynamic, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: traefik-data
+        - {name: dynamic, configMap: {name: traefik-dynamic}}
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: traefik
+  namespace: edge
+spec:
+  selector: {app.kubernetes.io/name: traefik}
+  ports:
+    - {name: https, port: 443, targetPort: https, protocol: TCP}
+    - {name: smtp, port: 25, targetPort: smtp, protocol: TCP}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: traefik
+  namespace: edge
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: traefik}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - {protocol: TCP, port: 8443}
+        - {protocol: TCP, port: 2525}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: private-cloud}
+      ports:
+        - {protocol: TCP, port: 80}
+        - {protocol: TCP, port: 8080}
+        - {protocol: TCP, port: 2283}
+        - {protocol: TCP, port: 3010}
+        - {protocol: TCP, port: 8484}
+        - {protocol: TCP, port: 9200}
+        - {protocol: TCP, port: 25}
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: media}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: jellyfin}
+      ports: [{protocol: TCP, port: 8096}]
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - ipBlock:
+            cidr: {{ private_cloud.networking.service_cidr }}
+      ports: [{protocol: TCP, port: 443}]
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16]
+      ports: [{protocol: TCP, port: 443}]

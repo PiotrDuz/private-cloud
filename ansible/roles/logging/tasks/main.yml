@@ -1,0 +1,86 @@
+---
+- name: Prepare logging kubeconfig
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/kubeconfig.yml"
+  vars:
+    private_cloud_kubeconfig: "{{ logging_kubeconfig }}"
+
+- name: Prepare each logging dataset
+  ansible.builtin.include_tasks: dataset.yml
+  loop: "{{ logging_services }}"
+  loop_control:
+    loop_var: logging_service
+
+- name: Configure host log retention and heartbeat
+  ansible.builtin.import_tasks: host.yml
+
+- name: Apply Grafana credentials
+  kubernetes.core.k8s:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'secret.yml.j2') | from_yaml }}"
+  register: logging_secret_apply
+  no_log: true
+
+- name: Apply each logging service
+  ansible.builtin.include_tasks: deploy.yml
+  loop: [loki, alloy, grafana]
+  loop_control:
+    loop_var: logging_component
+
+- name: Restart Grafana after credential changes
+  kubernetes.core.k8s:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    state: patched
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: {name: grafana, namespace: observability}
+      spec:
+        template:
+          metadata:
+            annotations:
+              private-cloud.example/credentials-restarted-at: "{{ ansible_date_time.iso8601 }}"
+  when: logging_secret_apply.changed
+  no_log: true
+
+- name: Wait for logging workloads
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ item }}"
+    namespace: observability
+  loop: [loki, alloy, grafana]
+  register: logging_workload
+  until:
+    - logging_workload.resources | length == 1
+    - logging_workload.resources[0].status.observedGeneration | default(0) | int >= logging_workload.resources[0].metadata.generation | int
+    - logging_workload.resources[0].status.updatedReplicas | default(0) | int == 1
+    - logging_workload.resources[0].status.availableReplicas | default(0) | int == 1
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Resolve logging service endpoints
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    api_version: v1
+    kind: Service
+    name: "{{ item.name }}"
+    namespace: observability
+  loop: "{{ logging_services }}"
+  register: logging_endpoints
+  changed_when: false
+
+- name: Verify end-to-end host log ingestion
+  ansible.builtin.uri:
+    url: 'http://{{ logging_endpoints.results[0].resources[0].spec.clusterIP }}:3100/loki/api/v1/query?query={{ "sum(count_over_time({job=\"host\",service=\"private-cloud-log-heartbeat.service\"}[5m]))" | urlencode }}'
+    return_content: true
+  register: logging_ingestion
+  until:
+    - logging_ingestion.status | default(0) == 200
+    - logging_ingestion.json.data.result | default([]) | length > 0
+    - logging_ingestion.json.data.result[0].value[1] | float > 0
+  retries: 30
+  delay: 10
+  changed_when: false

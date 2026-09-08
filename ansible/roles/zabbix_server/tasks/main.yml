@@ -306,9 +306,23 @@
   delay: 5
   changed_when: false
 
+- name: Read the Zabbix web service address
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    api_version: v1
+    kind: Service
+    name: zabbix-web
+    namespace: "{{ zabbix_namespace }}"
+  register: zabbix_web_service
+  changed_when: false
+
+- name: Select the Zabbix API endpoint
+  ansible.builtin.set_fact:
+    zabbix_api_url: "http://{{ zabbix_web_service.resources[0].spec.clusterIP }}/api_jsonrpc.php"
+
 - name: Verify Zabbix API readiness
   ansible.builtin.uri:
-    url: "http://127.0.0.1:30080/api_jsonrpc.php"
+    url: "{{ zabbix_api_url }}"
     method: POST
     body_format: json
     body: {jsonrpc: '2.0', method: apiinfo.version, params: {}, id: 1}

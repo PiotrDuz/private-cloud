@@ -1,0 +1,12 @@
+---
+networking_kubeconfig: /run/private-cloud/kubeconfig
+networking_traefik_image: traefik:v3.7.13@sha256:f86a2cab1b5c649070c49f883c743dd32d8485a56e3368c5f93b9e91f1e91259
+networking_amneziawg_module_repository: https://github.com/amnezia-vpn/amneziawg-linux-kernel-module.git
+networking_amneziawg_module_version: 4569c4c67f3a57414969260cafbbd04694fbaae0
+networking_amneziawg_tools_image: amneziavpn/amneziawg-go:3.1.20260828@sha256:cbafc02b8373a83f428272db6d8001b37bc02e6211cbd8c0cb4e2e3759b12b72
+networking_amneziawg_source: /usr/src/private-cloud-amneziawg
+networking_traefik_dataset: tank/secure/backup/k0s/services/traefik
+networking_traefik_mountpoint: /tank/secure/backup/k0s/services/traefik
+networking_traefik_pv_capacity: 10Ti
+networking_firewall_rules_path: /etc/private-cloud-firewall.nft
+networking_firewall_service_path: /etc/systemd/system/private-cloud-firewall.service

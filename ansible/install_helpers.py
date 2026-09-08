@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import getpass
+import ipaddress
 import json
 import os
 import re
@@ -38,19 +39,22 @@ KUBECONFIG_FILE = RUNTIME_DIRECTORY / "kubeconfig"
 INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
 SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate")
-CURRENT_SCHEMA_VERSION = 4
-CURRENT_SECRETS_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 6
+CURRENT_SECRETS_SCHEMA_VERSION = 3
 SECRET_SCHEMAS = {
     "storage": {"encryption_passphrase"},
     "postgres": {"admin_password"},
     "meilisearch": {"master_key"},
-    "stalwart": {"database_password", "admin_password", "mailbox_password", "relay_password"},
+    "stalwart": {"database_password", "admin_password", "mailbox_password", "relay_password", "certificate_dns_api_token"},
     "zabbix": {"database_password", "admin_password"},
     "onlyoffice": {"jwt_secret"},
     "opencloud": {"admin_password"},
     "grist": {"database_password", "session_secret", "boot_key"},
     "affine": {"database_password"},
     "immich": {"database_password"},
+    "networking": {"cloudflare_api_token", "cloudflare_ddns_api_token", "amneziawg_private_key"},
+    "logging": {"admin_password", "secret_key"},
+    "media": {"openvpn_configuration", "openvpn_username", "openvpn_password", "proxy_password"},
 }
 SECRET_STAGES = {
     "storage": "zfs",
@@ -63,6 +67,9 @@ SECRET_STAGES = {
     "grist": "grist",
     "affine": "affine",
     "immich": "immich",
+    "networking": "networking",
+    "media": "media",
+    "logging": "logging",
 }
 QUOTA_PATTERN = re.compile(r"[1-9][0-9]*[KMGTPE]")
 RAM_PATTERN = re.compile(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)")
@@ -193,17 +200,28 @@ def prompt_secret(prompt: str, *, confirm: bool = True) -> str:
         return value
 
 
+def prompt_secret_file(prompt: str) -> str:
+    path = Path(prompt_line(f"{prompt} file path"))
+    try:
+        value = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise InstallerError(f"Cannot read {prompt.lower()} file: {path}") from error
+    if not value.strip():
+        raise InstallerError(f"{prompt} file is empty")
+    return value
+
+
 def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if set(configuration) != {"schema_version", "private_cloud"} or not isinstance(configuration["private_cloud"], dict):
         raise InstallerError("Public configuration must contain only schema_version and private_cloud")
     if configuration["schema_version"] != CURRENT_SCHEMA_VERSION:
         raise InstallerError(f"Public configuration schema_version must be {CURRENT_SCHEMA_VERSION}")
     cloud = configuration["private_cloud"]
-    expected = {"stages", "storage", "k0s", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix"}
+    expected = {"stages", "storage", "k0s", "networking", "media", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix", "logging", "notifications"}
     if set(cloud) != expected:
         raise InstallerError("Public configuration has missing or unknown sections")
     stages = cloud["stages"]
-    if not isinstance(stages, dict) or set(stages) != {"zfs", "k0s", "intel_gpu", "postgres", "meilisearch", "stalwart", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "zabbix_server", "zabbix_agent"}:
+    if not isinstance(stages, dict) or set(stages) != {"zfs", "k0s", "networking", "media", "intel_gpu", "postgres", "meilisearch", "stalwart", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "zabbix_server", "zabbix_agent", "logging", "notifications"}:
         raise InstallerError("Stage configuration is incomplete")
     if any(type(value) is not bool for value in stages.values()):
         raise InstallerError("Every stage flag must be Boolean")
@@ -234,6 +252,101 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     for key in ("config_quota", "images_quota", "ephemeral_quota"):
         if not QUOTA_PATTERN.fullmatch(k0s[key]):
             raise InstallerError(f"Invalid k0s.{key}")
+    networking = cloud["networking"]
+    expected_networking = {"storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "managed_records", "pod_cidr", "service_cidr", "cluster_dns_ip", "local_network_cidrs", "traefik_internal_ip", "zabbix_hostname", "amneziawg"}
+    if not isinstance(networking, dict) or set(networking) != expected_networking:
+        raise InstallerError("Networking configuration has missing or unknown keys")
+    if not QUOTA_PATTERN.fullmatch(str(networking.get("storage_size", ""))):
+        raise InstallerError("Invalid networking.storage_size")
+    if not EMAIL_PATTERN.fullmatch(str(networking.get("acme_email", ""))):
+        raise InstallerError("Invalid networking.acme_email")
+    if not DOMAIN_PATTERN.fullmatch(str(networking.get("zabbix_hostname", ""))):
+        raise InstallerError("Invalid networking.zabbix_hostname")
+    if not re.fullmatch(r"[0-9a-fA-F]{32}", str(networking.get("cloudflare_zone_id", ""))):
+        raise InstallerError("Invalid networking.cloudflare_zone_id")
+    if not re.fullmatch(r"https://[^\s/]+(?:/[^\s]*)?", str(networking.get("public_ip_url", ""))):
+        raise InstallerError("Invalid networking.public_ip_url")
+    managed_records = networking.get("managed_records")
+    if not isinstance(managed_records, list) or not managed_records or len(managed_records) != len(set(managed_records)):
+        raise InstallerError("Cloudflare managed records must be a non-empty unique list")
+    if any(not isinstance(record, str) or not DOMAIN_PATTERN.fullmatch(record) for record in managed_records):
+        raise InstallerError("Invalid Cloudflare managed record")
+    try:
+        pod_network = ipaddress.ip_network(networking["pod_cidr"], strict=True)
+        service_network = ipaddress.ip_network(networking["service_cidr"], strict=True)
+        cluster_dns_address = ipaddress.ip_address(networking["cluster_dns_ip"])
+        traefik_address = ipaddress.ip_address(networking["traefik_internal_ip"])
+        local_networks = [ipaddress.ip_network(value, strict=True) for value in networking["local_network_cidrs"]]
+    except (KeyError, TypeError, ValueError) as error:
+        raise InstallerError("Invalid networking address or CIDR") from error
+    if not local_networks or pod_network.version != 4 or service_network.version != 4 or cluster_dns_address.version != 4 or traefik_address.version != 4 or any(value.version != 4 for value in local_networks):
+        raise InstallerError("Networking currently requires IPv4 addresses")
+    if cluster_dns_address not in service_network:
+        raise InstallerError("The cluster DNS address must belong to the service CIDR")
+    if pod_network.overlaps(service_network) or any(network.overlaps(pod_network) or network.overlaps(service_network) for network in local_networks):
+        raise InstallerError("Pod, service, and local network ranges must not overlap")
+    if not any(traefik_address in network for network in local_networks):
+        raise InstallerError("The Traefik host address must belong to a local network")
+    if traefik_address in pod_network or traefik_address in service_network:
+        raise InstallerError("Pod, service, and Traefik address ranges must not overlap")
+    amneziawg = networking.get("amneziawg")
+    if not isinstance(amneziawg, dict) or set(amneziawg) != {"hostname", "address", "tunnel_cidr", "listen_port", "peers"}:
+        raise InstallerError("AmneziaWG configuration is incomplete")
+    if not DOMAIN_PATTERN.fullmatch(str(amneziawg.get("hostname", ""))):
+        raise InstallerError("Invalid AmneziaWG hostname")
+    try:
+        tunnel_network = ipaddress.ip_network(amneziawg["tunnel_cidr"], strict=True)
+        server_interface = ipaddress.ip_interface(amneziawg["address"])
+        peer_addresses = [ipaddress.ip_address(peer["address"]) for peer in amneziawg["peers"]]
+    except (KeyError, TypeError, ValueError) as error:
+        raise InstallerError("Invalid AmneziaWG address configuration") from error
+    if server_interface.ip not in tunnel_network or any(address not in tunnel_network for address in peer_addresses):
+        raise InstallerError("Every AmneziaWG address must belong to its tunnel CIDR")
+    if tunnel_network.overlaps(pod_network) or tunnel_network.overlaps(service_network) or any(tunnel_network.overlaps(network) for network in local_networks):
+        raise InstallerError("The AmneziaWG tunnel must not overlap cluster or local networks")
+    if len(peer_addresses) != len(set(peer_addresses)) or server_interface.ip in peer_addresses:
+        raise InstallerError("AmneziaWG tunnel addresses must be unique")
+    if type(amneziawg.get("listen_port")) is not int or not 1 <= amneziawg["listen_port"] <= 65535:
+        raise InstallerError("Invalid AmneziaWG listen port")
+    if not amneziawg["peers"] or any(set(peer) != {"name", "address", "public_key", "lan_access"} or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", peer["name"]) or not re.fullmatch(r"[A-Za-z0-9+/]{43}=", peer["public_key"]) for peer in amneziawg["peers"]):
+        raise InstallerError("Invalid AmneziaWG peer configuration")
+    for peer in amneziawg["peers"]:
+        if not isinstance(peer["lan_access"], list):
+            raise InstallerError("AmneziaWG peer LAN access must be a list")
+        for rule in peer["lan_access"]:
+            try:
+                destination = ipaddress.ip_network(rule["destination"], strict=False)
+            except (KeyError, TypeError, ValueError) as error:
+                raise InstallerError("Invalid AmneziaWG LAN destination") from error
+            if set(rule) != {"destination", "protocol", "port"} or destination.version != 4:
+                raise InstallerError("Invalid AmneziaWG LAN rule")
+            if not any(destination.subnet_of(network) for network in local_networks):
+                raise InstallerError("AmneziaWG LAN destinations must belong to a local network")
+            if rule["protocol"] not in {"TCP", "UDP"} or type(rule["port"]) is not int or not 1 <= rule["port"] <= 65535:
+                raise InstallerError("Invalid AmneziaWG LAN protocol or port")
+    media = cloud["media"]
+    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "timezone", "openvpn"}:
+        raise InstallerError("Media configuration has missing or unknown keys")
+    if not QUOTA_PATTERN.fullmatch(str(media.get("storage_size", ""))) or not DOMAIN_PATTERN.fullmatch(str(media.get("hostname", ""))):
+        raise InstallerError("Invalid media storage size or hostname")
+    if not isinstance(media.get("timezone"), str) or not re.fullmatch(r"[A-Za-z_+-]+/[A-Za-z_+/-]+", media["timezone"]):
+        raise InstallerError("Invalid media.timezone")
+    openvpn = media.get("openvpn")
+    if not isinstance(openvpn, dict) or set(openvpn) != {"gateway_cluster_ip", "endpoint_ip", "endpoint_port", "endpoint_protocol"}:
+        raise InstallerError("OpenVPN configuration has missing or unknown keys")
+    try:
+        gateway_address = ipaddress.ip_address(openvpn["gateway_cluster_ip"])
+        endpoint_address = ipaddress.ip_address(openvpn["endpoint_ip"])
+    except (TypeError, ValueError) as error:
+        raise InstallerError("Invalid OpenVPN address") from error
+    if gateway_address not in service_network or endpoint_address.is_loopback:
+        raise InstallerError("The OpenVPN gateway must use the service CIDR and its endpoint must be public")
+    if type(openvpn.get("endpoint_port")) is not int or not 1 <= openvpn["endpoint_port"] <= 65535:
+        raise InstallerError("Invalid OpenVPN endpoint port")
+    if openvpn.get("endpoint_protocol") not in {"TCP", "UDP"}:
+        raise InstallerError("Invalid OpenVPN endpoint protocol")
+    if media["hostname"] in {networking["zabbix_hostname"], configuration["private_cloud"]["stalwart"]["hostname"]}:
+        raise InstallerError("Media hostname must be unique")
     postgres = cloud["postgres"]
     if not isinstance(postgres, dict) or set(postgres) != {"volume_size", "max_ram"}:
         raise InstallerError("PostgreSQL configuration has missing or unknown keys")
@@ -375,6 +488,43 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Zabbix administrator name must be a single-line value")
     if not QUOTA_PATTERN.fullmatch(str(zabbix.get("storage_size", ""))):
         raise InstallerError("Invalid zabbix.storage_size")
+    logging = cloud["logging"]
+    logging_keys = {"hostname", "loki_storage_size", "alloy_storage_size", "grafana_storage_size", "loki_max_ram", "alloy_max_ram", "grafana_max_ram", "retention_days"}
+    if not isinstance(logging, dict) or set(logging) != logging_keys:
+        raise InstallerError("Logging configuration has missing or unknown keys")
+    if not DOMAIN_PATTERN.fullmatch(str(logging["hostname"])):
+        raise InstallerError("Invalid logging.hostname")
+    for service, minimum in (("loki", 1073741824), ("alloy", 268435456), ("grafana", 268435456)):
+        if not QUOTA_PATTERN.fullmatch(str(logging[service + "_storage_size"])):
+            raise InstallerError(f"Invalid logging.{service}_storage_size")
+        value = logging[service + "_max_ram"]
+        if not RAM_PATTERN.fullmatch(str(value)) or ram_to_bytes(value) < minimum:
+            raise InstallerError(f"Invalid logging.{service}_max_ram")
+    if type(logging["retention_days"]) is not int or not 1 <= logging["retention_days"] <= 365:
+        raise InstallerError("Logging retention_days must be between 1 and 365")
+    notifications = cloud["notifications"]
+    if not isinstance(notifications, dict) or set(notifications) != {"from_address"} or not EMAIL_PATTERN.fullmatch(str(notifications["from_address"])):
+        raise InstallerError("Invalid notifications.from_address")
+    if stages["notifications"] and stalwart["relay_implicit_tls"] and stalwart["relay_port"] != 465:
+        raise InstallerError("Grafana implicit SMTP TLS requires relay port 465")
+    public_hostnames = {
+        "logging": logging["hostname"],
+        "networking": amneziawg["hostname"],
+        "media": media["hostname"],
+        "stalwart": stalwart["hostname"],
+        "zabbix_server": networking["zabbix_hostname"],
+        "onlyoffice": cloud["onlyoffice"]["hostname"],
+        "opencloud": cloud["opencloud"]["hostname"],
+        "grist": cloud["grist"]["hostname"],
+        "affine": cloud["affine"]["hostname"],
+        "immich": cloud["immich"]["hostname"],
+    }
+    enabled_hostnames = [hostname for stage, hostname in public_hostnames.items() if stages[stage]]
+    if len(enabled_hostnames) != len(set(enabled_hostnames)):
+        raise InstallerError("Enabled public service hostnames must be unique")
+    missing_records = sorted(set(enabled_hostnames) - set(managed_records))
+    if missing_records:
+        raise InstallerError(f"Cloudflare managed records are missing: {', '.join(missing_records)}")
 
 
 def validate_secrets_configuration(configuration: Mapping[str, Any], stages: Mapping[str, bool]) -> None:
@@ -406,6 +556,20 @@ def validate_secrets_configuration(configuration: Mapping[str, Any], stages: Map
         raise InstallerError("The AFFiNE database password must contain at least 16 characters")
     if "immich" in secrets_root and "database_password" in secrets_root["immich"] and len(secrets_root["immich"]["database_password"]) < 16:
         raise InstallerError("The Immich database password must contain at least 16 characters")
+    if "networking" in secrets_root:
+        api_token = secrets_root["networking"].get("cloudflare_api_token", "")
+        ddns_api_token = secrets_root["networking"].get("cloudflare_ddns_api_token", "")
+        private_key = secrets_root["networking"].get("amneziawg_private_key", "")
+        if min(len(api_token), len(ddns_api_token)) < 20:
+            raise InstallerError("Each Cloudflare API token must contain at least 20 characters")
+        if not re.fullmatch(r"[A-Za-z0-9+/]{43}=", private_key):
+            raise InstallerError("The AmneziaWG private key is invalid")
+    if "media" in secrets_root and not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", secrets_root["media"].get("proxy_password", "")):
+        raise InstallerError("The media VPN proxy password must contain 16 to 64 URL-safe characters")
+    if "stalwart" in secrets_root and len(secrets_root["stalwart"].get("certificate_dns_api_token", "")) < 20:
+        raise InstallerError("The Stalwart certificate DNS API token must contain at least 20 characters")
+    if "logging" in secrets_root and any(len(secrets_root["logging"].get(key, "")) < 32 for key in ("admin_password", "secret_key")):
+        raise InstallerError("Grafana credentials must contain at least 32 characters")
     passphrase = secrets_root.get("storage", {}).get("encryption_passphrase")
     if passphrase is not None and not 8 <= len(passphrase.encode()) <= 512:
         raise InstallerError("The storage passphrase must contain 8 to 512 bytes")

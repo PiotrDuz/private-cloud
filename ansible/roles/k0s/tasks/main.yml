@@ -206,6 +206,38 @@
     mode: '0600'
   when: not k0s_config_stat.stat.exists
 
+- name: Read the effective k0s configuration
+  ansible.builtin.slurp:
+    src: "{{ k0s_config_file }}"
+  register: k0s_effective_config_file
+
+- name: Decode the effective k0s configuration
+  ansible.builtin.set_fact:
+    k0s_effective_config: "{{ k0s_effective_config_file.content | b64decode | from_yaml }}"
+
+- name: Require the policy-enforcing kube-router provider
+  ansible.builtin.assert:
+    that:
+      - k0s_effective_config.spec.network.provider == 'kuberouter'
+    fail_msg: The k0s network provider must be kube-router before isolation policies are applied.
+
+- name: Select the default worker profile
+  ansible.builtin.set_fact:
+    k0s_default_worker_profile: "{{ (k0s_effective_config.spec.workerProfiles | default([]) | selectattr('name', 'equalto', 'default') | first) | default({'name': 'default', 'values': {}}) }}"
+
+- name: Configure bounded container logs
+  ansible.builtin.copy:
+    content: >-
+      {{ k0s_effective_config | combine({'spec': {'workerProfiles':
+        (k0s_effective_config.spec.workerProfiles | default([]) | rejectattr('name', 'equalto', 'default') | list) +
+        [k0s_default_worker_profile | combine({'values': {'containerLogMaxSize': '10Mi', 'containerLogMaxFiles': 5}}, recursive=True)]
+      }}, recursive=True) | to_nice_yaml }}
+    dest: "{{ k0s_config_file }}"
+    owner: root
+    group: root
+    mode: '0600'
+  notify: Restart k0s controller
+
 - name: Check for the k0s controller service
   ansible.builtin.command: systemctl list-unit-files --no-legend k0scontroller.service
   register: k0s_controller_check
@@ -307,11 +339,11 @@
     mode: '0600'
   no_log: true
 
-- name: Apply the shared private cloud namespace
+- name: Apply the networking boundary namespaces
   kubernetes.core.k8s:
     kubeconfig: "{{ k0s_kubeconfig_path }}"
     state: present
-    definition: "{{ lookup('template', 'namespace.yml.j2') | from_yaml }}"
+    definition: "{{ lookup('template', 'namespace.yml.j2') | from_yaml_all | list }}"
 
 - name: Expose the runtime kubeconfig path to subsequent roles
   ansible.builtin.set_fact:

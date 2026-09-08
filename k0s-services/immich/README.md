@@ -15,6 +15,6 @@ The Immich service is managed by `ansible/roles/immich`.
 - Immich machine learning downloads face-detection and recognition models on demand.
 - `machine_learning_accelerator: openvino` selects the Intel OpenVINO machine-learning image.
 - OpenVINO requests one shared `gpu.intel.com/i915` resource.
-- Fixed NodePort `30283` publishes the service over HTTP.
-- Forward the Immich hostname to NodePort `30283` through the TLS proxy.
-- Preserve WebSockets in the TLS proxy.
+- A ClusterIP service exposes TCP `2283` only inside the cluster.
+- Traefik publishes the configured hostname through HTTPS.
+- The Ingress preserves WebSocket connections.

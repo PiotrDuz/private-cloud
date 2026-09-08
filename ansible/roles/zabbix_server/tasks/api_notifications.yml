@@ -1,0 +1,30 @@
+---
+- name: Resolve monitored certificate endpoints
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/observability_certificates.yml"
+
+- name: Configure email notifications and logging health
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/../zabbix/configure_notifications.py"]
+    stdin: >-
+      {{ {
+        'url': zabbix_api_url, 'token': zabbix_api_token,
+        'host_id': zabbix_host_id, 'host': private_cloud_zabbix_hostname,
+        'group_id': zabbix_group_id, 'admin_username': private_cloud.zabbix.admin_username,
+        'web_url': 'https://' ~ private_cloud.networking.zabbix_hostname,
+        'notifications': private_cloud.stages.notifications,
+        'logging': private_cloud.stages.logging and private_cloud.stages.zabbix_agent,
+        'certificates': observability_certificates,
+        'mail_hostname': private_cloud.stalwart.hostname,
+        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+        'from_address': private_cloud.notifications.from_address,
+        'relay': {
+          'host': private_cloud.stalwart.relay_host,
+          'port': private_cloud.stalwart.relay_port,
+          'implicit_tls': private_cloud.stalwart.relay_implicit_tls,
+          'username': private_cloud.stalwart.relay_username,
+          'password': (private_cloud_secrets.stalwart | default({})).get('relay_password', '')
+        }
+      } | to_json }}
+  register: zabbix_observability_apply
+  changed_when: (zabbix_observability_apply.stdout | from_json).changed
+  no_log: true

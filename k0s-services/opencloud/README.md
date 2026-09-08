@@ -22,5 +22,5 @@ The OpenCloud service is managed by `ansible/roles/opencloud`.
 - The first Draw.io installation requires outbound access to its pinned GitHub release.
 - ConfigMap changes trigger a Deployment rollout through rendered checksums.
 - General caches use memory while the POSIX ID cache uses embedded NATS.
-- Forward public HTTPS traffic to fixed HTTP NodePort `30920`.
-- Forward `/wopi` and `/collaboration` through the OpenCloud hostname.
+- A ClusterIP service exposes TCP `9200` only inside the cluster.
+- Traefik publishes the configured hostname, including `/wopi` and `/collaboration`, through HTTPS.

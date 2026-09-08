@@ -17,9 +17,11 @@ spec:
               app.kubernetes.io/component: configuration
       ports:
         - {protocol: TCP, port: 8080}
-    - ports:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: edge}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports:
+        - {protocol: TCP, port: 8080}
         - {protocol: TCP, port: 25}
-        - {protocol: TCP, port: 443}
-        - {protocol: TCP, port: 465}
-        - {protocol: TCP, port: 587}
-        - {protocol: TCP, port: 993}

@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: grafana-ingress, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: grafana}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: edge}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: traefik}}
+        - ipBlock: {cidr: {{ private_cloud.networking.traefik_internal_ip }}/32}
+      ports: [{protocol: TCP, port: 3000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: traefik-grafana, namespace: edge}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: traefik}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: observability}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: grafana}}
+      ports: [{protocol: TCP, port: 3000}]
+{% if private_cloud.stages.notifications %}
+{% for namespace, app in [('observability', 'grafana'), ('private-cloud', 'zabbix')] %}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: {{ app }}-alert-smtp, namespace: {{ namespace }}}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ app }}
+{% if app == 'zabbix' %}
+      app.kubernetes.io/component: server
+{% endif %}
+  policyTypes: [Egress]
+  egress:
+    - to:
+{% for address in logging_smtp_addresses %}
+        - ipBlock: {cidr: {{ address }}/32}
+{% endfor %}
+      ports: [{protocol: TCP, port: {{ private_cloud.stalwart.relay_port }}}]
+{% endfor %}
+{% endif %}

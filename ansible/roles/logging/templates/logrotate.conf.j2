@@ -1,0 +1,15 @@
+/tank/secure/backup/k0s/services/onlyoffice/logs/documentserver/*/*.log
+/tank/secure/backup/k0s/services/onlyoffice/logs/documentserver/*.log
+/tank/secure/backup/k0s/services/onlyoffice/logs/documentserver-example/*.log
+{
+    daily
+    maxsize 10M
+    rotate 5
+    maxage 7
+    missingok
+    notifempty
+    copytruncate
+    compress
+    delaycompress
+    su root root
+}

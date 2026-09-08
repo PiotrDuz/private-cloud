@@ -1,0 +1,24 @@
+---
+- name: Select enabled HTTPS certificate names
+  ansible.builtin.set_fact:
+    observability_certificates: []
+
+- name: Register enabled HTTPS certificates
+  ansible.builtin.set_fact:
+    observability_certificates: "{{ observability_certificates + [{'name': item.hostname ~ '-https', 'hostname': item.hostname, 'protocol': 'https'}] }}"
+  loop:
+    - {stage: logging, hostname: "{{ private_cloud.logging.hostname }}"}
+    - {stage: media, hostname: "{{ private_cloud.media.hostname }}"}
+    - {stage: stalwart, hostname: "{{ private_cloud.stalwart.hostname }}"}
+    - {stage: zabbix_server, hostname: "{{ private_cloud.networking.zabbix_hostname }}"}
+    - {stage: onlyoffice, hostname: "{{ private_cloud.onlyoffice.hostname }}"}
+    - {stage: opencloud, hostname: "{{ private_cloud.opencloud.hostname }}"}
+    - {stage: grist, hostname: "{{ private_cloud.grist.hostname }}"}
+    - {stage: affine, hostname: "{{ private_cloud.affine.hostname }}"}
+    - {stage: immich, hostname: "{{ private_cloud.immich.hostname }}"}
+  when: private_cloud.stages[item.stage] | bool
+
+- name: Register Stalwart SMTP certificate
+  ansible.builtin.set_fact:
+    observability_certificates: "{{ observability_certificates + [{'name': private_cloud.stalwart.hostname ~ '-smtp', 'hostname': private_cloud.stalwart.hostname, 'protocol': 'smtp'}] }}"
+  when: private_cloud.stages.stalwart | bool

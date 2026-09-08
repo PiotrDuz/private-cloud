@@ -1,0 +1,18 @@
+---
+- name: Render logging component manifests
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/render_manifests.yml"
+  vars:
+    manifest_service: "{{ logging_component }}"
+    manifest_template_dir: "{{ playbook_dir }}/../k0s-services/{{ logging_component }}/templates"
+
+- name: Apply logging storage and configuration
+  kubernetes.core.k8s:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    state: present
+    definition: "{{ private_cloud_rendered_manifests | rejectattr('kind', 'equalto', 'Deployment') | list }}"
+
+- name: Apply logging workload
+  kubernetes.core.k8s:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    state: present
+    definition: "{{ private_cloud_rendered_manifests | selectattr('kind', 'equalto', 'Deployment') | list }}"

@@ -11,9 +11,9 @@ The Grist service is managed by `ansible/roles/grist`.
 - PostgreSQL stores Grist metadata and the PV stores documents.
 - Pyodide isolates user formulas without privileged container access.
 - The service listens inside the cluster on port `8484`.
-- Fixed NodePort `30848` publishes the service over HTTP.
-- Forward the Grist hostname to NodePort `30848` through the TLS proxy.
-- Preserve WebSockets in the TLS proxy.
+- A ClusterIP service exposes TCP `8484` only inside the cluster.
+- Traefik publishes the configured hostname through HTTPS.
+- The Ingress preserves WebSocket connections.
 - Use the boot key for initial administrator setup.
 
 ## Manifest review

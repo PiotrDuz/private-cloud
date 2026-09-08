@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jellyfin
+  namespace: media
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: jellyfin}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: jellyfin}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: jellyfin
+          image: {{ media_images.jellyfin }}
+          env:
+            - {name: JELLYFIN_PublishedServerUrl, value: {{ ('https://' ~ private_cloud.media.hostname) | to_json }}}
+            - {name: JELLYFIN_LOG_DIR, value: /config/log}
+          ports:
+            - {name: http, containerPort: 8096, protocol: TCP}
+          resources:
+            requests: {cpu: 250m, memory: 1Gi, gpu.intel.com/i915: 1}
+            limits: {cpu: '4', memory: 4Gi, gpu.intel.com/i915: 1}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          volumeMounts:
+            - {name: config, mountPath: /config}
+            - {name: library, mountPath: /media, readOnly: true}
+      volumes:
+        - {name: config, persistentVolumeClaim: {claimName: jellyfin-data}}
+        - {name: library, persistentVolumeClaim: {claimName: media-library-data}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jellyfin
+  namespace: media
+spec:
+  selector: {app.kubernetes.io/name: jellyfin}
+  ports: [{name: http, port: 8096, targetPort: http, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jellyfin
+  namespace: media
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls.certresolver: cloudflare
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [{{ private_cloud.media.hostname }}]
+  rules:
+    - host: {{ private_cloud.media.hostname }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jellyfin
+                port: {number: 8096}
+---

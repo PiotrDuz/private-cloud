@@ -1,0 +1,6 @@
+---
+logging_kubeconfig: /run/private-cloud/kubeconfig
+logging_services:
+  - {name: loki, dataset: tank/secure/no-backup/k0s/services/loki, uid: 10001, port: 3100}
+  - {name: alloy, dataset: tank/secure/no-backup/k0s/services/alloy, uid: 0, port: 12345}
+  - {name: grafana, dataset: tank/secure/backup/k0s/services/grafana, uid: 472, port: 3000}

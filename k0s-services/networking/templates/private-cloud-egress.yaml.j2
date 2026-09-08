@@ -1,0 +1,237 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: internal-dns-egress
+  namespace: private-cloud
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: application-https-egress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [affine, grist, immich, onlyoffice, opencloud]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: application-traefik-egress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [onlyoffice, opencloud]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: {{ private_cloud.networking.traefik_internal_ip }}/32}
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-client-egress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [affine, affine-database-preparation, grist, immich, zabbix]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: postgres}
+      ports: [{protocol: TCP, port: 5432}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: stalwart-postgres-egress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: stalwart
+      app.kubernetes.io/component: server
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: postgres}
+      ports: [{protocol: TCP, port: 5432}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: affine-dependencies-egress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [affine, affine-database-preparation]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: redis-affine}
+      ports: [{protocol: TCP, port: 6379}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: manticore}
+      ports: [{protocol: TCP, port: 9308}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: opencloud-dependencies-egress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: opencloud}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: tika}
+      ports: [{protocol: TCP, port: 9998}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: onlyoffice}
+      ports: [{protocol: TCP, port: 80}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: onlyoffice-callback-egress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: onlyoffice}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: opencloud}
+      ports: [{protocol: TCP, port: 9200}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: immich-dependencies-egress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: immich}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: immich-valkey}
+      ports: [{protocol: TCP, port: 6379}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: immich-machine-learning}
+      ports: [{protocol: TCP, port: 3003}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: stalwart-configuration-egress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: stalwart
+      app.kubernetes.io/component: configuration
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: stalwart
+              app.kubernetes.io/component: server
+      ports: [{protocol: TCP, port: 8080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: stalwart-dependencies-egress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: stalwart
+      app.kubernetes.io/component: server
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: meilisearch}
+      ports: [{protocol: TCP, port: 7700}]
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - {protocol: TCP, port: {{ private_cloud.stalwart.relay_port }}}
+        - {protocol: TCP, port: 443}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zabbix-web-egress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: zabbix
+      app.kubernetes.io/component: web
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: zabbix
+              app.kubernetes.io/component: server
+      ports: [{protocol: TCP, port: 10051}]

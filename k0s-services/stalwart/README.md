@@ -2,21 +2,25 @@
 
 The Stalwart service is managed by `ansible/roles/stalwart`.
 
-- Ansible renders the `templates/*.yaml.j2` workload files during deployment.
-
 - Configure `private_cloud.stalwart` in the public configuration.
-- Store database, mailbox, administrator, and relay passwords in the encrypted configuration.
+- Store database, mailbox, administrator, relay, and Cloudflare credentials in the encrypted configuration.
 - Run `sudo python3 ansible/install.py` from the repository root.
-- The service dataset is `tank/secure/backup/k0s/services/stalwart`.
-- The dataset uses the configured quota.
-- The local PV and PVC advertise a fixed `10Ti` capacity.
+- The dataset is `tank/secure/backup/k0s/services/stalwart`.
+- The dataset has a quota and a dedicated `10Ti` PV.
 - PostgreSQL stores metadata and the PV stores message blobs.
 - Meilisearch stores the full-text search index.
 - The forwarding-domain alias delivers to the primary mailbox.
 - Non-local mail uses the configured inbox.eu SMTP relay.
-- Stalwart requests the hostname certificate with ACME TLS-ALPN-01.
-- Gmail uses the primary mailbox address and mailbox password.
-- Gmail IMAP uses the configured hostname on port `993` with SSL.
-- Gmail SMTP uses the configured hostname on port `465` with SSL or `587` with STARTTLS.
-- Forward public ports `443`, `25`, `465`, `587`, and `993` to NodePorts `30443`, `30025`, `30465`, `30587`, and `30993`.
-- Public port `443` must reach Stalwart before certificate issuance.
+- A ClusterIP service exposes HTTP/JMAP TCP `8080` and SMTP TCP `25`.
+- Traefik publishes JMAP, web access, and management through HTTPS TCP `443`.
+- Traefik proxies public SMTP TCP `25` with Proxy Protocol v2.
+- Stalwart terminates SMTP STARTTLS itself.
+- Stalwart obtains and renews its certificate with Let's Encrypt DNS-01.
+- The certificate workflow uses its dedicated Cloudflare DNS token.
+- Submission ports `465` and `587` and IMAPS `993` are not published.
+- The external inbox receives Internet mail and forwards it to the Stalwart forwarding domain.
+- Stalwart filtering controls which inbound forwarded messages are accepted.
+
+## Manifest review
+
+- Ansible renders the `templates/*.yaml.j2` workload files during deployment.

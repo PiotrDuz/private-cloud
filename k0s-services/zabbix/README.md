@@ -11,9 +11,9 @@ The Zabbix server and web frontend are managed by `ansible/roles/zabbix_server`.
 - The dataset uses the configured quota.
 - The local PV and PVC advertise a fixed `10Ti` capacity.
 - Zabbix Server uses fixed NodePort `31051`.
-- The web frontend uses fixed NodePort `30080`.
+- The web frontend uses ClusterIP behind Traefik HTTPS.
 - The monitored host name is fixed as `private-cloud-zabbix`.
 - The host agent connects to `127.0.0.1:31051`.
 - The role imports the ZFS and memory ECC templates.
 - The role links the active Linux, SMART, ZFS, and ECC templates.
-- Publish the frontend through HTTPS and a protected network.
+- The host firewall limits NodePort `31051` to configured local networks.

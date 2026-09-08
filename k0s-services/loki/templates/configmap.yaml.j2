@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: loki-config, namespace: observability}
+data:
+  loki.yaml: |
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+      log_format: json
+    common:
+      path_prefix: /data
+      replication_factor: 1
+      ring:
+        kvstore: {store: inmemory}
+      storage:
+        filesystem:
+          chunks_directory: /data/chunks
+          rules_directory: /data/rules
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index: {prefix: index_, period: 24h}
+    storage_config:
+      tsdb_shipper:
+        active_index_directory: /data/index
+        cache_location: /data/index-cache
+    ingester:
+      wal: {enabled: true, dir: /data/wal, replay_memory_ceiling: 256MB}
+      chunk_idle_period: 30m
+      max_chunk_age: 2h
+    compactor:
+      working_directory: /data/compactor
+      compaction_interval: 10m
+      retention_enabled: true
+      retention_delete_delay: 2h
+      retention_delete_worker_count: 10
+      delete_request_store: filesystem
+    limits_config:
+      retention_period: {{ private_cloud.logging.retention_days * 24 }}h
+      ingestion_rate_mb: 2
+      ingestion_burst_size_mb: 4
+      per_stream_rate_limit: 1MB
+      per_stream_rate_limit_burst: 2MB
+      max_global_streams_per_user: 5000
+      max_line_size: 1MB
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+      max_query_parallelism: 2
+      tsdb_max_query_parallelism: 2
+      max_query_lookback: {{ private_cloud.logging.retention_days * 24 }}h
+      query_timeout: 1m
+    querier: {max_concurrent: 2}
+    query_range:
+      results_cache:
+        cache:
+          embedded_cache: {enabled: true, max_size_mb: 32}
+    chunk_store_config:
+      chunk_cache_config:
+        embedded_cache: {enabled: true, max_size_mb: 64}
+    analytics: {reporting_enabled: false}

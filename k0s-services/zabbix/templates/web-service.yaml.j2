@@ -7,7 +7,6 @@ metadata:
     app.kubernetes.io/name: zabbix
     app.kubernetes.io/component: web
 spec:
-  type: NodePort
   selector:
     app.kubernetes.io/name: zabbix
     app.kubernetes.io/component: web
@@ -15,5 +14,4 @@ spec:
     - name: http
       port: 80
       targetPort: http
-      nodePort: 30080
       protocol: TCP

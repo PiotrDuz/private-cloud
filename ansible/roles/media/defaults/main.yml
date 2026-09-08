@@ -1,0 +1,20 @@
+---
+media_kubeconfig: /run/private-cloud/kubeconfig
+media_pv_capacity: 10Ti
+media_services: [jellyfin, sonarr, radarr, prowlarr, qbittorrent, media-library]
+media_images:
+  jellyfin: jellyfin/jellyfin:10.11.4@sha256:aab0b50a3ce43a41621fc7040a379cc57174059aec8f9c17a90176649a0c1ab1
+  sonarr: lscr.io/linuxserver/sonarr:4.0.16@sha256:21c1c3d52248589bb064f5adafec18cad45812d7a01d317472955eef051e619b
+  radarr: lscr.io/linuxserver/radarr:6.0.4@sha256:c8a55bd83672d3b63dc20edf325277ce7dc3b69d4400568cc5bbc9e6a227ebf4
+  prowlarr: lscr.io/linuxserver/prowlarr:2.0.5@sha256:608935c38763920b25622a3d404bb14ea08fcaa7c2a9b1c93ce9bac61ad4b11d
+  qbittorrent: lscr.io/linuxserver/qbittorrent:5.1.2@sha256:7034f73a3c6fa4ea40fd67df462939d1665d765231b572523921c98c2db5362e
+media_openvpn_image: qmcgaw/gluetun:v3.41.0@sha256:6b54856716d0de56e5bb00a77029b0adea57284cf5a466f23aad5979257d3045
+media_tun2socks_image: ghcr.io/xjasonlyu/tun2socks:v2.7.0@sha256:f89e05e123404d4047caf680a988cd22f8faa62629bcf6d83735cafc1f3dc935
+media_coredns_image: registry.k8s.io/coredns/coredns:v1.12.4@sha256:986f04c2e15e147d00bdd51e8c51bcef3644b13ff806be7d2ff1b261d6dfbae1
+media_datasets:
+  jellyfin: tank/secure/backup/k0s/services/jellyfin
+  sonarr: tank/secure/backup/k0s/services/sonarr
+  radarr: tank/secure/backup/k0s/services/radarr
+  prowlarr: tank/secure/backup/k0s/services/prowlarr
+  qbittorrent: tank/secure/backup/k0s/services/qbittorrent
+  media-library: tank/secure/backup/k0s/services/media-library

@@ -13,6 +13,7 @@ from typing import Any, Iterator
 
 from install_helpers import (
     ANSIBLE_CONFIG,
+    CURRENT_SECRETS_SCHEMA_VERSION,
     EXAMPLE_CONFIGURATION,
     INVENTORY,
     KUBECONFIG_FILE,
@@ -42,6 +43,7 @@ from install_helpers import (
     prompt_int,
     prompt_line,
     prompt_secret,
+    prompt_secret_file,
     redact_secrets,
     rekey_secrets,
     remove_stale_runtime_files,
@@ -111,7 +113,7 @@ def run_installation() -> dict[str, Any]:
             original_secrets = _copy_mapping(stored_secrets)
             secrets_configuration = stored_secrets
         else:
-            secrets_configuration = {"secrets_schema_version": 2, "private_cloud_secrets": {}}
+            secrets_configuration = {"secrets_schema_version": CURRENT_SECRETS_SCHEMA_VERSION, "private_cloud_secrets": {}}
 
         secrets_configuration = collect_missing_secrets(secrets_configuration, public)
         validate_secrets_configuration(secrets_configuration, stages)
@@ -193,9 +195,9 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
         return existing
     source = existing or default_public_configuration()
     if mode == "update":
-        sections = prompt_line("Sections to change (stages, storage, k0s, postgres, meilisearch, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, stalwart, zabbix)", "").split()
+        sections = prompt_line("Sections to change (stages, storage, k0s, networking, media, postgres, meilisearch, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, stalwart, zabbix, logging, notifications)", "").split()
     else:
-        sections = ["stages", "storage", "k0s", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix"]
+        sections = ["stages", "storage", "k0s", "networking", "media", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix", "logging", "notifications"]
     result = _copy_mapping(source)
     stages = result["private_cloud"]["stages"]
     if "stages" in sections:
@@ -210,6 +212,49 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
     if "k0s" in sections:
         for key in ("config_quota", "images_quota", "ephemeral_quota"):
             cloud["k0s"][key] = prompt_line(f"k0s {key}", cloud["k0s"][key])
+    if "networking" in sections:
+        networking = cloud["networking"]
+        for key in ("storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "pod_cidr", "service_cidr", "cluster_dns_ip", "traefik_internal_ip", "zabbix_hostname"):
+            networking[key] = prompt_line(f"Networking {key}", networking[key])
+        networking["local_network_cidrs"] = prompt_line(
+            "Local network CIDRs separated by spaces", " ".join(networking["local_network_cidrs"])
+        ).split()
+        networking["managed_records"] = prompt_line(
+            "Cloudflare managed records separated by spaces", " ".join(networking["managed_records"])
+        ).split()
+        amneziawg = networking["amneziawg"]
+        for key in ("hostname", "address", "tunnel_cidr"):
+            amneziawg[key] = prompt_line(f"AmneziaWG {key}", amneziawg[key])
+        amneziawg["listen_port"] = prompt_int("AmneziaWG listen_port", amneziawg["listen_port"])
+        peer_count = prompt_int("AmneziaWG peer count", len(amneziawg["peers"]))
+        peers = []
+        for index in range(peer_count):
+            current = amneziawg["peers"][index] if index < len(amneziawg["peers"]) else {"name": f"peer-{index + 1}", "address": "", "public_key": "", "lan_access": []}
+            peer = {
+                "name": prompt_line(f"AmneziaWG peer {index + 1} name", current["name"]),
+                "address": prompt_line(f"AmneziaWG peer {index + 1} address", current["address"]),
+                "public_key": prompt_line(f"AmneziaWG peer {index + 1} public_key", current["public_key"]),
+                "lan_access": [],
+            }
+            access_count = prompt_int(f"AmneziaWG peer {index + 1} LAN rule count", len(current["lan_access"]))
+            for access_index in range(access_count):
+                access = current["lan_access"][access_index] if access_index < len(current["lan_access"]) else {"destination": "", "protocol": "TCP", "port": 443}
+                peer["lan_access"].append({
+                    "destination": prompt_line(f"Peer {index + 1} LAN rule {access_index + 1} destination CIDR", access["destination"]),
+                    "protocol": prompt_choice(f"Peer {index + 1} LAN rule {access_index + 1} protocol", ("TCP", "UDP"), access["protocol"]),
+                    "port": prompt_int(f"Peer {index + 1} LAN rule {access_index + 1} port", access["port"]),
+                })
+            peers.append(peer)
+        amneziawg["peers"] = peers
+    if "media" in sections:
+        media = cloud["media"]
+        for key in ("storage_size", "hostname", "timezone"):
+            media[key] = prompt_line(f"Media {key}", media[key])
+        openvpn = media["openvpn"]
+        for key in ("gateway_cluster_ip", "endpoint_ip"):
+            openvpn[key] = prompt_line(f"OpenVPN {key}", openvpn[key])
+        openvpn["endpoint_port"] = prompt_int("OpenVPN endpoint_port", openvpn["endpoint_port"])
+        openvpn["endpoint_protocol"] = prompt_choice("OpenVPN endpoint_protocol", ("TCP", "UDP"), openvpn["endpoint_protocol"])
     if "postgres" in sections:
         for key in ("volume_size", "max_ram"):
             cloud["postgres"][key] = prompt_line(f"PostgreSQL {key}", cloud["postgres"][key])
@@ -246,6 +291,12 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
             cloud["stalwart"][key] = prompt_line(f"Stalwart {key}", cloud["stalwart"][key])
         cloud["stalwart"]["relay_port"] = prompt_int("Stalwart relay_port", cloud["stalwart"]["relay_port"])
         cloud["stalwart"]["relay_implicit_tls"] = prompt_bool("Stalwart relay_implicit_tls", cloud["stalwart"]["relay_implicit_tls"])
+    if "logging" in sections:
+        for key in cloud["logging"]:
+            prompt = prompt_int if key == "retention_days" else prompt_line
+            cloud["logging"][key] = prompt(f"Logging {key}", cloud["logging"][key])
+    if "notifications" in sections:
+        cloud["notifications"]["from_address"] = prompt_line("Alert sender authorized by the SMTP relay", cloud["notifications"]["from_address"])
     if "zabbix" in sections:
         for key in ("storage_size", "admin_username"):
             cloud["zabbix"][key] = prompt_line(f"Zabbix {key}", cloud["zabbix"][key])
@@ -298,8 +349,18 @@ def collect_missing_secrets(configuration: dict[str, Any], public: dict[str, Any
         ("stalwart", "admin_password"): "Stalwart administrator password",
         ("stalwart", "mailbox_password"): "Stalwart mailbox password",
         ("stalwart", "relay_password"): "inbox.eu SMTP password",
+        ("stalwart", "certificate_dns_api_token"): "Stalwart Cloudflare certificate DNS API token",
+        ("logging", "admin_password"): "Grafana administrator password (at least 32 characters)",
+        ("logging", "secret_key"): "Grafana encryption key (at least 32 characters)",
         ("zabbix", "database_password"): "Zabbix database password",
         ("zabbix", "admin_password"): "Zabbix administrator password",
+        ("networking", "cloudflare_api_token"): "Cloudflare ACME DNS API token",
+        ("networking", "cloudflare_ddns_api_token"): "Cloudflare DDNS API token",
+        ("networking", "amneziawg_private_key"): "AmneziaWG server private key",
+        ("media", "openvpn_configuration"): "OpenVPN configuration",
+        ("media", "openvpn_username"): "OpenVPN username",
+        ("media", "openvpn_password"): "OpenVPN password",
+        ("media", "proxy_password"): "Media VPN proxy password",
     }
     for section, keys in SECRET_SCHEMAS.items():
         if not stages[SECRET_STAGES[section]]:
@@ -307,7 +368,11 @@ def collect_missing_secrets(configuration: dict[str, Any], public: dict[str, Any
         section_values = secrets_root.setdefault(section, {})
         for key in sorted(keys):
             if key not in section_values:
-                section_values[key] = prompt_secret(prompts[(section, key)])
+                section_values[key] = (
+                    prompt_secret_file(prompts[(section, key)])
+                    if (section, key) == ("media", "openvpn_configuration")
+                    else prompt_secret(prompts[(section, key)])
+                )
     return result
 
 
@@ -319,6 +384,7 @@ def update_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         ("stalwart", "admin_password"),
         ("stalwart", "mailbox_password"),
         ("stalwart", "relay_password"),
+        ("stalwart", "certificate_dns_api_token"),
         ("onlyoffice", "jwt_secret"),
         ("grist", "database_password"),
         ("grist", "session_secret"),
@@ -326,26 +392,39 @@ def update_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         ("affine", "database_password"),
         ("immich", "database_password"),
         ("zabbix", "database_password"),
+        ("networking", "cloudflare_api_token"),
+        ("networking", "cloudflare_ddns_api_token"),
+        ("networking", "amneziawg_private_key"),
+        ("media", "openvpn_configuration"),
+        ("media", "openvpn_username"),
+        ("media", "openvpn_password"),
+        ("media", "proxy_password"),
     ):
         if stages[SECRET_STAGES[section]] and prompt_bool(f"Change {section}.{key}", False):
-            result["private_cloud_secrets"][section][key] = prompt_secret(f"New {section}.{key}")
+            result["private_cloud_secrets"][section][key] = (
+                prompt_secret_file(f"New {section}.{key}")
+                if (section, key) == ("media", "openvpn_configuration")
+                else prompt_secret(f"New {section}.{key}")
+            )
     return result
 
 
 def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> dict[str, Any]:
     result = _copy_mapping(configuration)
-    selected = prompt_line("Secrets to rotate (meilisearch stalwart_database stalwart_admin mailbox relay onlyoffice grist_database grist_session grist_boot affine_database immich_database zabbix_database)", "all").split()
-    supported = {"all", "meilisearch", "stalwart_database", "stalwart_admin", "mailbox", "relay", "onlyoffice", "grist_database", "grist_session", "grist_boot", "affine_database", "immich_database", "zabbix_database"}
+    names = "meilisearch stalwart_database stalwart_admin mailbox relay stalwart_dns onlyoffice grist_database grist_session grist_boot affine_database immich_database zabbix_database cloudflare_acme cloudflare_ddns amneziawg openvpn_configuration openvpn_username openvpn_password media_proxy"
+    selected = prompt_line(f"Secrets to rotate ({names})", "all").split()
+    supported = {"all", *names.split()}
     if set(selected) - supported:
         raise InstallerError("Unsupported credential rotation requested")
     if "all" in selected:
-        selected = ["meilisearch", "stalwart_database", "stalwart_admin", "mailbox", "relay", "onlyoffice", "grist_database", "grist_session", "grist_boot", "affine_database", "immich_database", "zabbix_database"]
+        selected = names.split()
     mapping = {
         "meilisearch": ("meilisearch", "master_key"),
         "stalwart_database": ("stalwart", "database_password"),
         "stalwart_admin": ("stalwart", "admin_password"),
         "mailbox": ("stalwart", "mailbox_password"),
         "relay": ("stalwart", "relay_password"),
+        "stalwart_dns": ("stalwart", "certificate_dns_api_token"),
         "zabbix_database": ("zabbix", "database_password"),
         "onlyoffice": ("onlyoffice", "jwt_secret"),
         "grist_database": ("grist", "database_password"),
@@ -353,19 +432,31 @@ def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         "grist_boot": ("grist", "boot_key"),
         "affine_database": ("affine", "database_password"),
         "immich_database": ("immich", "database_password"),
+        "cloudflare_acme": ("networking", "cloudflare_api_token"),
+        "cloudflare_ddns": ("networking", "cloudflare_ddns_api_token"),
+        "amneziawg": ("networking", "amneziawg_private_key"),
+        "openvpn_configuration": ("media", "openvpn_configuration"),
+        "openvpn_username": ("media", "openvpn_username"),
+        "openvpn_password": ("media", "openvpn_password"),
+        "media_proxy": ("media", "proxy_password"),
     }
     for name in selected:
         if name in mapping:
             section, key = mapping[name]
             if stages[SECRET_STAGES[section]]:
-                result["private_cloud_secrets"][section][key] = prompt_secret(f"New {section}.{key}")
+                result["private_cloud_secrets"][section][key] = (
+                    prompt_secret_file(f"New {section}.{key}")
+                    if (section, key) == ("media", "openvpn_configuration")
+                    else prompt_secret(f"New {section}.{key}")
+                )
     return result
 
 
 def reject_unsupported_secret_rotations(previous: dict[str, Any], candidate: dict[str, Any]) -> None:
     unsupported = (
-        ("storage", "encryption_passphrase"),
-        ("postgres", "admin_password"),
+        ("logging", "secret_key"),
+        ("logging", "admin_password"),
+        ("storage", "encryption_passphrase"),        ("postgres", "admin_password"),
         ("zabbix", "admin_password"),
     )
     changed = [
@@ -383,13 +474,16 @@ def configured_secret_markers() -> dict[str, Any]:
         "storage": {"encryption_passphrase": "configured"},
         "postgres": {"admin_password": "configured"},
         "meilisearch": {"master_key": "configured"},
-        "stalwart": {"database_password": "configured", "admin_password": "configured", "mailbox_password": "configured", "relay_password": "configured"},
+        "stalwart": {"database_password": "configured", "admin_password": "configured", "mailbox_password": "configured", "relay_password": "configured", "certificate_dns_api_token": "configured"},
         "onlyoffice": {"jwt_secret": "configured"},
         "opencloud": {"admin_password": "configured"},
         "grist": {"database_password": "configured", "session_secret": "configured", "boot_key": "configured"},
         "affine": {"database_password": "configured"},
         "immich": {"database_password": "configured"},
         "zabbix": {"database_password": "configured", "admin_password": "configured"},
+        "networking": {"cloudflare_api_token": "configured", "cloudflare_ddns_api_token": "configured", "amneziawg_private_key": "configured"},
+        "logging": {"admin_password": "configured", "secret_key": "configured"},
+        "media": {"openvpn_configuration": "configured", "openvpn_username": "configured", "openvpn_password": "configured", "proxy_password": "configured"},
     }
 
 

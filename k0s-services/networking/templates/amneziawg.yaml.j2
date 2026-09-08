@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amneziawg
+  namespace: network-access
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: amneziawg}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: amneziawg}
+    spec:
+      hostNetwork: false
+      automountServiceAccountToken: false
+      securityContext:
+        sysctls:
+          - {name: net.ipv4.ip_forward, value: '1'}
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: amneziawg
+          image: {{ networking_amneziawg_tools_image }}
+          command: [/bin/bash, -ceu]
+          args:
+            - |
+              awg-quick up /etc/amneziawg/awg0.conf
+              trap 'awg-quick down /etc/amneziawg/awg0.conf' TERM INT EXIT
+              sleep infinity & wait $!
+          ports:
+            - name: tunnel
+              containerPort: {{ private_cloud.networking.amneziawg.listen_port }}
+              hostPort: {{ private_cloud.networking.amneziawg.listen_port }}
+              protocol: UDP
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL], add: [NET_ADMIN]}
+          volumeMounts:
+            - {name: config, mountPath: /etc/amneziawg, readOnly: true}
+      volumes:
+        - name: config
+          secret: {secretName: amneziawg-config, defaultMode: 0400}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: amneziawg
+  namespace: network-access
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: amneziawg}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports: [{protocol: UDP, port: {{ private_cloud.networking.amneziawg.listen_port }}}]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - {{ private_cloud.networking.pod_cidr }}
+              - {{ private_cloud.networking.service_cidr }}

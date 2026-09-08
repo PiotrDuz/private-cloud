@@ -1,0 +1,245 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: alloy-config, namespace: observability}
+data:
+  config.alloy: |
+    logging {
+      level = "info"
+      format = "json"
+    }
+
+    discovery.kubernetes "pods" {
+      role = "pod"
+      api_server = "https://{{ private_cloud.networking.traefik_internal_ip }}:6443"
+      bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      tls_config {
+        ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+      }
+      selectors {
+        role = "pod"
+        field = "spec.nodeName=" + sys.env("NODE_NAME")
+      }
+    }
+    discovery.relabel "pods" {
+      targets = discovery.kubernetes.pods.targets
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label = "namespace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        target_label = "container"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        target_label = "service"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+        regex = "(.+)"
+        target_label = "service"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+        separator = "/"
+        target_label = "__path__"
+        replacement = "/var/log/pods/*$1/*.log"
+      }
+      rule {
+        target_label = "job"
+        replacement = "containers"
+      }
+      rule {
+        target_label = "node"
+        replacement = sys.env("NODE_NAME")
+      }
+    }
+    local.file_match "pods" {
+      path_targets = discovery.relabel.pods.output
+      sync_period = "5s"
+    }
+    loki.source.file "pods" {
+      targets = local.file_match.pods.targets
+      forward_to = [loki.process.cri.receiver]
+    }
+    loki.process "cri" {
+      forward_to = [loki.process.normalize.receiver]
+      stage.cri {}
+      stage.decolorize {}
+      stage.multiline {
+        firstline = `^(\[?\d{4}[-/]|\{|\([NIWC]\)|level=|time=|[IWEF]\d{4}|\[?(INFO|WARN|ERROR|DEBUG|FATAL))`
+        max_wait_time = "1s"
+        max_lines = 128
+      }
+    }
+    loki.relabel "journal" {
+      forward_to = []
+      rule {
+        source_labels = ["__journal__systemd_unit", "__journal__transport"]
+        separator = ";"
+        regex = "(k0s.*|zfs.*|zabbix.*|ssh.*|systemd.*|private-cloud-log-heartbeat.service);.*|.*;kernel"
+        action = "keep"
+      }
+      rule {
+        target_label = "service"
+        replacement = "kernel"
+      }
+      rule {
+        source_labels = ["__journal__systemd_unit"]
+        regex = "(.+)"
+        target_label = "service"
+      }
+      rule {
+        source_labels = ["__journal_priority"]
+        regex = "[0-2]"
+        target_label = "level"
+        replacement = "critical"
+      }
+      rule {
+        source_labels = ["__journal_priority"]
+        regex = "3"
+        target_label = "level"
+        replacement = "error"
+      }
+      rule {
+        source_labels = ["__journal_priority"]
+        regex = "4"
+        target_label = "level"
+        replacement = "warn"
+      }
+    }
+    loki.source.journal "host" {
+      path = "/var/log/journal"
+      max_age = "24h"
+      labels = {job = "host", namespace = "host", node = sys.env("NODE_NAME"), container = "journal"}
+      relabel_rules = loki.relabel.journal.rules
+      forward_to = [loki.process.normalize.receiver]
+    }
+    loki.source.kubernetes_events "cluster" {
+      client {
+        api_server = "https://{{ private_cloud.networking.traefik_internal_ip }}:6443"
+        bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        tls_config {
+          ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        }
+      }
+      log_format = "json"
+      job_name = "kubernetes-events"
+      forward_to = [loki.process.events.receiver]
+    }
+    loki.process "events" {
+      forward_to = [loki.process.normalize.receiver]
+      stage.static_labels {
+        values = {service = "kubernetes-events", container = "events", node = sys.env("NODE_NAME")}
+      }
+    }
+    loki.process "normalize" {
+      forward_to = [loki.write.local.receiver]
+      stage.decolorize {}
+      stage.json {
+        expressions = {severity = "level", alternate_severity = "severity", short_severity = "lvl", event_type = "type"}
+      }
+      stage.match {
+        selector = `{job="kubernetes-events"}`
+        stage.template {
+          source = "severity"
+          template = "{{ '{{ .event_type }}' }}"
+        }
+      }
+      stage.match {
+        selector = `{job="containers"} |~ "(^| )level="`
+        stage.regex {
+          expression = `(?:^|\s)level=(?P<severity>[A-Za-z]+)`
+        }
+      }
+      stage.template {
+        source = "severity"
+        template = "{{ '{{ if .Value }}{{ .Value }}{{ else if .alternate_severity }}{{ .alternate_severity }}{{ else }}{{ .short_severity }}{{ end }}' }}"
+      }
+      stage.template {
+        source = "severity"
+        template = "{{ '{{ ToLower .Value }}' }}"
+      }
+      stage.labels { values = {detected_level = "severity"} }
+      stage.match {
+        selector = `{detected_level=~"warn|warning|wrn"}`
+        stage.static_labels { values = {level = "warn"} }
+      }
+      stage.match {
+        selector = `{detected_level=~"err|error"}`
+        stage.static_labels { values = {level = "error"} }
+      }
+      stage.match {
+        selector = `{detected_level=~"fatal|ftl|panic|critical"}`
+        stage.static_labels { values = {level = "critical"} }
+      }
+      stage.match {
+        selector = `{job="containers"} |~ "(?i)^(?:\\[[^\\]]+\\]\\s*)?\\[?(?:warning|warn|wrn)\\b|^W[0-9]{4}|^[0-9T:.+Z /-]+(?:\\[[0-9]+\\] )?WARNING:"`
+        stage.static_labels { values = {level = "warn"} }
+      }
+      stage.match {
+        selector = `{job="containers"} |~ "(?i)^(?:\\[[^\\]]+\\]\\s*)?\\[?(?:error|err)\\b|^E[0-9]{4}|^[0-9T:.+Z /-]+(?:\\[[0-9]+\\] )?ERROR:"`
+        stage.static_labels { values = {level = "error"} }
+      }
+      stage.match {
+        selector = `{job="containers"} |~ "(?i)^(?:\\[[^\\]]+\\]\\s*)?\\[?(?:fatal|ftl|panic|critical)\\b|^F[0-9]{4}|^[0-9T:.+Z /-]+(?:\\[[0-9]+\\] )?(?:FATAL|PANIC):"`
+        stage.static_labels { values = {level = "critical"} }
+      }
+      stage.match {
+        selector = `{service=~"redis-affine|immich-valkey"} |~ "^[0-9]+:[A-Z] .+ # "`
+        stage.static_labels { values = {level = "warn"} }
+      }
+      stage.match {
+        selector = `{service="qbittorrent"} |~ "\\(W\\)"`
+        stage.static_labels { values = {level = "warn"} }
+      }
+      stage.match {
+        selector = `{service="qbittorrent"} |~ "\\(C\\)"`
+        stage.static_labels { values = {level = "critical"} }
+      }
+      stage.match {
+        selector = `{service="traefik"} | json | DownstreamStatus >= 500 | __error__=""`
+        stage.static_labels { values = {level = "error"} }
+      }
+      stage.match {
+        selector = `{job="containers"} |~ "^\\{" | json | __error__!=""`
+        stage.static_labels { values = {level = "warn"} }
+      }
+      stage.match {
+        selector = `{service="zabbix"} |~ "(?i)(cannot send|failed to send|cannot connect|connection.*failed|database is down)"`
+        stage.static_labels { values = {level = "error"} }
+      }
+      stage.match {
+        selector = `{level=""}`
+        stage.static_labels { values = {level = "info"} }
+      }
+      stage.replace {
+        expression = `(?i)(?:authorization|proxy-authorization|cookie|set-cookie)["\s]*[:=]\s*("[^"]*"|[^,\r\n]+)`
+        replace = "[REDACTED]"
+      }
+      stage.replace {
+        expression = `(?i)(?:password|passwd|secret|token|api[_-]?key|body|mail_body)["\s]*[:=]\s*("[^"]*"|[^,\s]+)`
+        replace = "[REDACTED]"
+      }
+      stage.replace {
+        expression = `(?i)(?:https?|postgres(?:ql)?|smtp)://([^/@\s]+:[^/@\s]+)@`
+        replace = "[REDACTED]"
+      }
+      stage.label_keep { values = ["namespace", "service", "container", "node", "job", "level"] }
+    }
+    loki.write "local" {
+      endpoint {
+        url = "http://loki:3100/loki/api/v1/push"
+        batch_wait = "1s"
+        batch_size = "256KiB"
+        min_backoff_period = "1s"
+        max_backoff_period = "30s"
+        max_backoff_retries = 120
+        retry_on_http_429 = true
+      }
+      wal {
+        enabled = true
+        max_segment_age = "6h"
+        drain_timeout = "1m"
+      }
+    }

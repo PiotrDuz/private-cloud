@@ -10,3 +10,4 @@ spec:
     app.kubernetes.io/name: stalwart
   ports:
     - {name: management, port: 8080, targetPort: management, protocol: TCP}
+    - {name: smtp, port: 25, targetPort: smtp, protocol: TCP}

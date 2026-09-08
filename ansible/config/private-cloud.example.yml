@@ -1,8 +1,10 @@
-schema_version: 4
+schema_version: 6
 private_cloud:
   stages:
     zfs: true
     k0s: true
+    networking: true
+    media: true
     intel_gpu: true
     postgres: true
     meilisearch: true
@@ -16,6 +18,8 @@ private_cloud:
     redis_affine: true
     affine: true
     immich: true
+    logging: true
+    notifications: true
     zabbix_server: true
     zabbix_agent: true
   storage:
@@ -26,6 +30,51 @@ private_cloud:
     config_quota: 1G
     images_quota: 10G
     ephemeral_quota: 10G
+  networking:
+    storage_size: 1G
+    acme_email: admin@example.com
+    cloudflare_zone_id: '00000000000000000000000000000000'
+    public_ip_url: https://api.ipify.org
+    managed_records:
+      - affine.example.com
+      - cloud.example.com
+      - grist.example.com
+      - jellyfin.example.com
+      - mail.example.com
+      - monitor.example.com
+      - logs.example.com
+      - onlyoffice.example.com
+      - photos.example.com
+      - vpn.example.com
+    pod_cidr: 10.244.0.0/16
+    service_cidr: 10.96.0.0/12
+    cluster_dns_ip: 10.96.0.10
+    local_network_cidrs:
+      - 192.168.1.0/24
+    traefik_internal_ip: 192.168.1.10
+    zabbix_hostname: monitor.example.com
+    amneziawg:
+      hostname: vpn.example.com
+      address: 10.90.0.1/24
+      tunnel_cidr: 10.90.0.0/24
+      listen_port: 51820
+      peers:
+        - name: phone
+          address: 10.90.0.2
+          public_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          lan_access:
+            - destination: 192.168.1.20/32
+              protocol: TCP
+              port: 443
+  media:
+    storage_size: 1T
+    hostname: jellyfin.example.com
+    timezone: Etc/UTC
+    openvpn:
+      gateway_cluster_ip: 10.96.0.53
+      endpoint_ip: 198.51.100.10
+      endpoint_port: 1194
+      endpoint_protocol: UDP
   postgres:
     volume_size: 20G
     max_ram: 2Gi
@@ -86,3 +135,14 @@ private_cloud:
   zabbix:
     storage_size: 5G
     admin_username: Admin
+  logging:
+    hostname: logs.example.com
+    loki_storage_size: 50G
+    alloy_storage_size: 5G
+    grafana_storage_size: 5G
+    loki_max_ram: 2Gi
+    alloy_max_ram: 512Mi
+    grafana_max_ram: 512Mi
+    retention_days: 14
+  notifications:
+    from_address: user@example.com

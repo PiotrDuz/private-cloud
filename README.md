@@ -25,13 +25,15 @@ sudo python3 ansible/install.py
 - `ansible/config/private-cloud.example.yml` documents the configuration contract.
 - The Vault password is never stored by the installer.
 - The `CREATE tank` authorization is requested only before new pool creation.
+- The installer reads the multiline OpenVPN profile from a file path.
 
 ## Kubernetes manifests
 
 - `k0s-services/<service>/templates/*.yaml.j2` contains each service definition.
 - The owning Ansible role renders and applies those templates directly.
 - User-configurable values are in the public and encrypted configuration files.
-- NodePorts are fixed in the owning service templates.
+- Application web services use ClusterIP behind Traefik.
+- Zabbix server TCP `31051` is the only application NodePort.
 - The k0s release pin is in `ansible/roles/k0s/defaults/main.yml`.
 - Zabbix host settings are in `ansible/service_catalog.yml`.
 - Redis for AFFiNE, Intel GPU support, and Immich are independent installer stages.
@@ -45,7 +47,7 @@ sudo python3 ansible/install.py
 - Reapply converges the existing configuration.
 - Rotate replaces selected encrypted values.
 - Ansible runs all enabled stages in dependency order.
-- The k0s stage creates the shared `private-cloud` Kubernetes namespace.
+- The k0s stage creates the workload and infrastructure namespaces.
 
 ## Reboot verification
 
@@ -55,5 +57,6 @@ sudo python3 ansible/install.py
 
 ## Operations
 
-- Read [the operations contract](docs/OPERATIONS.md) before storing irreplaceable data.
-- Treat backup, public networking, and external monitoring as operator work until automation implements them.
+- Use [the operations runbook](docs/OPERATIONS.md) for monitoring and incident investigation.
+- Treat backups, router/NAT configuration, and external monitoring as operator work.
+- Read [the networking architecture and boundaries](docs/NETWORKING.md) for the implemented VPN, ingress, firewall, and media isolation design.

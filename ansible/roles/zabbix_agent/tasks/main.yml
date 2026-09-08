@@ -95,6 +95,10 @@
     mode: '0644'
   notify: Restart Zabbix Agent 2
 
+- name: Install independent logging and certificate probes
+  ansible.builtin.include_tasks: observability.yml
+  when: private_cloud.stages.logging | bool
+
 - name: Install ZFS user parameters
   ansible.builtin.template:
     src: zfs.conf.j2

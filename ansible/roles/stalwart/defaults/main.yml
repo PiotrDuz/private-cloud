@@ -3,7 +3,7 @@ stalwart_namespace: private-cloud
 stalwart_service_name: stalwart
 stalwart_database_name: stalwart
 stalwart_database_username: stalwart
-stalwart_public_service_name: stalwart-public
+stalwart_endpoint_service_name: stalwart
 stalwart_runtime_secret_name: stalwart-runtime-credentials
 stalwart_recovery_secret_name: stalwart-recovery-credentials
 stalwart_plan_secret_name: stalwart-configuration-plan
@@ -15,3 +15,4 @@ stalwart_pv_capacity: 10Ti
 stalwart_kubeconfig: /run/private-cloud/kubeconfig
 stalwart_meilisearch_service: meilisearch
 stalwart_plan_job_name: stalwart-configure
+stalwart_image: stalwartlabs/stalwart:v0.16@sha256:93c574e52249c1ebf90061da2c4c0756a7b72abfcc1fec34506a03c2e38b5977

@@ -1,0 +1,128 @@
+---
+- name: Validate media inputs
+  ansible.builtin.assert:
+    that:
+      - private_cloud.media.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.media.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$')
+      - private_cloud.media.timezone is match('^[A-Za-z_+-]+/[A-Za-z_+/-]+$')
+      - private_cloud.media.openvpn.endpoint_port | int >= 1
+      - private_cloud.media.openvpn.endpoint_port | int <= 65535
+      - private_cloud.media.openvpn.endpoint_protocol in ['TCP', 'UDP']
+      - private_cloud_secrets.media.openvpn_configuration | length > 0
+      - private_cloud_secrets.media.openvpn_username | length > 0
+      - private_cloud_secrets.media.openvpn_password | length > 0
+      - private_cloud_secrets.media.proxy_password is match('^[A-Za-z0-9_-]{16,64}$')
+      - >-
+        (private_cloud_secrets.media.openvpn_configuration |
+         regex_findall('(?m)^\\s*remote\\s+([^\\s]+)\\s+([0-9]+)') | length) == 1
+      - >-
+        (private_cloud_secrets.media.openvpn_configuration |
+         regex_findall('(?m)^\\s*remote\\s+([^\\s]+)\\s+([0-9]+)'))[0][0] ==
+        private_cloud.media.openvpn.endpoint_ip
+      - >-
+        ((private_cloud_secrets.media.openvpn_configuration |
+          regex_findall('(?m)^\\s*remote\\s+([^\\s]+)\\s+([0-9]+)'))[0][1] | int) ==
+        private_cloud.media.openvpn.endpoint_port
+      - >-
+        (private_cloud_secrets.media.openvpn_configuration |
+         regex_findall('(?im)^\s*proto\s+(tcp[^\s]*|udp[^\s]*)\s*$') | length) == 1
+      - >-
+        (private_cloud_secrets.media.openvpn_configuration |
+         regex_findall('(?im)^\s*proto\s+(tcp[^\s]*|udp[^\s]*)\s*$'))[0] |
+        upper | regex_search('^' ~ private_cloud.media.openvpn.endpoint_protocol)
+    fail_msg: Media configuration is invalid.
+  no_log: true
+
+- name: Require the host TUN device
+  ansible.builtin.stat:
+    path: /dev/net/tun
+  register: media_tun_device
+
+- name: Verify the host TUN device
+  ansible.builtin.assert:
+    that:
+      - media_tun_device.stat.exists
+      - media_tun_device.stat.ischr | default(false)
+    fail_msg: The media VPN requires /dev/net/tun.
+
+- name: Prepare media service datasets
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: "{{ item | title }}"
+    private_cloud_service_dataset: "{{ media_datasets[item] }}"
+    private_cloud_service_dataset_mountpoint: "/{{ media_datasets[item] }}"
+    private_cloud_service_storage_size: "{{ private_cloud.media.storage_size }}"
+  loop: "{{ media_services }}"
+
+- name: Set media dataset ownership
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_permissions.yml"
+  vars:
+    private_cloud_service_dataset_mountpoint: "/{{ media_datasets[item] }}"
+    private_cloud_service_dataset_owner: 1000
+    private_cloud_service_dataset_group: 1000
+  loop: "{{ media_services }}"
+
+- name: Create qBittorrent log and checkpoint directories
+  ansible.builtin.file:
+    path: "/{{ media_datasets[item.service] }}/{{ item.directory }}"
+    state: directory
+    owner: 1000
+    group: 1000
+    mode: '0750'
+  loop:
+    - {service: qbittorrent, directory: qBittorrent/logs}
+    - {service: qbittorrent, directory: .log-forwarder}
+
+- name: Create the qBittorrent configuration directory
+  ansible.builtin.file:
+    path: /tank/secure/backup/k0s/services/qbittorrent/qBittorrent
+    state: directory
+    owner: 1000
+    group: 1000
+    mode: '0750'
+
+- name: Install guarded qBittorrent defaults
+  ansible.builtin.template:
+    src: qbittorrent.conf.j2
+    dest: /tank/secure/backup/k0s/services/qbittorrent/qBittorrent/qBittorrent.conf
+    owner: 1000
+    group: 1000
+    mode: '0600'
+    force: false
+
+- name: Select the media storage node
+  ansible.builtin.set_fact:
+    media_node_name: "{{ ansible_hostname }}"
+
+- name: Apply media credentials
+  kubernetes.core.k8s:
+    kubeconfig: "{{ media_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'openvpn-secret.yml.j2') | from_yaml }}"
+  no_log: true
+
+- name: Render arr stack manifests
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: arr
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/arr/templates"
+
+- name: Apply arr stack workloads and shared library storage
+  kubernetes.core.k8s:
+    kubeconfig: "{{ media_kubeconfig }}"
+    state: present
+    definition: "{{ private_cloud_rendered_manifests }}"
+  no_log: true
+
+- name: Render Jellyfin manifests
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: jellyfin
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/jellyfin/templates"
+
+- name: Apply Jellyfin workloads
+  kubernetes.core.k8s:
+    kubeconfig: "{{ media_kubeconfig }}"
+    state: present
+    definition: "{{ private_cloud_rendered_manifests }}"
+  no_log: true

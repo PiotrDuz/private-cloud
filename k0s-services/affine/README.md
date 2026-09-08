@@ -18,7 +18,7 @@ The AFFiNE service is managed by `ansible/roles/affine`.
 - A database preparation Job initializes the fresh AFFiNE schema before the server starts.
 - The preparation Job and server use the same Manticore indexer settings.
 - The service listens inside the cluster on port `3010`.
-- Fixed NodePort `30310` publishes the service over HTTP.
-- Forward the AFFiNE hostname to NodePort `30310` through the TLS proxy.
-- Preserve WebSockets in the TLS proxy.
+- A ClusterIP service exposes TCP `3010` only inside the cluster.
+- Traefik publishes the configured hostname through HTTPS.
+- The Ingress preserves WebSocket connections.
 - The AFFiNE role enables and verifies `vector` in its database.

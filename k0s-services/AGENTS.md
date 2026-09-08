@@ -5,8 +5,8 @@
 - Use Jinja only for user configuration or repository-managed Ansible values.
 - Do not add Kustomize bases, overlays, or Python manifest overrides.
 - Keep public configuration and encrypted secrets separate.
-- Keep NodePorts as literal values in the owning service template.
-- Update service documentation when a fixed NodePort changes.
+- Prefer ClusterIP services behind the shared Traefik edge.
+- Keep an approved NodePort literal in its owning service template.
 - Keep the k0s release version and checksum in `ansible/roles/k0s/defaults/main.yml`.
 - Keep Zabbix host settings in `ansible/service_catalog.yml`.
 - This greenfield project has no configuration migrations or compatibility paths.

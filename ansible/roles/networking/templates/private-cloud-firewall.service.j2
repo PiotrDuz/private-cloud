@@ -1,0 +1,14 @@
+[Unit]
+Description=Private cloud host firewall
+DefaultDependencies=no
+Wants=network-pre.target
+Before=network-pre.target k0scontroller.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f {{ networking_firewall_rules_path }}
+ExecStop=-/usr/sbin/nft destroy table inet private_cloud
+
+[Install]
+WantedBy=multi-user.target
