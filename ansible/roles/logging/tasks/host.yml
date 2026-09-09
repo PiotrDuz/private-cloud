@@ -23,8 +23,12 @@
   register: logging_journal_config
 
 - name: Create persistent journal directory
-  ansible.builtin.command: systemd-tmpfiles --create --prefix /var/log/journal
-  changed_when: false
+  ansible.builtin.file:
+    path: /var/log/journal
+    state: directory
+    owner: root
+    group: systemd-journal
+    mode: '2755'
 
 - name: Restart journal after retention changes
   ansible.builtin.systemd_service:

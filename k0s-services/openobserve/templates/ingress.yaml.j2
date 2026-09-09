@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: grafana
+  name: openobserve
   namespace: observability
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
@@ -9,10 +9,12 @@ metadata:
     traefik.ingress.kubernetes.io/router.tls.certresolver: cloudflare
 spec:
   ingressClassName: traefik
+  tls:
+    - hosts: [{{ private_cloud.logging.hostname | to_json }}]
   rules:
     - host: {{ private_cloud.logging.hostname | to_json }}
       http:
         paths:
           - path: /
             pathType: Prefix
-            backend: {service: {name: grafana, port: {number: 3000}}}
+            backend: {service: {name: openobserve, port: {number: 5080}}}

@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: openobserve, namespace: observability}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: openobserve}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: openobserve}
+    spec:
+      serviceAccountName: openobserve
+      automountServiceAccountToken: false
+      nodeSelector: {kubernetes.io/hostname: {{ ansible_hostname | to_json }}}
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10000
+        runAsGroup: 3000
+        fsGroup: 2000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: openobserve
+          image: public.ecr.aws/zinclabs/openobserve:v0.90.3@sha256:3813e90ae1f131f3f826e25d171913324514b305cc24f42197ad5f18d7a5fe09
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          env:
+            - {name: ZO_DATA_DIR, value: /data}
+            - {name: ZO_LOCAL_MODE, value: "true"}
+            - {name: ZO_LOCAL_MODE_STORAGE, value: disk}
+            - {name: ZO_META_STORE, value: sqlite}
+            - {name: ZO_WEB_URL, value: {{ ('https://' ~ private_cloud.logging.hostname) | to_json }}}
+            - {name: ZO_COMPACT_DATA_RETENTION_DAYS, value: {{ private_cloud.logging.retention_days | string | to_json }}}
+            - {name: ZO_PAYLOAD_LIMIT, value: "10485760"}
+            - {name: ZO_QUERY_TIMEOUT, value: "60"}
+            - {name: ZO_QUERY_DEFAULT_LIMIT, value: "1000"}
+            - {name: ZO_MEMORY_CIRCUIT_BREAKER_ENABLED, value: "true"}
+            - {name: ZO_MEMORY_CIRCUIT_BREAKER_RATIO, value: "90"}
+            - {name: ZO_TELEMETRY, value: "false"}
+            - {name: ZO_USAGE_REPORTING_ENABLED, value: "false"}
+            - {name: ZO_MMDB_DISABLE_DOWNLOAD, value: "true"}
+            - {name: ZO_ROOT_USER_EMAIL, valueFrom: {secretKeyRef: {name: openobserve-ingest, key: username}}}
+            - {name: ZO_ROOT_USER_PASSWORD, valueFrom: {secretKeyRef: {name: openobserve-ingest, key: admin-password}}}
+            - {name: ZO_SMTP_ENABLED, value: {{ (private_cloud.stages.notifications | bool | lower) | to_json }}}
+{% if private_cloud.stages.notifications %}
+            - {name: ZO_SMTP_HOST, value: {{ private_cloud.stalwart.relay_host | to_json }}}
+            - {name: ZO_SMTP_PORT, value: {{ private_cloud.stalwart.relay_port | string | to_json }}}
+            - {name: ZO_SMTP_USER_NAME, value: {{ private_cloud.stalwart.relay_username | to_json }}}
+            - {name: ZO_SMTP_PASSWORD, valueFrom: {secretKeyRef: {name: openobserve-ingest, key: smtp-password}}}
+            - {name: ZO_SMTP_FROM_EMAIL, value: {{ private_cloud.notifications.from_address | to_json }}}
+            - {name: ZO_SMTP_REPLY_TO, value: {{ private_cloud.notifications.from_address | to_json }}}
+            - {name: ZO_SMTP_ENCRYPTION, value: {{ (private_cloud.stalwart.relay_implicit_tls | ternary('ssltls', 'starttls')) | to_json }}}
+{% endif %}
+          ports: [{name: http, containerPort: 5080, protocol: TCP}]
+          resources:
+            requests: {cpu: 250m, memory: 256Mi, ephemeral-storage: 256Mi}
+            limits: {cpu: "2", memory: {{ private_cloud.logging.openobserve_max_ram | to_json }}, ephemeral-storage: 1Gi}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 6
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - {name: data, persistentVolumeClaim: {claimName: openobserve-data}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: openobserve, namespace: observability}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: openobserve, namespace: observability}
+spec:
+  selector: {app.kubernetes.io/name: openobserve}
+  ports: [{name: http, port: 5080, targetPort: http}]

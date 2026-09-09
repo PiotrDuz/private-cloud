@@ -17,6 +17,7 @@ The cluster uses default-deny pod networking, a restricted host firewall, Traefi
 | `edge` | Traefik HTTPS and SMTP entry. | Only approved application listeners are reachable. |
 | `network-access` | AmneziaWG server and peer forwarding. | Per-peer LAN permissions and public Internet egress. |
 | `dns-system` | Cloudflare DDNS updater. | DNS management has no application-data access. |
+| `observability` | Alloy and OpenObserve. | Alloy ingests node logs; OpenObserve provides the authenticated HTTPS interface. |
 | `kube-system` / host | CNI, DNS, device plugin, and control plane. | Infrastructure privileges stay outside application workloads. |
 
 The k0s role requires kube-router and labels every namespace used by selector-based policies. Each namespace receives default-deny ingress and egress policies, followed by narrowly scoped exceptions.
@@ -52,6 +53,8 @@ Traefik binds host TCP `443` and TCP `25` from a pod in `edge`.
 - AmneziaWG remains a direct UDP hostPort because HTTP/TCP routing cannot proxy its UDP tunnel protocol usefully.
 
 Public DNS resolves enabled application names to the home WAN address. Split DNS resolves the same names to `networking.traefik_internal_ip` for LAN and AmneziaWG clients. OpenCloud and OnlyOffice callbacks use that internal HTTPS address.
+
+OpenObserve is published through its configured exact HTTPS hostname. Alloy has no public route. When notifications are enabled, OpenObserve and Zabbix may reach only the SMTP relay IP addresses resolved during the last apply; reapply after a relay address change.
 
 ## Inbound mail and Stalwart TLS
 
@@ -142,6 +145,7 @@ Everything omitted is denied. Each entry permits connection initiation in the st
 | Declared application | PostgreSQL and internal dependency | Service-specific ports only. |
 | Stalwart | Cloudflare, Let's Encrypt, DNS, relay, and mail lookups | Required service ports only. |
 | Traefik / DDNS | Cloudflare, Let's Encrypt, DNS, and IP discovery | Required service ports only. |
+| OpenObserve / Zabbix | Configured inbox.eu SMTP relay | Resolved relay addresses and configured SMTP port only. |
 
 ## Storage
 
@@ -165,3 +169,5 @@ Repository implementation is not evidence of live enforcement. Before exposure:
 - Verify per-peer AmneziaWG LAN permissions and full-tunnel Internet egress.
 - Confirm qBittorrent reports `tun0` as its bound interface.
 - Verify Jellyfin transcoding uses the Intel GPU.
+- Confirm OpenObserve is reachable only through its configured hostname.
+- Confirm Alloy has no public route and accepts only its documented internal health path.

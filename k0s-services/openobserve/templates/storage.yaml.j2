@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: PersistentVolume
-metadata: {name: grafana-data}
+metadata: {name: openobserve-data}
 spec:
   capacity: {storage: 10Ti}
   accessModes: [ReadWriteOnce]
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
-  claimRef: {name: grafana-data, namespace: observability}
-  local: {path: /tank/secure/backup/k0s/services/grafana}
+  claimRef: {name: openobserve-data, namespace: observability}
+  local: {path: /tank/secure/backup/k0s/services/openobserve}
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -18,9 +18,9 @@ spec:
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
-metadata: {name: grafana-data, namespace: observability}
+metadata: {name: openobserve-data, namespace: observability}
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: ""
-  volumeName: grafana-data
+  volumeName: openobserve-data
   resources: {requests: {storage: 10Ti}}

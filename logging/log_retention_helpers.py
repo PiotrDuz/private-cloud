@@ -1,5 +1,4 @@
 """Retain active diagnostics while pruning old closed FFmpeg files."""
-import os
 from pathlib import Path
 import time
 
@@ -12,7 +11,10 @@ def prune_diagnostics(directory, max_age, max_bytes):
     for path in directory.iterdir():
         if path.is_symlink() or not path.is_file() or not path.name.lower().startswith("ffmpeg") or path.suffix.lower() not in {".txt", ".log"}:
             continue
-        details = path.stat()
+        try:
+            details = path.stat()
+        except FileNotFoundError:
+            continue
         candidates.append((details.st_mtime, path, details))
     total = sum(details.st_size for _, _, details in candidates)
     removed = 0
@@ -22,10 +24,16 @@ def prune_diagnostics(directory, max_age, max_bytes):
             continue
         if modified >= cutoff and total <= max_bytes:
             continue
-        current = path.stat(follow_symlinks=False)
+        try:
+            current = path.stat(follow_symlinks=False)
+        except FileNotFoundError:
+            continue
         if (current.st_ino, current.st_mtime_ns, current.st_size) != (details.st_ino, details.st_mtime_ns, details.st_size):
             continue
-        path.unlink()
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
         total -= details.st_size
         removed += 1
     return {"removed": removed, "bytes": total}

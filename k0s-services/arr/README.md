@@ -34,7 +34,7 @@ The configuration is [file-logs.conf](files/file-logs.conf). It discovers new fi
 
 Forwarding is best effort across abrupt crashes or rotation during an outage. Lines larger than 1 MiB are skipped with a Fluent Bit warning. Original application timestamps remain inside `message`; `collected_at` records collection time.
 
-The installer seeds qBittorrent logging settings only when creating its configuration. An existing configuration must enable file logging and use the documented path. Source-file rotation and deletion remain application responsibilities; forwarding does not implement retention.
+The installer seeds qBittorrent logging settings only when creating its configuration. It enables file logging, rotates at 10MiB, and removes logs after seven days. An existing configuration must use the documented path; forwarding remains best effort during abrupt crashes, rotation, and collector outages.
 
 After deployment, browse the stream with:
 

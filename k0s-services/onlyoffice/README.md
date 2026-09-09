@@ -16,6 +16,15 @@ The OnlyOffice service is managed by `ansible/roles/onlyoffice`.
 - The Ingress preserves WebSockets and the external HTTPS scheme.
 - Both public hostnames must be reachable from the pods with trusted certificates.
 
+## Logging
+
+OnlyOffice 9.4.0.1 uses its native entrypoint to tail file-only operational logs to container output. It receives no logging sidecar.
+
+- `/var/log/onlyoffice` persists on the service dataset.
+- Host logrotate checks files every 15 minutes.
+- Rotation uses a 10MiB size limit and seven-day retention.
+- Rotation is best effort while the container is writing files.
+
 ## Manifest review
 
 - Ansible renders the `templates/*.yaml.j2` workload files during deployment.

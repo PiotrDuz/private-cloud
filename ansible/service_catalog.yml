@@ -4,9 +4,8 @@ private_cloud_zabbix_hostname: private-cloud-zabbix
 private_cloud_zabbix_agent_server_active: 127.0.0.1:31051
 
 private_cloud_dataset_catalog:
-  - {name: loki, stage: logging, dataset: tank/secure/no-backup/k0s/services/loki, color: FFA726}
+  - {name: openobserve, stage: logging, dataset: tank/secure/backup/k0s/services/openobserve, color: FFA726}
   - {name: alloy, stage: logging, dataset: tank/secure/no-backup/k0s/services/alloy, color: 26A69A}
-  - {name: grafana, stage: logging, dataset: tank/secure/backup/k0s/services/grafana, color: EF6C00}
   - {name: config, stage: k0s, dataset: tank/secure/backup/k0s/config, color: 42A5F5}
   - {name: images, stage: k0s, dataset: tank/secure/no-backup/k0s/images, color: 66BB6A}
   - {name: ephemeral, stage: k0s, dataset: tank/secure/no-backup/k0s/ephemeral, color: FFA726}

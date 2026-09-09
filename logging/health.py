@@ -10,7 +10,7 @@ from health_helpers import certificate_health, collect_pipeline
 def main():
     config = json.loads(Path(sys.argv[1]).read_text())
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
-        pipeline = executor.submit(collect_pipeline, config["endpoints"])
+        pipeline = executor.submit(collect_pipeline, config)
         certificates = {entry["name"]: executor.submit(certificate_health, config["address"], entry) for entry in config["certificates"]}
         result = pipeline.result()
         result["certificates"] = {name: future.result() for name, future in certificates.items()}

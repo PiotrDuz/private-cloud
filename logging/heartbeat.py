@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit one timestamped host-to-Loki heartbeat."""
+"""Emit one timestamped central-log heartbeat."""
 import datetime
 import json
 

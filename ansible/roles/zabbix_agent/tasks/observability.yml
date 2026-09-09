@@ -6,7 +6,7 @@
     kind: Service
     name: "{{ item }}"
     namespace: observability
-  loop: [loki, alloy, grafana]
+  loop: [openobserve, alloy]
   register: observability_services
   changed_when: false
 
@@ -28,20 +28,32 @@
     dest: /etc/zabbix/private-cloud-observability.json
     content: >-
       {{ {'endpoints': {
-        'loki': 'http://' ~ observability_services.results[0].resources[0].spec.clusterIP ~ ':3100',
-        'alloy': 'http://' ~ observability_services.results[1].resources[0].spec.clusterIP ~ ':12345',
-        'grafana': 'http://' ~ observability_services.results[2].resources[0].spec.clusterIP ~ ':3000'
+        'openobserve': 'http://' ~ observability_services.results[0].resources[0].spec.clusterIP ~ ':5080',
+        'alloy': 'http://' ~ observability_services.results[1].resources[0].spec.clusterIP ~ ':12345'
+      }, 'credentials': {
+        'username': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+        'password': private_cloud_secrets.logging.admin_password
       }, 'address': private_cloud.networking.traefik_internal_ip,
       'certificates': observability_certificates} | to_nice_json }}
     owner: root
     group: root
-    mode: '0644'
+    mode: '0600'
+  no_log: true
   notify: Restart Zabbix Agent 2
+
+- name: Permit the logging health probe
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/zabbix-observability
+    content: "zabbix ALL=(root) NOPASSWD: /usr/bin/python3 /usr/local/libexec/zabbix/health.py /etc/zabbix/private-cloud-observability.json\n"
+    owner: root
+    group: root
+    mode: '0440'
+    validate: /usr/sbin/visudo -cf %s
 
 - name: Enable logging health user parameter
   ansible.builtin.copy:
     dest: /etc/zabbix/zabbix_agent2.d/observability.conf
-    content: "UserParameter=observability.health,/usr/bin/python3 /usr/local/libexec/zabbix/health.py /etc/zabbix/private-cloud-observability.json\n"
+    content: "UserParameter=observability.health,sudo /usr/bin/python3 /usr/local/libexec/zabbix/health.py /etc/zabbix/private-cloud-observability.json\n"
     owner: root
     group: root
     mode: '0644'

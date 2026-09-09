@@ -47,12 +47,20 @@ spec:
             - {name: machine-id, mountPath: /etc/machine-id, readOnly: true}
             - {name: data, mountPath: /data}
             - {name: config, mountPath: /etc/alloy, readOnly: true}
+            - {name: credentials, mountPath: /etc/alloy/credentials, readOnly: true}
       volumes:
-        - {name: pod-logs, hostPath: {path: /var/log/pods, type: Directory}}
+        - {name: pod-logs, hostPath: {path: /tank/secure/k0s/kubelet/logs, type: Directory}}
         - {name: journal, hostPath: {path: /var/log/journal, type: Directory}}
         - {name: machine-id, hostPath: {path: /etc/machine-id, type: File}}
         - {name: data, persistentVolumeClaim: {claimName: alloy-data}}
         - {name: config, configMap: {name: alloy-config}}
+        - name: credentials
+          secret:
+            secretName: openobserve-ingest
+            defaultMode: 256
+            items:
+              - {key: username, path: username}
+              - {key: ingest-password, path: password}
 ---
 apiVersion: v1
 kind: ServiceAccount

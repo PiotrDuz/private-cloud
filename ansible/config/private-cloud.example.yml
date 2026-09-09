@@ -137,12 +137,10 @@ private_cloud:
     admin_username: Admin
   logging:
     hostname: logs.example.com
-    loki_storage_size: 50G
+    openobserve_storage_size: 50G
     alloy_storage_size: 5G
-    grafana_storage_size: 5G
-    loki_max_ram: 2Gi
+    openobserve_max_ram: 2Gi
     alloy_max_ram: 512Mi
-    grafana_max_ram: 512Mi
     retention_days: 14
   notifications:
     from_address: user@example.com

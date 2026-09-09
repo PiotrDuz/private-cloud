@@ -1,6 +1,6 @@
 # Operations
 
-Loki, Alloy, Grafana, and email notifications are planned but not configured. Their runtime checks below apply after the [implementation and acceptance steps](../PLAN.md#implementation-and-acceptance--pending) are complete.
+Repository configuration installs OpenObserve, Alloy, Zabbix monitoring, and optional email notifications. This runbook does not prove a live deployment, email delivery, or external reachability.
 
 ## Monitoring
 
@@ -15,21 +15,24 @@ Open Zabbix at `networking.zabbix_hostname` and review **Monitoring → Problems
 | Latest data → Memory ECC | Corrected and uncorrected errors. | Prioritize uncorrected errors and repeated corrections. |
 | Latest data → ZFS scrub | Last completion, repaired bytes, and remaining errors. | Investigate failures or no completed scrub for 40 days. |
 | Latest data → ZFS snapshots | Retained bytes, oldest age, and collector errors. | Check growth and age against the chosen retention schedule. |
-| Logging health, once implemented | Loki/Grafana availability, collector heartbeat, delivery lag, and dropped entries. | Investigate missing collection even when applications are quiet. |
+| Logging health | OpenObserve, Alloy, host heartbeat, ingestion errors, and notification failures. | Investigate missing collection even when applications are quiet. |
 
 - Check timestamps and unsupported items when metrics disappear.
 - Use ZFS quota utilization rather than advertised 10Ti PV capacity.
 - Watch PostgreSQL growth because applications share its dataset.
 - Check all enabled datasets because the capacity widget displays only the top seven.
+- Reapply the configuration after an SMTP relay IP change to refresh egress allowlists.
 
 ## Incidents and logs
 
 - Check pod readiness, restarts, and events when an application fails.
-- In Grafana Explore, select Loki and filter by service, container, and incident time.
+- In OpenObserve, select the `logs` stream and filter by service, container, level, and incident time.
 - Include surrounding messages when investigating a warning or error.
 - Correlate failures with resource pressure, deployments, and dependency outages.
 - Include qBittorrent's `file-logs` container when inspecting its application messages.
 - Check Jellyfin FFmpeg diagnostics under `/config/log` for transcoding failures.
+- Treat unclassified logs as evidence for investigation even when no log alert fires.
+- Search historical logs after an outage because delayed entries outside the five-minute alert window do not trigger log alerts.
 
 ```bash
 sudo k0s kubectl get pods -A
@@ -42,12 +45,11 @@ sudo journalctl -u k0scontroller.service --since='1 hour ago'
 
 Use `kubectl logs --previous` with the affected pod and container after a crash.
 
-Once central logging is deployed:
-
 - Investigate Alloy retries, rejected entries, dropped logs, and missing heartbeats.
-- Confirm Loki removes expired chunks after the 14-day retention period and deletion delay.
-- Check Loki and Alloy quotas before buffers or storage fill.
-- Check container rotation, host journal limits, and application file rotation separately.
+- Confirm OpenObserve removes expired data after the 14-day retention period.
+- Check OpenObserve and Alloy quotas before storage or buffers fill.
+- Check the ephemeral kubelet quota because CRI logs use `/tank/secure/k0s/kubelet/logs`.
+- Check container rotation, host journal limits, qBittorrent and OnlyOffice rotation, and FFmpeg pruning separately.
 
 ## Certificates and mail
 
@@ -67,19 +69,20 @@ Traefik renews HTTPS certificates automatically; Stalwart renews its SMTP STARTT
 
 ## Email alerts
 
-After notification deployment, Zabbix Warning-or-higher problems and Grafana warning-or-higher log alerts must arrive in the Stalwart inbox, with recovery messages. A single warning log entry triggers an alert; repeated lines in an active alert produce reminders rather than individual emails.
+When notifications are enabled, Zabbix sends Warning-or-higher problems, recoveries, and hourly reminders. OpenObserve evaluates recognized warning, error, and critical logs every minute and suppresses repeated notifications for five minutes. A single matching log entry can trigger an alert.
 
 | Check | Where to investigate |
 | --- | --- |
 | Missing Zabbix email | Reports → Action log, trigger actions, SMTP media, recipient permissions, and severity selection. |
-| Missing Grafana email | Alert rule state, contact point, notification policy, silences, and Grafana SMTP logs. |
+| Missing OpenObserve email | Alert state, destination, silence period, SMTP settings, and OpenObserve logs. |
 | Email accepted but absent from inbox | External relay queue, forwarding-domain MX, Traefik SMTP, and Stalwart delivery or filtering logs. |
-| Repeated log alerts | Linked Loki query, affected service, and dependency logs. |
+| Repeated log alerts | OpenObserve query, affected service, and dependency logs. |
 
 - Verify warning and recovery delivery after changing rules, credentials, or routing.
 - Confirm delivery in the inbox rather than relying on SMTP acceptance.
 - Check that maintenance silences expire as intended.
 - Use dashboard checks during mail failures because Stalwart cannot report its own complete outage.
+- Use independent monitoring for host, Internet, or mailbox outages.
 
 ## Recovery
 

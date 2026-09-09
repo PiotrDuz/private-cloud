@@ -134,7 +134,7 @@ data:
       }
     }
     loki.process "normalize" {
-      forward_to = [loki.write.local.receiver]
+      forward_to = [loki.write.openobserve.receiver]
       stage.decolorize {}
       stage.json {
         expressions = {severity = "level", alternate_severity = "severity", short_severity = "lvl", event_type = "type"}
@@ -197,13 +197,13 @@ data:
         selector = `{service="qbittorrent"} |~ "\\(C\\)"`
         stage.static_labels { values = {level = "critical"} }
       }
-      stage.match {
-        selector = `{service="traefik"} | json | DownstreamStatus >= 500 | __error__=""`
-        stage.static_labels { values = {level = "error"} }
+      stage.regex {
+        expression = `"DownstreamStatus"\s*:\s*(?P<http_failure>5[0-9]{2})`
       }
+      stage.labels { values = {http_failure = "http_failure"} }
       stage.match {
-        selector = `{job="containers"} |~ "^\\{" | json | __error__!=""`
-        stage.static_labels { values = {level = "warn"} }
+        selector = `{service="traefik",http_failure=~"5[0-9]{2}"}`
+        stage.static_labels { values = {level = "error"} }
       }
       stage.match {
         selector = `{service="zabbix"} |~ "(?i)(cannot send|failed to send|cannot connect|connection.*failed|database is down)"`
@@ -227,9 +227,21 @@ data:
       }
       stage.label_keep { values = ["namespace", "service", "container", "node", "job", "level"] }
     }
-    loki.write "local" {
+    local.file "ingest_username" {
+      filename = "/etc/alloy/credentials/username"
+    }
+    local.file "ingest_password" {
+      filename = "/etc/alloy/credentials/password"
+      is_secret = true
+    }
+    loki.write "openobserve" {
+      external_labels = {o2_stream_name = "logs"}
       endpoint {
-        url = "http://loki:3100/loki/api/v1/push"
+        url = "http://openobserve:5080/api/default/loki/api/v1/push"
+        basic_auth {
+          username = local.file.ingest_username.content
+          password = local.file.ingest_password.content
+        }
         batch_wait = "1s"
         batch_size = "256KiB"
         min_backoff_period = "1s"

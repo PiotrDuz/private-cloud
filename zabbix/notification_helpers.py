@@ -20,7 +20,11 @@ def configure_email(api, config):
     user = users[0]
     managed_media = {"mediatypeid": media_id, "sendto": [config["recipient"]], "active": 0, "severity": 60, "period": "1-7,00:00-24:00"}
     current = user.get("medias", [])
-    desired = [{key: item[key] for key in ("mediatypeid", "sendto", "active", "severity", "period")} for item in current if item["mediatypeid"] != media_id] + [managed_media]
+    desired = [preserve_media(item) for item in current if str(item["mediatypeid"]) != str(media_id)]
+    existing_managed = [item for item in current if str(item["mediatypeid"]) == str(media_id)]
+    if existing_managed:
+        managed_media["mediaid"] = existing_managed[0]["mediaid"]
+    desired.append(managed_media)
     if not same(current, desired):
         api.call("user.update", {"userid": user["userid"], "medias": desired})
         api.changed = True
@@ -44,15 +48,18 @@ def configure_health(api, config):
     master_id = ensure_item(api, master)
     ensure_trigger(api, host_id, "Logging health collector stopped", 'nodata(/' + host + '/observability.health,5m)=1', 4)
     gauges = [
-        ("loki_up", "Loki unavailable"), ("alloy_up", "Alloy unhealthy"),
-        ("grafana_up", "Grafana unavailable"), ("heartbeat", "Host logs have not reached Loki for five minutes"),
+        ("openobserve_up", "OpenObserve unavailable"), ("alloy_up", "Alloy unhealthy"),
+        ("heartbeat", "Host logs have not reached OpenObserve for five minutes"),
         ("metrics_up", "Logging metrics collection failed"),
     ]
     for field, title in gauges:
         key = "observability." + field
         dependent(api, host_id, master_id, key, title, "$." + field)
         ensure_trigger(api, host_id, title, 'max(/' + host + '/' + key + ',2m)=0', 4)
-    for field in ("alloy_retries", "alloy_dropped", "loki_discarded", "grafana_notifications_failed"):
+    key = "observability.openobserve_internal_warnings"
+    dependent(api, host_id, master_id, key, "OpenObserve internal warning logs", "$.openobserve_internal_warnings")
+    ensure_trigger(api, host_id, "OpenObserve emitted warning-or-higher logs", 'max(/' + host + '/' + key + ',5m)>0', 2)
+    for field in ("alloy_retries", "alloy_dropped", "openobserve_ingest_errors", "openobserve_notifications_failed"):
         key = "observability." + field
         dependent(api, host_id, master_id, key, field.replace("_", " "), "$." + field, rate=True)
         ensure_trigger(api, host_id, field.replace("_", " ") + " increased", 'max(/' + host + '/' + key + ',5m)>0', 2)
@@ -82,3 +89,7 @@ def ensure_item(api, desired):
 def ensure_trigger(api, host_id, title, expression, severity):
     desired = {"description": title, "expression": expression, "priority": severity, "status": 0}
     return api.ensure("trigger", "triggerid", desired, {"output": "extend", "hostids": [host_id], "filter": {"description": [title]}, "expandExpression": True})
+
+
+def preserve_media(media):
+    return {key: media[key] for key in ("mediaid", "mediatypeid", "sendto", "active", "severity", "period")}

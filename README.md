@@ -36,6 +36,8 @@ sudo python3 ansible/install.py
 - Zabbix server TCP `31051` is the only application NodePort.
 - The k0s release pin is in `ansible/roles/k0s/defaults/main.yml`.
 - Zabbix host settings are in `ansible/service_catalog.yml`.
+- The logging stage deploys Alloy and OpenObserve in `observability`.
+- The notifications stage enables OpenObserve SMTP and Zabbix email actions.
 - Redis for AFFiNE, Intel GPU support, and Immich are independent installer stages.
 - Immich uses the shared PostgreSQL service with pgvector and VectorChord.
 - The project is greenfield and has no configuration migrations or compatibility paths.
@@ -58,5 +60,5 @@ sudo python3 ansible/install.py
 ## Operations
 
 - Use [the operations runbook](docs/OPERATIONS.md) for monitoring and incident investigation.
-- Treat backups, router/NAT configuration, and external monitoring as operator work.
+- Treat backups, router/NAT configuration, external monitoring, and live acceptance as operator work.
 - Read [the networking architecture and boundaries](docs/NETWORKING.md) for the implemented VPN, ingress, firewall, and media isolation design.

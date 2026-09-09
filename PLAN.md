@@ -5,8 +5,8 @@ This file records the target architecture and major repository decisions. Reposi
 | Area | Repository status |
 | --- | --- |
 | Storage, k0s, application services, networking, media, and host monitoring | Installation roles and manifests exist. |
-| Application logging | Console logging and the qBittorrent file forwarder exist; coverage and rotation need completion. |
-| Loki, Alloy, Grafana, and email notifications | Planned below; no deployment or notification configuration exists yet. |
+| Application logging | Central collection, source retention, and service-specific forwarding are implemented in repository configuration. |
+| OpenObserve, Alloy, and email notifications | Installation roles, digest-pinned manifests, alert provisioning, and SMTP configuration are implemented; live acceptance remains operator work. |
 | Independent backups and external outage monitoring | Operator work; automation is not implemented. |
 
 ## Existing infrastructure and services
@@ -200,26 +200,25 @@ This file records the target architecture and major repository decisions. Reposi
 - Reserve infrastructure privileges for networking, GPU support, and log collection.
 - Keep namespace boundaries and permitted network flows in [NETWORKING.md](docs/NETWORKING.md).
 
-## Central logging — planned
+## Central logging
 
 ### Collection and coverage
 
-- Deploy Grafana Alloy as a node log collector in a dedicated `observability` namespace.
-- Read Kubernetes CRI files through read-only host mounts with minimal discovery RBAC.
-- Collect all workload namespaces, init containers, sidecars, and infrastructure components.
-- Collect host journal entries for the kernel, k0s, ZFS, SSH, and Zabbix Agent.
-- Collect Kubernetes events once per cluster and preserve Warning events.
+- Deploy Grafana Alloy 1.19.2 as a node collector in the `observability` namespace.
+- Read Kubernetes CRI files through read-only host mounts and narrowly scoped discovery RBAC.
+- Collect workload containers, init containers, sidecars, host journal entries, and Kubernetes events.
+- Retain journal records for the kernel, k0s, ZFS, SSH, Zabbix Agent, and logging heartbeat.
 - Keep applications on native stdout/stderr wherever supported.
 - Use file-forwarding sidecars only for logs unavailable on stdout/stderr.
-- Collect qBittorrent through its existing `file-logs` container without rereading its source file.
-- Audit OnlyOffice's `/var/log/onlyoffice` and forward file-only operational errors.
-- Collect Jellyfin console logs and retain separate FFmpeg diagnostics locally.
+- Collect qBittorrent from the `file-logs` container after its file is tailed.
+- Use OnlyOffice 9.4.0.1's native entrypoint to tail `/var/log/onlyoffice` without another sidecar.
+- Collect Jellyfin console logs and retain closed FFmpeg diagnostics locally.
 - Enable structured Traefik service and access logs on stdout.
 - Preserve source timestamps, parse CRI framing, and join multiline exceptions.
-- Parse each application's severity format, including qBittorrent's wrapped messages.
+- Parse structured severity fields and known console formats, including qBittorrent's wrapped messages.
 - Normalize warning, error, fatal, panic, and critical levels before alert evaluation.
-- Preserve unclassified messages and alert on parsing failures.
-- Use bounded labels for cluster, namespace, service, container, node, and severity.
+- Preserve unclassified messages without assigning an alert level.
+- Index only namespace, service, container, node, job, and severity labels.
 - Keep request IDs, filenames, email addresses, and message text out of indexed labels.
 - Redact credentials, authorization headers, cookies, and mail bodies before ingestion.
 - Avoid duplicate collection through both container files and the Kubernetes log API.
@@ -230,99 +229,93 @@ Use [Alloy Kubernetes collection](https://grafana.com/docs/alloy/latest/collect/
 
 | Component | Deployment | Dataset | Initial quota |
 | --- | --- | --- | --- |
-| Loki | Single binary, one replica, replication factor 1. | `tank/secure/no-backup/k0s/services/loki` | 50G |
-| Alloy | One collector on the current node with persistent positions and write-ahead buffering. | `tank/secure/no-backup/k0s/services/alloy` | 5G |
-| Grafana | One replica with local SQLite state and provisioned configuration. | `tank/secure/backup/k0s/services/grafana` | 5G |
+| Alloy 1.19.2 | One collector with persistent write-ahead buffering. | `tank/secure/no-backup/k0s/services/alloy` | 5G |
+| OpenObserve 0.90.3 | One local-mode node with disk storage and SQLite metadata. | `tank/secure/backup/k0s/services/openobserve` | 50G |
 
-Each component receives its own 10Ti PV/PVC; quotas remain configurable. Loki history and Alloy buffers are disposable, while Grafana state is backed up.
+Each component receives its own 10Ti PV/PVC; quotas remain configurable. Alloy buffers are disposable, while OpenObserve state and log history are designated for backup.
 
-- Use Loki TSDB schema v13 with a 24-hour index period and filesystem chunk storage.
-- Retain logs for 14 days through the enabled singleton Compactor.
-- Persist Loki's WAL, indexes, chunks, and Compactor working directory on its PV.
-- Configure a filesystem delete-request store and verify delayed chunk deletion.
-- Exclude disposable log datasets from snapshot and backup schedules.
-- Enable Alloy's persistent write-ahead log with bounded retention and retry backoff.
-- Alert on rejected entries, exhausted retries, dropped logs, and growing delivery lag.
-- Set explicit CPU, memory, ingestion, query, and buffering limits before deployment.
-- Bound kubelet container logs to five 10Mi files per container initially.
+- Use OpenObserve local mode with disk object storage and SQLite metadata.
+- Retain logs for 14 days through OpenObserve compaction.
+- Authenticate Alloy with OpenObserve's ingestion-only passcode.
+- Keep the OpenObserve administrator password out of the collector pod.
+- Include the OpenObserve dataset in independent snapshot and backup schedules.
+- Enable Alloy's persistent write-ahead log with retry backoff and finite retries.
+- Enforce CPU, memory, ingestion, query, and buffering limits.
+- Store container logs under `tank/secure/k0s/kubelet/logs` in the quota-controlled ephemeral kubelet dataset.
+- Rotate container logs as five 10Mi files per container.
 - Bound the persistent host journal to 1GiB and seven days initially.
-- Configure size and age limits for qBittorrent, OnlyOffice, and FFmpeg source files.
-- Keep source rotation independent of Loki retention and dataset quotas.
-- Expose Grafana through an exact Traefik HTTPS hostname with anonymous access disabled.
-- Keep Loki and Alloy endpoints private with default-deny policies.
-- Permit only collector ingestion, Grafana queries, DNS, discovery, and monitoring flows.
+- Rotate qBittorrent source files at 10MiB and seven days.
+- Rotate OnlyOffice source files at 10MiB with seven-day retention.
+- Prune closed Jellyfin FFmpeg diagnostics after seven days or above 1GiB.
+- Keep source rotation independent of OpenObserve retention and dataset quotas.
+- Expose OpenObserve through an exact Traefik HTTPS hostname with authentication required.
+- Keep the Alloy endpoint private with default-deny policies.
+- Permit only collector ingestion, OpenObserve UI access, DNS, discovery, SMTP, and monitoring flows.
 - Read media logs from the node without granting media applications new egress.
 
-Loki does not delete logs in response to low disk space; quota alerts must precede exhaustion. See [filesystem storage](https://grafana.com/docs/loki/latest/operations/storage/filesystem/), [Compactor retention](https://grafana.com/docs/loki/latest/operations/storage/retention/), and [Alloy buffering](https://grafana.com/docs/alloy/latest/reference/components/loki/loki.write/).
+Retention does not replace capacity monitoring; quota alerts must precede exhaustion. See [OpenObserve local-mode storage](https://openobserve.ai/docs/architecture/) and [Alloy buffering](https://grafana.com/docs/alloy/latest/reference/components/loki/loki.write/).
 
 ### Log warnings and monitoring
 
-- Provision Grafana's Loki data source, dashboards, alert rules, and notification policy through Ansible.
-- Keep Zabbix responsible for infrastructure metrics and Grafana responsible for log alerts.
+- Provision OpenObserve's email destination and log alert rules through Ansible.
+- Keep Zabbix responsible for infrastructure metrics and OpenObserve responsible for application log alerts.
 - Evaluate warning-or-higher log counts every minute over the preceding five minutes.
 - Fire on a count greater than zero with no pending period.
-- Include every service and Kubernetes Warning event without an error-rate threshold.
-- Add explicit rules for failed ACME renewals, SMTP delivery, database operations, and VPN connections.
+- Include recognized warning, error, and critical levels, including Kubernetes Warning events.
 - Classify Traefik HTTP 5xx responses as errors even without a severity field.
-- Monitor Loki, Alloy, Grafana, and notification failures through Zabbix independently of Loki queries.
-- Add Zabbix dataset warnings at 80% and high alerts at 90% for all service datasets.
-- Monitor certificate expiry at 21 and 7 days for HTTPS and SMTP STARTTLS.
-- Monitor collector heartbeats instead of treating a quiet application as a collection failure.
-- Treat empty warning queries as normal only while collection health is confirmed.
-- Route Grafana query failures and missing heartbeat alerts to the same email recipient.
+- Exclude OpenObserve's own logs from its rules to prevent notification feedback loops.
+- Report OpenObserve internal warnings through Zabbix instead.
+- Monitor OpenObserve, Alloy, ingestion errors, delivery failures, and certificates through Zabbix.
+- Add Zabbix dataset warnings at 80% and high alerts at 90% from the service catalog.
+- Monitor HTTPS and SMTP STARTTLS certificate expiry at 21 and 7 days.
+- Use a host-journal heartbeat to distinguish a quiet service from missing collection.
+- Disable OpenObserve rules and SMTP unless the notifications stage is enabled.
 
-Grafana needs explicit [No Data and Error handling](https://grafana.com/docs/grafana/latest/alerting/fundamentals/alert-rule-evaluation/nodata-and-error-states/); an unavailable Loki must not appear healthy.
+Zabbix checks the heartbeat through OpenObserve's authenticated search API so an unavailable query path cannot appear healthy.
 
-## Email warnings to the Stalwart inbox — planned
+## Email warnings to the Stalwart inbox
 
 The destination is the existing Stalwart mailbox, `<stalwart.mailbox_username>@<stalwart.domain>`. Send to its existing forwarding-domain alias, `<stalwart.mailbox_username>@<stalwart.forwarding_domain>`, through the configured authenticated inbox.eu SMTP relay.
 
-`Zabbix / Grafana → inbox.eu SMTP over TLS → forwarding-domain MX → Traefik TCP 25 → Stalwart mailbox`
+`Zabbix / OpenObserve → inbox.eu SMTP over TLS → forwarding-domain MX → Traefik TCP 25 → Stalwart mailbox`
 
 - Use the configured relay hostname, port, and TLS mode with certificate verification enabled.
 - Use a relay-authorized sender address and credentials stored in Vault and Kubernetes Secrets.
-- Permit SMTP egress only from Zabbix server and Grafana to the configured relay destinations.
+- Permit SMTP egress only from Zabbix server and OpenObserve to the configured relay destinations.
 - Account for relay address changes when maintaining kube-router IP-based egress rules.
 - Preserve the existing public-port policy and Stalwart Proxy Protocol path.
 - Deliver to the forwarding alias directly without relying on primary-domain forwarding rules.
-- Configure Zabbix's SMTP media type, recipient permissions, user media, and trigger action.
-- Enable Zabbix recipient media continuously for Warning, Average, High, and Disaster severities.
-- Send every new Zabbix problem and its recovery to the mailbox.
-- Provision Grafana SMTP settings, an email contact point, and a default notification route.
-- Send every firing Grafana alert instance and its recovery to the mailbox.
-- Disable cross-alert grouping and use zero initial group wait for Grafana alerts.
-- Repeat unresolved Grafana alerts every five minutes and Zabbix problems hourly.
+- Configure Zabbix SMTP media, administrator recipient media, and a Warning-or-higher action.
+- Send Zabbix problem, recovery, and hourly reminder messages to the forwarding alias.
+- Provision OpenObserve SMTP, an email destination, and four managed log rules.
+- Evaluate each log rule every minute and silence repeated notifications for five minutes.
 - Include severity, source, service or host, time, event count where applicable, and investigation links.
 - Retry failed notifications and expose failures in monitoring.
 - Apply notification silences only during explicit operator maintenance.
 
-“Every warning” means every warning-or-higher alert instance receives email coverage, including an isolated warning log entry. Repeated lines within an active log alert produce reminders; Grafana does not send one email per raw log line. Per-line delivery would require a separate durable event notification pipeline.
+“Every warning” means every recognized warning-or-higher alert instance receives email coverage, including an isolated warning log entry. Repeated lines during the five-minute silence do not produce one email per raw line. Per-line delivery would require a separate durable event notification pipeline.
 
 Stalwart delivery depends on this host, PostgreSQL, the external relay, DNS, and inbound SMTP reachability. Local email cannot report a complete host or mailbox outage until delivery recovers; independent outage monitoring remains operator work.
 
-Use [Zabbix email media](https://www.zabbix.com/documentation/7.4/en/manual/config/notifications/media/email), [Zabbix recovery operations](https://www.zabbix.com/documentation/7.4/en/manual/config/notifications/action/recovery_operations), [Grafana SMTP email](https://grafana.com/docs/grafana/latest/alerting/configure-notifications/manage-contact-points/integrations/configure-email/), and [Grafana notification timing](https://grafana.com/docs/grafana/latest/alerting/fundamentals/notifications/group-alert-notifications/) for implementation.
+SMTP relay addresses are resolved when the notification policies are applied. Reapply after a relay address change so the IP-based egress policy is updated.
 
-## Implementation and acceptance — pending
+## Remaining implementation and acceptance
 
-- Add logging stages, dependencies, quotas, resource limits, hostname, and notification settings to the installer contract.
-- Add Loki, Alloy, and Grafana roles and service templates with pinned image versions.
-- Extend namespace policies, Traefik routing, DDNS records, and the dataset monitoring catalog.
-- Complete per-service logging coverage and local rotation configuration.
-- Provision alert rules and SMTP routing after Stalwart and monitoring are ready.
-- Confirm timestamped logs from every enabled service and host source appear in Grafana.
-- Confirm collection resumes after a collector restart and a bounded Loki outage.
-- Confirm source rotation and expired Loki chunk deletion reclaim space.
+- Confirm timestamped logs from every enabled service and host source appear in OpenObserve.
+- Review unclassified application formats and add bounded severity parsing where needed.
+- Confirm collection resumes after a collector restart and a bounded OpenObserve outage.
+- Confirm source rotation and expired OpenObserve data deletion reclaim space.
 - Verify an isolated log warning, log error, and Kubernetes Warning each generate email.
 - Verify Zabbix Warning and higher problems generate email and recovery messages.
 - Verify query failure, missing heartbeat, and SMTP failure remain visible as problems.
 - Confirm actual messages arrive in the Stalwart inbox rather than only reaching the relay.
 - Verify logging access does not weaken media VPN or Jellyfin isolation.
-- Update repository status only after configuration exists and record live acceptance separately.
+- Confirm the router, DNS, certificates, and media integrations in the live environment.
 
 ## Backup and recovery decisions
 
 - Treat `backup` as a dataset classification rather than an implemented backup schedule.
-- Keep independent copies of PostgreSQL, application files, Grafana state, and k0s control-plane data.
+- Keep independent copies of PostgreSQL, application files, OpenObserve state, and k0s control-plane data.
 - Coordinate database and application-file recovery points.
 - Keep the encryption passphrase, Vault recovery material, and configuration outside this host.
 - Define snapshot retention, backup frequency, and recovery targets before production use.

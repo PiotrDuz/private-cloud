@@ -350,8 +350,7 @@ def collect_missing_secrets(configuration: dict[str, Any], public: dict[str, Any
         ("stalwart", "mailbox_password"): "Stalwart mailbox password",
         ("stalwart", "relay_password"): "inbox.eu SMTP password",
         ("stalwart", "certificate_dns_api_token"): "Stalwart Cloudflare certificate DNS API token",
-        ("logging", "admin_password"): "Grafana administrator password (at least 32 characters)",
-        ("logging", "secret_key"): "Grafana encryption key (at least 32 characters)",
+        ("logging", "admin_password"): "OpenObserve administrator password (at least 32 characters)",
         ("zabbix", "database_password"): "Zabbix database password",
         ("zabbix", "admin_password"): "Zabbix administrator password",
         ("networking", "cloudflare_api_token"): "Cloudflare ACME DNS API token",
@@ -454,7 +453,6 @@ def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
 
 def reject_unsupported_secret_rotations(previous: dict[str, Any], candidate: dict[str, Any]) -> None:
     unsupported = (
-        ("logging", "secret_key"),
         ("logging", "admin_password"),
         ("storage", "encryption_passphrase"),        ("postgres", "admin_password"),
         ("zabbix", "admin_password"),
@@ -482,7 +480,7 @@ def configured_secret_markers() -> dict[str, Any]:
         "immich": {"database_password": "configured"},
         "zabbix": {"database_password": "configured", "admin_password": "configured"},
         "networking": {"cloudflare_api_token": "configured", "cloudflare_ddns_api_token": "configured", "amneziawg_private_key": "configured"},
-        "logging": {"admin_password": "configured", "secret_key": "configured"},
+        "logging": {"admin_password": "configured"},
         "media": {"openvpn_configuration": "configured", "openvpn_username": "configured", "openvpn_password": "configured", "proxy_password": "configured"},
     }
 

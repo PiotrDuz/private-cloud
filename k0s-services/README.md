@@ -8,6 +8,7 @@
 - The k0s release pin and checksum are repository values in `ansible/roles/k0s/defaults/main.yml`.
 - [Arr stack](arr/README.md) and [Jellyfin](jellyfin/README.md) have separate templates rendered by the media role.
 - Use logging sidecars only for applications without native stdout or stderr configuration.
+- Alloy and OpenObserve run in the `observability` namespace through the logging stage.
 
 ## Runtime security
 

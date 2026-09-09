@@ -53,7 +53,7 @@ SECRET_SCHEMAS = {
     "affine": {"database_password"},
     "immich": {"database_password"},
     "networking": {"cloudflare_api_token", "cloudflare_ddns_api_token", "amneziawg_private_key"},
-    "logging": {"admin_password", "secret_key"},
+    "logging": {"admin_password"},
     "media": {"openvpn_configuration", "openvpn_username", "openvpn_password", "proxy_password"},
 }
 SECRET_STAGES = {
@@ -489,12 +489,12 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if not QUOTA_PATTERN.fullmatch(str(zabbix.get("storage_size", ""))):
         raise InstallerError("Invalid zabbix.storage_size")
     logging = cloud["logging"]
-    logging_keys = {"hostname", "loki_storage_size", "alloy_storage_size", "grafana_storage_size", "loki_max_ram", "alloy_max_ram", "grafana_max_ram", "retention_days"}
+    logging_keys = {"hostname", "openobserve_storage_size", "alloy_storage_size", "openobserve_max_ram", "alloy_max_ram", "retention_days"}
     if not isinstance(logging, dict) or set(logging) != logging_keys:
         raise InstallerError("Logging configuration has missing or unknown keys")
     if not DOMAIN_PATTERN.fullmatch(str(logging["hostname"])):
         raise InstallerError("Invalid logging.hostname")
-    for service, minimum in (("loki", 1073741824), ("alloy", 268435456), ("grafana", 268435456)):
+    for service, minimum in (("openobserve", 1073741824), ("alloy", 268435456)):
         if not QUOTA_PATTERN.fullmatch(str(logging[service + "_storage_size"])):
             raise InstallerError(f"Invalid logging.{service}_storage_size")
         value = logging[service + "_max_ram"]
@@ -505,8 +505,6 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     notifications = cloud["notifications"]
     if not isinstance(notifications, dict) or set(notifications) != {"from_address"} or not EMAIL_PATTERN.fullmatch(str(notifications["from_address"])):
         raise InstallerError("Invalid notifications.from_address")
-    if stages["notifications"] and stalwart["relay_implicit_tls"] and stalwart["relay_port"] != 465:
-        raise InstallerError("Grafana implicit SMTP TLS requires relay port 465")
     public_hostnames = {
         "logging": logging["hostname"],
         "networking": amneziawg["hostname"],
@@ -568,8 +566,10 @@ def validate_secrets_configuration(configuration: Mapping[str, Any], stages: Map
         raise InstallerError("The media VPN proxy password must contain 16 to 64 URL-safe characters")
     if "stalwart" in secrets_root and len(secrets_root["stalwart"].get("certificate_dns_api_token", "")) < 20:
         raise InstallerError("The Stalwart certificate DNS API token must contain at least 20 characters")
-    if "logging" in secrets_root and any(len(secrets_root["logging"].get(key, "")) < 32 for key in ("admin_password", "secret_key")):
-        raise InstallerError("Grafana credentials must contain at least 32 characters")
+    if "logging" in secrets_root:
+        admin_password = secrets_root["logging"].get("admin_password", "")
+        if not isinstance(admin_password, str) or len(admin_password) < 32:
+            raise InstallerError("OpenObserve administrator password must contain at least 32 characters")
     passphrase = secrets_root.get("storage", {}).get("encryption_passphrase")
     if passphrase is not None and not 8 <= len(passphrase.encode()) <= 512:
         raise InstallerError("The storage passphrase must contain 8 to 512 bytes")

@@ -1,0 +1,94 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: observability}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: logging-dns, namespace: observability}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: openobserve-ingress, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: openobserve}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: alloy}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: edge}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: traefik}}
+        - ipBlock: {cidr: {{ private_cloud.networking.traefik_internal_ip }}/32}
+      ports: [{protocol: TCP, port: 5080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: alloy-openobserve, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: alloy}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: openobserve}}
+      ports: [{protocol: TCP, port: 5080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: traefik-openobserve, namespace: edge}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: traefik}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: observability}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: openobserve}}
+      ports: [{protocol: TCP, port: 5080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: openobserve-alert-smtp, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: openobserve}}
+  policyTypes: [Egress]
+{% if private_cloud.stages.notifications %}
+  egress:
+    - to:
+{% for address in logging_smtp_addresses %}
+        - ipBlock: {cidr: {{ address }}/32}
+{% endfor %}
+      ports: [{protocol: TCP, port: {{ private_cloud.stalwart.relay_port }}}]
+{% else %}
+  egress: []
+{% endif %}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: zabbix-alert-smtp, namespace: private-cloud}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: zabbix
+      app.kubernetes.io/component: server
+  policyTypes: [Egress]
+{% if private_cloud.stages.notifications %}
+  egress:
+    - to:
+{% for address in logging_smtp_addresses %}
+        - ipBlock: {cidr: {{ address }}/32}
+{% endfor %}
+      ports: [{protocol: TCP, port: {{ private_cloud.stalwart.relay_port }}}]
+{% else %}
+  egress: []
+{% endif %}

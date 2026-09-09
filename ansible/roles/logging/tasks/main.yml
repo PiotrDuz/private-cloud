@@ -13,7 +13,7 @@
 - name: Configure host log retention and heartbeat
   ansible.builtin.import_tasks: host.yml
 
-- name: Apply Grafana credentials
+- name: Apply OpenObserve credentials
   kubernetes.core.k8s:
     kubeconfig: "{{ logging_kubeconfig }}"
     state: present
@@ -21,20 +21,19 @@
   register: logging_secret_apply
   no_log: true
 
-- name: Apply each logging service
+- name: Apply OpenObserve
   ansible.builtin.include_tasks: deploy.yml
-  loop: [loki, alloy, grafana]
-  loop_control:
-    loop_var: logging_component
+  vars:
+    logging_component: openobserve
 
-- name: Restart Grafana after credential changes
+- name: Restart OpenObserve after credential changes
   kubernetes.core.k8s:
     kubeconfig: "{{ logging_kubeconfig }}"
     state: patched
     definition:
       apiVersion: apps/v1
       kind: Deployment
-      metadata: {name: grafana, namespace: observability}
+      metadata: {name: openobserve, namespace: observability}
       spec:
         template:
           metadata:
@@ -43,20 +42,90 @@
   when: logging_secret_apply.changed
   no_log: true
 
-- name: Wait for logging workloads
+- name: Wait for OpenObserve
   kubernetes.core.k8s_info:
     kubeconfig: "{{ logging_kubeconfig }}"
     api_version: apps/v1
     kind: Deployment
-    name: "{{ item }}"
+    name: openobserve
     namespace: observability
-  loop: [loki, alloy, grafana]
-  register: logging_workload
+  register: logging_openobserve_workload
   until:
-    - logging_workload.resources | length == 1
-    - logging_workload.resources[0].status.observedGeneration | default(0) | int >= logging_workload.resources[0].metadata.generation | int
-    - logging_workload.resources[0].status.updatedReplicas | default(0) | int == 1
-    - logging_workload.resources[0].status.availableReplicas | default(0) | int == 1
+    - logging_openobserve_workload.resources | length == 1
+    - logging_openobserve_workload.resources[0].status.observedGeneration | default(0) | int >= logging_openobserve_workload.resources[0].metadata.generation | int
+    - logging_openobserve_workload.resources[0].status.updatedReplicas | default(0) | int == 1
+    - logging_openobserve_workload.resources[0].status.availableReplicas | default(0) | int == 1
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Resolve the OpenObserve endpoint
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    api_version: v1
+    kind: Service
+    name: openobserve
+    namespace: observability
+  register: logging_openobserve_endpoint
+  changed_when: false
+
+- name: Read the OpenObserve ingestion token
+  ansible.builtin.uri:
+    url: 'http://{{ logging_openobserve_endpoint.resources[0].spec.clusterIP }}:5080/api/default/passcode'
+    url_username: "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain }}"
+    url_password: "{{ private_cloud_secrets.logging.admin_password }}"
+    force_basic_auth: true
+    return_content: true
+  register: logging_ingestion_token
+  no_log: true
+
+- name: Apply the OpenObserve ingestion token
+  kubernetes.core.k8s:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    state: patched
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata: {name: openobserve-ingest, namespace: observability}
+      stringData:
+        ingest-password: "{{ logging_ingestion_token.json.data.passcode }}"
+  register: logging_ingestion_secret_apply
+  no_log: true
+
+- name: Apply Alloy
+  ansible.builtin.include_tasks: deploy.yml
+  vars:
+    logging_component: alloy
+
+- name: Restart Alloy after ingestion credential changes
+  kubernetes.core.k8s:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    state: patched
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: {name: alloy, namespace: observability}
+      spec:
+        template:
+          metadata:
+            annotations:
+              private-cloud.example/credentials-restarted-at: "{{ ansible_date_time.iso8601 }}"
+  when: logging_ingestion_secret_apply.changed
+  no_log: true
+
+- name: Wait for Alloy
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: alloy
+    namespace: observability
+  register: logging_alloy_workload
+  until:
+    - logging_alloy_workload.resources | length == 1
+    - logging_alloy_workload.resources[0].status.observedGeneration | default(0) | int >= logging_alloy_workload.resources[0].metadata.generation | int
+    - logging_alloy_workload.resources[0].status.updatedReplicas | default(0) | int == 1
+    - logging_alloy_workload.resources[0].status.availableReplicas | default(0) | int == 1
   retries: 60
   delay: 5
   changed_when: false
@@ -74,13 +143,40 @@
 
 - name: Verify end-to-end host log ingestion
   ansible.builtin.uri:
-    url: 'http://{{ logging_endpoints.results[0].resources[0].spec.clusterIP }}:3100/loki/api/v1/query?query={{ "sum(count_over_time({job=\"host\",service=\"private-cloud-log-heartbeat.service\"}[5m]))" | urlencode }}'
+    url: 'http://{{ logging_endpoints.results[0].resources[0].spec.clusterIP }}:5080/api/default/_search'
+    method: POST
+    url_username: "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain }}"
+    url_password: "{{ private_cloud_secrets.logging.admin_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      query:
+        sql: 'SELECT COUNT(*) AS count FROM "logs" WHERE service = ''private-cloud-log-heartbeat.service'''
+        start_time: "{{ ((ansible_date_time.epoch | int) - 300) * 1000000 }}"
+        end_time: "{{ (ansible_date_time.epoch | int) * 1000000 }}"
+        from: 0
+        size: 1
     return_content: true
   register: logging_ingestion
   until:
     - logging_ingestion.status | default(0) == 200
-    - logging_ingestion.json.data.result | default([]) | length > 0
-    - logging_ingestion.json.data.result[0].value[1] | float > 0
+    - logging_ingestion.json.hits | default([]) | length > 0
+    - logging_ingestion.json.hits[0].count | int > 0
   retries: 30
   delay: 10
   changed_when: false
+  no_log: true
+
+- name: Provision OpenObserve log alerts
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/../logging/provision_openobserve.py"
+      - 'http://{{ logging_endpoints.results[0].resources[0].spec.clusterIP }}:5080'
+      - "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain }}"
+      - "{{ private_cloud_secrets.logging.admin_password }}"
+      - "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain }}"
+      - "{{ private_cloud.stages.notifications | bool | lower }}"
+  register: logging_openobserve_provision
+  changed_when: (logging_openobserve_provision.stdout | from_json).changed
+  no_log: true

@@ -3,6 +3,8 @@
 import configparser
 import io
 import json
+import os
+import stat
 from pathlib import Path
 
 
@@ -20,9 +22,12 @@ def main():
             configuration.set("Application", "FileLogger\\" + key, value)
         output = io.StringIO()
         configuration.write(output, space_around_delimiters=False)
+        existing = path.stat()
         temporary = path.with_suffix(".logging.tmp")
         temporary.write_text(output.getvalue())
-        temporary.chmod(0o600)
+        temporary.chmod(stat.S_IMODE(existing.st_mode))
+        if os.geteuid() == 0:
+            os.chown(temporary, existing.st_uid, existing.st_gid)
         temporary.replace(path)
     print(json.dumps({"changed": changed}))
 

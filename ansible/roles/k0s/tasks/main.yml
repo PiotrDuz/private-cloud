@@ -230,7 +230,7 @@
     content: >-
       {{ k0s_effective_config | combine({'spec': {'workerProfiles':
         (k0s_effective_config.spec.workerProfiles | default([]) | rejectattr('name', 'equalto', 'default') | list) +
-        [k0s_default_worker_profile | combine({'values': {'containerLogMaxSize': '10Mi', 'containerLogMaxFiles': 5}}, recursive=True)]
+        [k0s_default_worker_profile | combine({'values': {'containerLogMaxSize': '10Mi', 'containerLogMaxFiles': 5, 'podLogsDir': k0s_ephemeral_mountpoint ~ '/logs'}}, recursive=True)]
       }}, recursive=True) | to_nice_yaml }}
     dest: "{{ k0s_config_file }}"
     owner: root
