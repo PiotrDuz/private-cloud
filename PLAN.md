@@ -1,7 +1,6 @@
 # Infrastructure and service plan
 
 This file defines the wanted target state; it does not certify implementation or deployment.
-Outstanding repository work is tracked in [TODO.md](TODO.md); operator-only setup is tracked in [docs/SETUP.md](docs/SETUP.md).
 
 1. ZFS install (folder zfs)
     1. Setup disks into raidz1, root = "tank"
@@ -92,7 +91,6 @@ Outstanding repository work is tracked in [TODO.md](TODO.md); operator-only setu
     10. Terminate SMTP STARTTLS in Stalwart with an automatically renewed certificate
     11. Use Let's Encrypt DNS-01 and a dedicated Cloudflare token for the Stalwart certificate
     12. Keep IMAPS 993 and submission ports 465 and 587 unexposed
-    13. Filter forwarded messages in Stalwart without source-CIDR restrictions at the host firewall
     14. Map forwarding-subdomain recipients to primary-domain Stalwart accounts
     15. Configure the inbox.eu SMTP relay.
         - Deliver local-domain mail locally and route other outbound mail through inbox.eu.
@@ -159,6 +157,11 @@ Outstanding repository work is tracked in [TODO.md](TODO.md); operator-only setu
     7. Expose AFFiNE for the user-provided domain through a valid TLS reverse proxy
     8. Use native stdout/stderr logging for collection by Alloy.
     9. Run container root inside a Kubernetes user namespace.
+14. Setup VALKEY for IMMICH
+    1. Deploy `valkey-immich` as an independent k0s service for Immich
+    2. Keep Valkey data ephemeral without a dataset, PV, or PVC
+    3. Restrict Valkey ingress to the Immich server
+    4. Use native stdout/stderr logging for collection by Alloy.
 15. Setup IMMICH
     1. Deploy Immich with its own dataset under tank/secure/backup/k0s/services/immich, 10Ti PV, and quota
     2. Create an Immich database, login role, and credentials Secret in the existing PostgreSQL service
@@ -168,7 +171,6 @@ Outstanding repository work is tracked in [TODO.md](TODO.md); operator-only setu
     6. Deploy the Immich machine-learning service for face detection and recognition
     7. Enable Intel OpenVINO acceleration through the shared i915 Kubernetes device resource
     8. Persist the Immich media library on its PV
-    9. Expose Immich for the user-provided domain through a valid TLS reverse proxy
     10. Use native stdout/stderr logging for collection by Alloy.
     11. Run container root inside a Kubernetes user namespace.
 16. Setup NETWORKING
