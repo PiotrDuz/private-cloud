@@ -24,17 +24,6 @@ def configure_library(path, location=None):
     set_value(root, 'AutomaticRefreshIntervalDays', '0')
     for key in ('SubtitleDownloadLanguages', 'SubtitleFetcherOrder', 'LyricFetcherOrder', 'MetadataSavers'):
         clear_element(root, key)
-    types = root.find('TypeOptions')
-    if types is None:
-        types = ET.SubElement(root, 'TypeOptions')
-    known = {item.findtext('Type'): item for item in types}
-    for name in ('Book', 'Movie', 'MusicVideo', 'Series', 'Season', 'Episode', 'MusicAlbum', 'MusicArtist', 'Audio', 'BoxSet', 'Person', 'Video', 'Photo'):
-        if name not in known:
-            item = ET.SubElement(types, 'TypeOptions')
-            set_value(item, 'Type', name)
-    for item in types:
-        clear_element(item, 'MetadataFetchers')
-        clear_element(item, 'ImageFetchers')
     return write_xml(path, root)
 
 

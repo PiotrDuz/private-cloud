@@ -1,36 +1,31 @@
 # Outstanding work
 
-[PLAN.md](PLAN.md) defines the target state; unchecked items here remain to be completed or verified.
+[PLAN.md](PLAN.md) defines the target state; unchecked items here remain to be implemented in the repository. Operator-only work is tracked in [docs/SETUP.md](docs/SETUP.md).
 
 Backup automation, snapshot retention, and recovery planning are deferred.
 
-## Independent monitoring and startup acceptance
+## Startup and storage verification automation
 
-- [ ] Configure external outage monitoring independent of this host and Stalwart.
-- [ ] Verify ZFS unlock, mount, and k0s startup ordering after reboot.
+- [ ] Automate post-reboot verification of ZFS unlock, mount, and k0s startup ordering.
 
-## Service and network operator setup
+## Service verification automation
 
-- [ ] Select Prowlarr indexers and provide their credentials.
-- [ ] Choose Sonarr and Radarr quality profiles.
-- [ ] Verify the provisioned ARR connections and library folders after deployment.
-- [ ] Verify Jellyfin local library scans, playback, and disabled online integrations after deployment.
-- [ ] Configure router forwarding for TCP 25, TCP 443, and the AmneziaWG UDP port.
-- [ ] Configure public A records, forwarding-domain MX, and LAN/VPN split DNS.
-- [ ] Publish and verify PTR, SPF, DKIM, and DMARC for the mail design.
-- [ ] Verify Stalwart JMAP, forwarded inbound mail, recipient mapping, filtering, and outbound relay.
-- [ ] Verify Traefik and Stalwart certificate issuance and renewal.
-- [ ] Complete the deployment acceptance checklist in [NETWORKING.md](docs/NETWORKING.md#deployment-acceptance).
+- [ ] Automate ARR connection, API, and library-folder verification after deployment.
+- [ ] Automate Jellyfin library scan, playback, metadata download, and disabled-integration verification after deployment.
+- [ ] Automate Stalwart JMAP, recipient mapping, filtering, and outbound-relay verification.
+- [ ] Automate Traefik and Stalwart certificate issuance and renewal verification.
+- [ ] Automate Cloudflare public A record creation and forwarding-domain MX reconciliation.
+- [ ] Automate SPF, DKIM, and DMARC publication and DNS verification.
+- [ ] Automate host-side firewall and route checks from the deployment acceptance matrix.
 
-## Logging and notification acceptance
+## Logging and notification acceptance automation
 
-- [ ] Confirm timestamped logs from every enabled service and host source appear in OpenObserve.
-- [ ] Review live unclassified logs for additional service formats requiring severity parsing.
-- [ ] Confirm collection resumes after a collector restart and a bounded OpenObserve outage.
-- [ ] Confirm source rotation and expired OpenObserve data deletion reclaim space.
-- [ ] Verify an isolated log warning, log error, and Kubernetes Warning each generate email.
-- [ ] Verify Zabbix Warning and higher problems generate email and recovery messages.
-- [ ] Verify query failure, missing heartbeat, and SMTP failure remain visible as problems.
-- [ ] Confirm actual messages arrive in the Stalwart inbox rather than only reaching the relay.
-- [ ] Verify logging access does not weaken media VPN or Jellyfin isolation.
-- [ ] Confirm the router, DNS, certificates, and media integrations in the live environment.
+- [ ] Automate the timestamped-log presence check for every enabled service and host source in OpenObserve.
+- [ ] Automate reporting of live unclassified log formats that need severity parsing.
+- [ ] Automate collector-restart and bounded OpenObserve outage recovery checks.
+- [ ] Automate source rotation and expired OpenObserve data deletion checks.
+- [ ] Automate synthetic log warning, log error, and Kubernetes Warning notification checks.
+- [ ] Automate Zabbix Warning-or-higher problem and recovery email checks.
+- [ ] Automate query failure, missing heartbeat, and SMTP failure problem checks.
+- [ ] Automate Stalwart inbox delivery confirmation for test messages.
+- [ ] Automate media VPN and Jellyfin isolation checks for logging access.

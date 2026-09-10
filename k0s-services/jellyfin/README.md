@@ -9,21 +9,21 @@ The Jellyfin templates are managed by `ansible/roles/media` through the `media` 
 - Mount the shared `media-library-data` claim read-only at `/media`.
 - Request one shared `gpu.intel.com/i915` allocation for transcoding.
 - Publish the configured hostname through Traefik HTTPS.
-- Accept TCP `8096` only from Traefik and deny initiated network traffic.
-- Keep online metadata, subtitle, plugin, and remote-media integrations disabled.
+- Accept TCP `8096` only from Traefik and allow cluster DNS plus Internet HTTPS for metadata.
+- Keep metadata and artwork download enabled while disabling subtitle, plugin, and remote-media integrations.
 
 The [arr stack](../arr/README.md) provisions the shared library and downloads media independently of Jellyfin playback.
 
 ## Local library configuration
 
-- A Python init container applies local-only settings before the server starts.
+- A Python init container applies managed settings before the server starts.
 - Initial libraries use `/media/movies` and `/media/tv` from the shared read-only mount.
-- Existing library options retain their paths and disable remote metadata and image fetchers.
+- Existing library options retain their paths and keep metadata writes off the read-only mount.
 - Automatic subtitle downloads and writes alongside media remain disabled.
 - Plugin repositories and installed plugin manifests are disabled at startup.
 - The server runs as UID 1000 with the host render-device group.
-- NetworkPolicy blocks all initiated connections, including remote media URLs.
-- Configure any newly added libraries for local-only use before scanning.
+- NetworkPolicy permits cluster DNS and Internet TCP `443` only.
+- Disable local metadata and artwork saving on newly added libraries because the mount is read-only.
 
 Library settings follow Jellyfin's [LibraryOptions](https://github.com/jellyfin/jellyfin/blob/v10.11.4/MediaBrowser.Model/Configuration/LibraryOptions.cs) and [persisted library configuration](https://github.com/jellyfin/jellyfin/blob/v10.11.4/MediaBrowser.Controller/Entities/CollectionFolder.cs).
 

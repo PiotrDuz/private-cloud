@@ -13,7 +13,7 @@ The cluster uses default-deny pod networking, a restricted host firewall, Traefi
 | Namespace / zone | Responsibility | Boundary |
 | --- | --- | --- |
 | `private-cloud` | Existing applications and dependencies. | Explicit application flows only. |
-| `media` | Jellyfin, Sonarr, Radarr, Prowlarr, and qBittorrent. | Jellyfin accepts only Traefik ingress; guarded apps exit through OpenVPN. |
+| `media` | Jellyfin, Sonarr, Radarr, Prowlarr, and qBittorrent. | Jellyfin accepts only Traefik ingress and exits directly for metadata; guarded apps exit through OpenVPN. |
 | `edge` | Traefik HTTPS and SMTP entry. | Only approved application listeners are reachable. |
 | `network-access` | AmneziaWG server and peer forwarding. | Per-peer LAN permissions and public Internet egress. |
 | `dns-system` | Cloudflare DDNS updater. | DNS management has no application-data access. |
@@ -100,9 +100,9 @@ The arr dashboards, qBittorrent UI, peer port, discovery protocols, and UPnP are
 
 ## Jellyfin
 
-Jellyfin accepts only Traefik connections on TCP `8096` and cannot initiate network connections, including DNS. Replies to accepted streams remain possible.
+Jellyfin accepts only Traefik connections on TCP `8096`. It resolves names through cluster DNS and reaches metadata and artwork providers on TCP `443`.
 
-Jellyfin uses the local read-only media library and one shared `gpu.intel.com/i915` allocation. Online metadata, subtitle, plugin, and remote-media integrations must remain disabled because no outbound exception exists.
+Jellyfin uses the local read-only media library and one shared `gpu.intel.com/i915` allocation. Metadata and image download stay enabled; subtitle, plugin, and remote-media integrations remain disabled.
 
 ## AmneziaWG
 
@@ -136,6 +136,7 @@ Everything omitted is denied. Each entry permits connection initiation in the st
 | Local networks | Host | TCP `22`, `6443`, and `31051`. |
 | LAN / AmneziaWG client | Traefik | TCP `443`. |
 | Traefik | Approved web backends / Jellyfin | Declared backend ports only. |
+| Jellyfin | Metadata and artwork providers | TCP `443` after cluster DNS. |
 | Traefik | Stalwart | TCP `25` with Proxy Protocol v2. |
 | Guarded media pod | Media VPN gateway | Proxy and DNS ports only. |
 | Media VPN gateway | OpenVPN provider | Pinned endpoint IP, protocol, and port. |
@@ -164,7 +165,7 @@ Repository implementation is not evidence of live enforcement. Before exposure:
 - Confirm Proxy Protocol preserves the sender address in Stalwart.
 - Verify Stalwart filtering and outbound relay behavior.
 - Interrupt OpenVPN and confirm guarded apps lose Internet and external DNS.
-- Confirm Jellyfin cannot initiate IPv4 or IPv6 connections.
+- Confirm Jellyfin downloads metadata over IPv4 and cannot initiate IPv6 connections.
 - Confirm Jellyfin streaming and local scanning continue during media VPN failure.
 - Verify per-peer AmneziaWG LAN permissions and full-tunnel Internet egress.
 - Confirm qBittorrent reports `tun0` as its bound interface.

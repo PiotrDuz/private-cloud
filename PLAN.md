@@ -1,7 +1,7 @@
 # Infrastructure and service plan
 
 This file defines the wanted target state; it does not certify implementation or deployment.
-Outstanding implementation, operator setup, and acceptance checks are tracked in [TODO.md](TODO.md).
+Outstanding repository work is tracked in [TODO.md](TODO.md); operator-only setup is tracked in [docs/SETUP.md](docs/SETUP.md).
 
 1. ZFS install (folder zfs)
     1. Setup disks into raidz1, root = "tank"
@@ -172,7 +172,7 @@ Outstanding implementation, operator setup, and acceptance checks are tracked in
     10. Install the AmneziaWG kernel module on the host
     11. Keep AmneziaWG routing, NAT, and peer ACLs inside its pod network namespace
     12. Route guarded media application egress through OpenVPN with fail-closed policies
-    13. Keep Jellyfin ingress behind Traefik and deny Jellyfin-initiated network traffic
+    13. Keep Jellyfin ingress behind Traefik and allow direct Internet metadata egress
     14. Use router forwarding for public entry and split DNS for LAN and VPN application access
     15. Place application services, their databases, search dependencies, and Zabbix in private-cloud.
     16. Place Sonarr, Radarr, Prowlarr, qBittorrent, the OpenVPN gateway, and Jellyfin in media.
@@ -219,9 +219,9 @@ Outstanding implementation, operator setup, and acceptance checks are tracked in
     4. Mount the shared media library read-only
     5. Use one shared Intel i915 GPU allocation for transcoding
     6. Expose the configured hostname through Traefik HTTPS
-    7. Accept connections only from Traefik and deny Jellyfin-initiated network traffic
-    8. Apply local-only library settings and disable plugin repositories before Jellyfin starts.
-    9. Keep online metadata, subtitle, plugin, and remote-media integrations disabled
+    7. Accept connections only from Traefik and allow direct Internet metadata egress
+    8. Apply library settings with plugin repositories disabled before Jellyfin starts.
+    9. Keep online metadata and image download enabled while disabling subtitle, plugin, and remote-media integrations
     10. Use native console logging without a logging sidecar
     11. Keep separate FFmpeg diagnostic logs on the Jellyfin dataset
     12. Prune closed FFmpeg diagnostics after seven days or above 1GiB while preserving active files.
