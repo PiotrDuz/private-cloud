@@ -15,6 +15,9 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - `/etc/zabbix/private-cloud-datasets.json` lists enabled datasets to collect.
 - `zabbix-memory-ecc-collector.py` collects Linux EDAC counters.
 - `zabbix-smartctl-wrapper` constrains privileged SMART commands.
+- `collector_logging.py` sends ZFS, ECC, and SMART collector failures to the host journal.
+- Alloy forwards collector diagnostics to OpenObserve without changing Zabbix metric output.
+- Zabbix Agent uses system logging instead of a separate log file.
 - `zabbix-zfs-template.yaml` defines ZFS items, discovery, and alerts.
 - `zabbix-memory-ecc-template.yaml` defines ECC items, discovery, and alerts.
 

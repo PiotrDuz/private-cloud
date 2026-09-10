@@ -9,7 +9,7 @@ This runbook lists work that cannot be automated in this repository. Repository 
 ## Services
 
 - [ ] Select Prowlarr indexers and provide their credentials.
-- [ ] Choose Sonarr and Radarr quality profiles.
+- [ ] Select the `private-cloud` profile when adding Sonarr series, Radarr movies, or import lists.
 
 ## Network and DNS
 

@@ -15,7 +15,7 @@ Open Zabbix at `networking.zabbix_hostname` and review **Monitoring → Problems
 | Latest data → Memory ECC | Corrected and uncorrected errors. | Prioritize uncorrected errors and repeated corrections. |
 | Latest data → ZFS scrub | Last completion, repaired bytes, and remaining errors. | Investigate failures or no completed scrub for 40 days. |
 | Latest data → ZFS snapshots | Retained bytes, oldest age, and collector errors. | Check growth and age against the chosen retention schedule. |
-| Logging health | OpenObserve, Alloy, host heartbeat, ingestion errors, and notification failures. | Investigate missing collection even when applications are quiet. |
+| Alloy health | Collector availability, metrics availability, retries, and dropped entries. | Investigate unhealthy collection and delivery pressure. |
 
 - Check timestamps and unsupported items when metrics disappear.
 - Use ZFS quota utilization rather than advertised 10Ti PV capacity.
@@ -30,6 +30,8 @@ Open Zabbix at `networking.zabbix_hostname` and review **Monitoring → Problems
 - Include surrounding messages when investigating a warning or error.
 - Correlate failures with resource pressure, deployments, and dependency outages.
 - Include qBittorrent's `file-logs` container when inspecting its application messages.
+- Filter host collector errors by private-cloud-zabbix-* service names in OpenObserve.
+- Filter Zabbix Agent journal logs by the zabbix-agent2.service service name.
 - Check Jellyfin FFmpeg diagnostics under `/config/log` for transcoding failures.
 - Treat unclassified logs as evidence for investigation even when no log alert fires.
 - Search historical logs after an outage because delayed entries outside the five-minute alert window do not trigger log alerts.
@@ -46,6 +48,8 @@ sudo journalctl -u k0scontroller.service --since='1 hour ago'
 Use `kubectl logs --previous` with the affected pod and container after a crash.
 
 - Investigate Alloy retries, rejected entries, dropped logs, and missing heartbeats.
+- Check missing-heartbeat alerts in OpenObserve and Alloy health in Zabbix.
+- Inspect OpenObserve query, ingestion, and notification failures directly through its logs and interface.
 - Confirm OpenObserve removes expired data after the 14-day retention period.
 - Check OpenObserve and Alloy quotas before storage or buffers fill.
 - Check the ephemeral kubelet quota because CRI logs use `/tank/secure/k0s/kubelet/logs`.
@@ -70,6 +74,8 @@ Traefik renews HTTPS certificates automatically; Stalwart renews its SMTP STARTT
 ## Email alerts
 
 When notifications are enabled, Zabbix sends Warning-or-higher problems, recoveries, and hourly reminders. OpenObserve evaluates recognized warning, error, and critical logs every minute and suppresses repeated notifications for five minutes. A single matching log entry can trigger an alert.
+
+OpenObserve excludes its own logs from severity alerts, and Zabbix does not probe its application health or search API. OpenObserve outages and notification failures require direct inspection or independent monitoring.
 
 | Check | Where to investigate |
 | --- | --- |

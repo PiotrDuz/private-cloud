@@ -3,7 +3,7 @@
 import json
 import sys
 
-from arr_helpers import Arr, configure_download_client, configure_prowlarr, configure_root, read_api_key
+from arr_helpers import Arr, configure_download_client, configure_prowlarr, configure_quality_profile, configure_root, read_api_key
 
 
 def main():
@@ -15,6 +15,7 @@ def main():
         clients[name].wait_ready()
     changed = False
     for name, directory in (('sonarr', 'tv'), ('radarr', 'movies')):
+        changed |= configure_quality_profile(clients[name], config['quality_profiles'][name])
         changed |= configure_root(clients[name], '/media/' + directory)
         changed |= configure_download_client(clients[name], name, config['qbittorrent_password'])
         changed |= configure_prowlarr(clients['prowlarr'], name, clients[name].key)

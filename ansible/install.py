@@ -250,6 +250,12 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
         media = cloud["media"]
         for key in ("storage_size", "hostname", "timezone"):
             media[key] = prompt_line(f"Media {key}", media[key])
+        for service in ("sonarr", "radarr"):
+            media["quality_profiles"][service] = prompt_choice(
+                f"{service.title()} quality profile",
+                ("720p", "1080p", "2160p"),
+                media["quality_profiles"][service],
+            )
         openvpn = media["openvpn"]
         for key in ("gateway_cluster_ip", "endpoint_ip"):
             openvpn[key] = prompt_line(f"OpenVPN {key}", openvpn[key])

@@ -7,17 +7,34 @@ import subprocess
 import sys
 from pathlib import Path
 
+from collector_logging import log_collector_errors
+
 SMARTCTL_PATH = "/usr/sbin/smartctl"
 
 
 def main() -> int:
     arguments = sys.argv[1:]
     if not command_is_allowed(arguments):
+        log_collector_errors("smart", ["rejected unsupported smartctl invocation"])
         return 64
-    result = subprocess.run([SMARTCTL_PATH, *arguments], check=False)
+    try:
+        result = subprocess.run([SMARTCTL_PATH, *arguments], check=False)
+    except OSError as error:
+        log_collector_errors("smart", [f"smartctl failed: {error}"])
+        return 127
     if result.returncode < 0:
+        log_collector_errors(
+            "smart", [f"smartctl terminated by signal {-result.returncode}"]
+        )
         return 128 - result.returncode
     if result.returncode >= 128 or result.returncode & 7:
+        log_collector_errors(
+            "smart",
+            [
+                f"smartctl command failed with status {result.returncode}: "
+                f"{' '.join(arguments)}"
+            ],
+        )
         return result.returncode
     return 0
 

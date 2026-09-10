@@ -11,6 +11,8 @@ import time
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 
+from collector_logging import log_collector_errors
+
 
 def command_path(name):
     path = shutil.which(name)
@@ -35,8 +37,15 @@ def main():
     parser.add_argument("mode", choices=("metrics", "snapshots"))
     args = parser.parse_args()
 
-    collector = Collector(load_inventory(args.inventory))
-    result = collector.metrics() if args.mode == "metrics" else collector.snapshots()
+    try:
+        collector = Collector(load_inventory(args.inventory))
+        result = (
+            collector.metrics() if args.mode == "metrics" else collector.snapshots()
+        )
+    except Exception as error:
+        log_collector_errors(f"zfs-{args.mode}", [f"collector failed: {error}"])
+        raise
+    log_collector_errors(f"zfs-{args.mode}", result["errors"])
     print(json.dumps(result, separators=(",", ":"), sort_keys=True))
 
 

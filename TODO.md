@@ -26,6 +26,8 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 - [ ] Automate source rotation and expired OpenObserve data deletion checks.
 - [ ] Automate synthetic log warning, log error, and Kubernetes Warning notification checks.
 - [ ] Automate Zabbix Warning-or-higher problem and recovery email checks.
-- [ ] Automate query failure, missing heartbeat, and SMTP failure problem checks.
+- [ ] Automate OpenObserve missing-heartbeat and Zabbix Alloy health alert checks.
+- [ ] Automate Zabbix Agent and ZFS, ECC, and SMART collector failure ingestion checks.
+- [ ] Automate OpenObserve query and SMTP failure visibility checks.
 - [ ] Automate Stalwart inbox delivery confirmation for test messages.
 - [ ] Automate media VPN and Jellyfin isolation checks for logging access.

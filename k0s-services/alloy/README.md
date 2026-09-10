@@ -7,6 +7,7 @@ Alloy is managed by `ansible/roles/logging` through the `logging` stage.
 - It reads the kubelet pod-log directory read-only at `/var/log/pods`.
 - The host source is `/tank/secure/k0s/kubelet/logs` in the ephemeral k0s dataset.
 - It also reads the persistent host journal and Kubernetes events.
+- Host collector diagnostics use private-cloud-zabbix-* service labels derived from their syslog identifiers.
 - The dataset is `tank/secure/no-backup/k0s/services/alloy`.
 - The dataset uses the configured quota and a dedicated `10Ti` PV.
 - Persistent storage keeps source positions and the write-ahead log.

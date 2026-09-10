@@ -16,6 +16,34 @@ def configure_root(client, path):
     return True
 
 
+def configure_quality_profile(client, preset):
+    profiles = client.request('GET', '/qualityprofile')
+    existing = next((profile for profile in profiles if profile['name'] == 'private-cloud'), None)
+    desired = copy.deepcopy(existing or next((profile for profile in profiles if profile['name'] == 'Any'), profiles[0]))
+    desired.pop('id', None)
+    desired['name'] = 'private-cloud'
+    desired['upgradeAllowed'] = True
+    qualities = _configure_quality_items(desired['items'], int(preset[:-1]))
+    if not qualities:
+        raise RuntimeError('ARR exposes no qualities for the selected profile')
+    cutoff_name = 'Bluray-' + preset
+    cutoff = next((quality_id for name, quality_id in qualities if name == cutoff_name), None)
+    if cutoff is None:
+        raise RuntimeError('ARR exposes no Blu-ray quality for the selected profile cutoff')
+    desired['cutoff'] = cutoff
+    changed = existing is None or _quality_profile_state(existing) != _quality_profile_state(desired)
+    if changed:
+        if existing:
+            desired['id'] = existing['id']
+            client.request('PUT', '/qualityprofile/' + str(existing['id']), desired)
+        else:
+            client.request('POST', '/qualityprofile', desired)
+    stored = next(profile for profile in client.request('GET', '/qualityprofile') if profile['name'] == 'private-cloud')
+    if _quality_profile_state(stored) != _quality_profile_state(desired):
+        raise RuntimeError('ARR did not persist the managed quality profile')
+    return changed
+
+
 def configure_download_client(client, name, password):
     fields = {
         'host': 'qbittorrent.media.svc.cluster.local', 'port': 8080,
@@ -45,6 +73,50 @@ def read_api_key(path):
             pass
         time.sleep(2)
     raise RuntimeError('ARR did not create its API key')
+
+
+def _configure_quality_items(items, maximum_resolution):
+    qualities = []
+    for item in items:
+        children = item.get('items') or []
+        if children:
+            child_qualities = _configure_quality_items(children, maximum_resolution)
+            item['allowed'] = bool(child_qualities)
+            if child_qualities and 'id' not in item:
+                raise RuntimeError('ARR quality group has no cutoff identifier')
+            qualities.extend((name, item['id']) for name, _ in child_qualities)
+            continue
+        quality = item.get('quality') or {}
+        name = quality.get('name', '')
+        resolution = quality.get('resolution', 0)
+        item['allowed'] = (
+            720 <= resolution <= maximum_resolution
+            and name.startswith(('HDTV-', 'WEBDL-', 'WEBRip-', 'Bluray-'))
+            and 'Remux' not in name
+        )
+        if item['allowed']:
+            qualities.append((name, quality['id']))
+    return qualities
+
+
+def _quality_profile_state(profile):
+    return {
+        'name': profile['name'],
+        'upgradeAllowed': profile['upgradeAllowed'],
+        'cutoff': profile['cutoff'],
+        'items': _quality_item_state(profile['items']),
+    }
+
+
+def _quality_item_state(items):
+    return [
+        {
+            'id': (item.get('quality') or {}).get('id', item.get('id')),
+            'allowed': item.get('allowed', False),
+            'items': _quality_item_state(item.get('items') or []),
+        }
+        for item in items
+    ]
 
 
 class Arr:
