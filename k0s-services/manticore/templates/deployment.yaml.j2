@@ -39,7 +39,7 @@ spec:
             - {name: http, containerPort: 9308, protocol: TCP}
           resources:
             requests: {cpu: 250m, memory: {{ private_cloud.manticore.max_ram | to_json }}, ephemeral-storage: 256Mi}
-            limits: {cpu: 2, memory: {{ private_cloud.manticore.max_ram | to_json }}, ephemeral-storage: 2Gi}
+            limits: {memory: {{ private_cloud.manticore.max_ram | to_json }}, ephemeral-storage: 2Gi}
           startupProbe:
             tcpSocket: {port: http}
             periodSeconds: 10

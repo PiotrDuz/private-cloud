@@ -1,0 +1,40 @@
+---
+- name: Wait for ARR application workloads
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ media_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    namespace: media
+    name: "{{ item }}"
+  loop: [sonarr, radarr, prowlarr, qbittorrent]
+  register: media_arr_workload
+  until:
+    - media_arr_workload.resources | length == 1
+    - media_arr_workload.resources[0].status.observedGeneration | default(0) | int >= media_arr_workload.resources[0].metadata.generation | int
+    - media_arr_workload.resources[0].status.updatedReplicas | default(0) | int == 1
+    - media_arr_workload.resources[0].status.availableReplicas | default(0) | int == 1
+  retries: 60
+  delay: 5
+
+- name: Resolve ARR service addresses
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ media_kubeconfig }}"
+    api_version: v1
+    kind: Service
+    namespace: media
+    name: "{{ item }}"
+  loop: [sonarr, radarr, prowlarr, qbittorrent]
+  register: media_arr_services
+
+- name: Configure internal ARR connections and library folders
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/../media/configure_arr.py"]
+    stdin: >-
+      {{ {
+        'addresses': dict(media_arr_services.results | map(attribute='item') | zip(media_arr_services.results | map(attribute='resources') | map('first') | map(attribute='spec.clusterIP'))),
+        'datasets': media_datasets,
+        'qbittorrent_password': private_cloud_secrets.media.qbittorrent_password
+      } | to_json }}
+  register: media_arr_configuration
+  changed_when: (media_arr_configuration.stdout | from_json).changed
+  no_log: true

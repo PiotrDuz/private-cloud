@@ -7,7 +7,7 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   claimRef: {name: openobserve-data, namespace: observability}
-  local: {path: /tank/secure/backup/k0s/services/openobserve}
+  local: {path: /tank/secure/no-backup/k0s/services/openobserve}
   nodeAffinity:
     required:
       nodeSelectorTerms:

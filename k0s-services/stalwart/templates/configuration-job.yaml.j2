@@ -41,7 +41,7 @@ spec:
               valueFrom: {secretKeyRef: {name: stalwart-recovery-credentials, key: STALWART_PASSWORD}}
           resources:
             requests: {cpu: 100m, memory: 128Mi, ephemeral-storage: 128Mi}
-            limits: {cpu: 500m, memory: 512Mi, ephemeral-storage: 512Mi}
+            limits: {memory: 512Mi, ephemeral-storage: 512Mi}
           volumeMounts:
             - {name: configuration, mountPath: /configuration, readOnly: true}
       volumes:

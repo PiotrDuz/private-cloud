@@ -1,15 +1,7 @@
 # Infrastructure and service plan
 
-This file records the target architecture and major repository decisions. Repository configuration does not establish that a system is deployed or verified.
-
-| Area | Repository status |
-| --- | --- |
-| Storage, k0s, application services, networking, media, and host monitoring | Installation roles and manifests exist. |
-| Application logging | Central collection, source retention, and service-specific forwarding are implemented in repository configuration. |
-| OpenObserve, Alloy, and email notifications | Installation roles, digest-pinned manifests, alert provisioning, and SMTP configuration are implemented; live acceptance remains operator work. |
-| Independent backups and external outage monitoring | Operator work; automation is not implemented. |
-
-## Existing infrastructure and services
+This file defines the wanted target state; it does not certify implementation or deployment.
+Outstanding implementation, operator setup, and acceptance checks are tracked in [TODO.md](TODO.md).
 
 1. ZFS install (folder zfs)
     1. Setup disks into raidz1, root = "tank"
@@ -24,9 +16,9 @@ This file records the target architecture and major repository decisions. Reposi
     1. place container images under tank/secure/no-backup/k0s/images
     2. place ephemeral kubelet data under tank/secure/no-backup/k0s/ephemeral
     3. place k0s setup and configuration under tank/secure/backup/k0s/config
-    4. Each current service creates its own dataset under tank/secure/backup/k0s/services
+    4. Default service datasets to tank/secure/backup/k0s/services and place disposable logging data under tank/secure/no-backup/k0s/services
     5. install k0s
-    6. make sure k0s starts after zfs is muounted and unlocked on system startup
+    6. make sure k0s starts after zfs is mounted and unlocked on system startup
     7. Set explicit quotas for config, images, and ephemeral leaf datasets
     8. Keep Kubernetes manifests as Jinja templates under k0s-services and render them directly with Ansible.
     9. Load the Intel i915 driver and install the matching firmware for integrated graphics
@@ -34,9 +26,13 @@ This file records the target architecture and major repository decisions. Reposi
     11. Run one combined controller and worker with kube-router networking
     12. Pin the k0s version and checksum in the owning role
     13. Use node-bound local storage and single-writer workloads on this single-host cluster
+    14. Store container logs under /tank/secure/k0s/kubelet/logs in the quota-controlled ephemeral kubelet dataset.
+    15. Rotate container logs as five 10Mi files per container.
+    16. Bound the persistent host journal to 1GiB and seven days initially.
+    17. Keep CPU requests and memory limits without CPU limits for all Kubernetes containers.
 3. Setup postgres service (in k0s-services parent folder)
     1. create postgres zfs dataset under tank/secure/backup/k0s/services/postgres
-    2. Tune dataset and postgres config. Use URL as a reference, but implement only featured mentioned below: https://vadosware.io/post/everything-ive-seen-on-optimizing-postgres-on-zfs-on-linux/#tuning-shared_buffers
+    2. Tune dataset and postgres config. Use URL as a reference, but implement only the features mentioned below: https://vadosware.io/post/everything-ive-seen-on-optimizing-postgres-on-zfs-on-linux/#tuning-shared_buffers
         - Setting recordsize to 8k
         - Enable compression
         - Reducing read-ahead
@@ -47,8 +43,9 @@ This file records the target architecture and major repository decisions. Reposi
         - Disable Postgres compression
         - Tune wal_init_zero & wal_recycle
         - Setting logbias=latency (instead of logbias=throughput)
-    3. postgres service with its own kubernetess volume linked with dataset is deployed in k0s
+    3. postgres service with its own Kubernetes volume linked with dataset is deployed in k0s
     4. Use the TensorChord PostgreSQL 18 image and verify pgvector and VectorChord
+    5. Disable the file collector and send PostgreSQL logs to stderr with an explicit timestamp and process prefix.
 4. Setup ZABBIX
     1. Run zabbix metrics gatherer on host (install, make sure it starts with system)
         - zfs errors
@@ -74,10 +71,12 @@ This file records the target architecture and major repository decisions. Reposi
     7. Link active Linux, SMART, ZFS, and ECC templates to private-cloud-zabbix
     8. Maintain the Dataset capacity dashboard from the enabled dataset catalog
     9. Alert on stale collectors, old snapshots, overdue scrubs, and unavailable ECC telemetry
-    10. Email every Warning, Average, High, and Disaster problem using the notification design below
+    10. Email every Warning, Average, High, and Disaster problem through the observation and email alert design
+    11. Use native stdout/stderr for Zabbix containers and the host journal for Zabbix Agent.
 5. Setup MEILISEARCH
     1. Create a Meilisearch dataset under tank/secure/backup/k0s/services/meilisearch with a quota
     2. Deploy Meilisearch in k0s with its own 10Ti PV
+    3. Enable native JSON stderr logging for collection by Alloy.
 6. Setup STALWART email
     1. Deploy Stalwart with its own dataset under tank/secure/backup/k0s/services/stalwart, 10Ti PV, and quota
     2. Create a Stalwart database, login role, and credentials Secret in the existing postgres service
@@ -94,18 +93,25 @@ This file records the target architecture and major repository decisions. Reposi
     13. Filter forwarded messages in Stalwart without source-CIDR restrictions at the host firewall
     14. Map forwarding-subdomain recipients to primary-domain Stalwart accounts
     15. Store inbox.eu credentials in a Secret and relay non-local outbound mail through its SMTP service over TLS
-    16. Verify JMAP access, SMTP forwarding, filtering, outbound relay, and certificate renewal
+    16. Support JMAP access, SMTP forwarding, filtering, outbound relay, and automatic certificate renewal
+    17. Use native stdout/stderr logging for collection by Alloy.
 7. Setup APACHE TIKA
     1. Create an Apache Tika dataset under tank/secure/backup/k0s/services/tika with a quota
     2. Deploy Apache Tika in k0s with its own 10Ti PV
+    3. Use native stdout/stderr logging for collection by Alloy.
 8. Setup BLEVE
     1. Create a Bleve dataset under tank/secure/backup/k0s/services/bleve with a quota
     2. Create a dedicated 10Ti PV for the embedded OpenCloud Bleve search backend
+    3. Collect embedded Bleve search logs through the OpenCloud container.
 9. Setup ONLYOFFICE
     1. Create an OnlyOffice dataset under tank/secure/backup/k0s/services/onlyoffice with a quota
     2. Deploy OnlyOffice Community Edition in k0s with its own 10Ti PV
     3. Enable the OnlyOffice WOPI integration
     4. Expose OnlyOffice for the user-provided domain through a valid TLS reverse proxy
+    5. Use OnlyOffice 9.4.0.1's native entrypoint to forward /var/log/onlyoffice to container output without a logging sidecar.
+    6. Persist source logs on the OnlyOffice dataset.
+    7. Check source rotation every 15 minutes with a 10MiB limit and seven-day retention.
+    8. Run container root inside a Kubernetes user namespace.
 10. Setup OPENCLOUD
     1. Deploy OpenCloud with its own dataset under tank/secure/backup/k0s/services/opencloud, 10Ti PV, and quota
     2. Configure OpenCloud to use Apache Tika for content extraction
@@ -115,18 +121,22 @@ This file records the target architecture and major repository decisions. Reposi
     6. Enable the built-in collaboration service and connect it to OnlyOffice
     7. Install and configure the Draw.io web extension
     8. Expose OpenCloud for the user-provided domain through a valid TLS reverse proxy
+    9. Use native stdout/stderr logging for collection by Alloy.
 11. Setup GRIST
     1. Deploy Grist with its own dataset under tank/secure/backup/k0s/services/grist, 10Ti PV, and quota
     2. Create a Grist database, login role, and credentials Secret in the existing postgres service
     3. Persist Grist documents on its PV and isolate formulas with Pyodide
     4. Expose Grist for the user-provided domain through a valid TLS reverse proxy
+    5. Use native stdout/stderr logging for collection by Alloy.
 12. Setup MANTICORE SEARCH
     1. Create a Manticore Search dataset under tank/secure/backup/k0s/services/manticore with a quota
     2. Deploy Manticore Search in k0s with its own 10Ti PV
+    3. Use native stdout/stderr logging for collection by Alloy.
 13. Setup REDIS for AFFiNE
     1. Deploy `redis-affine` as an independent k0s service for AFFiNE
     2. Keep Redis data ephemeral without a dataset, PV, or PVC
     3. Restrict Redis ingress to the AFFiNE server and database preparation Job
+    4. Use native stdout/stderr logging for collection by Alloy.
 14. Setup AFFINE
     1. Deploy AFFiNE with its own dataset under tank/secure/backup/k0s/services/affine, 10Ti PV, and quota
     2. Create an AFFiNE database with pgvector enabled in the shared PostgreSQL service
@@ -135,6 +145,8 @@ This file records the target architecture and major repository decisions. Reposi
     5. Prepare the fresh AFFiNE database schema before the server starts
     6. Persist AFFiNE blobs and configuration on its PV
     7. Expose AFFiNE for the user-provided domain through a valid TLS reverse proxy
+    8. Use native stdout/stderr logging for collection by Alloy.
+    9. Run container root inside a Kubernetes user namespace.
 15. Setup IMMICH
     1. Deploy Immich with its own dataset under tank/secure/backup/k0s/services/immich, 10Ti PV, and quota
     2. Create an Immich database, login role, and credentials Secret in the existing PostgreSQL service
@@ -145,6 +157,8 @@ This file records the target architecture and major repository decisions. Reposi
     7. Enable Intel OpenVINO acceleration through the shared i915 Kubernetes device resource
     8. Persist the Immich media library on its PV
     9. Expose Immich for the user-provided domain through a valid TLS reverse proxy
+    10. Use native stdout/stderr logging for collection by Alloy.
+    11. Run container root inside a Kubernetes user namespace.
 16. Setup NETWORKING
     1. Deploy Traefik with host TCP 443 for HTTPS and host TCP 25 for SMTP
     2. Publish application services as ClusterIP endpoints behind exact Traefik host rules
@@ -159,7 +173,23 @@ This file records the target architecture and major repository decisions. Reposi
     11. Keep AmneziaWG routing, NAT, and peer ACLs inside its pod network namespace
     12. Route guarded media application egress through OpenVPN with fail-closed policies
     13. Keep Jellyfin ingress behind Traefik and deny Jellyfin-initiated network traffic
-    14. Document router forwarding, split DNS, and external acceptance as operator work
+    14. Use router forwarding for public entry and split DNS for LAN and VPN application access
+    15. Place application services, their databases, search dependencies, and Zabbix in private-cloud.
+    16. Place Sonarr, Radarr, Prowlarr, qBittorrent, the OpenVPN gateway, and Jellyfin in media.
+    17. Place Traefik in edge, AmneziaWG in network-access, and Cloudflare DDNS in dns-system.
+    18. Place Alloy and OpenObserve in observability.
+    19. Keep CNI, cluster DNS, and the GPU device plugin in kube-system.
+    20. Keep ZFS, the host firewall, Zabbix Agent, and journal collection support on the host.
+    21. Label managed namespaces and enforce default-deny ingress and egress with explicit exceptions.
+    22. Permit application dependencies only through declared service ports and namespace selectors.
+    23. Restrict AmneziaWG peers to approved LAN destinations and public Internet forwarding.
+    24. Deny AmneziaWG peer access to other peers, pod CIDRs, service CIDRs, and media APIs.
+    25. Use split DNS and the internal Traefik address for OpenCloud and OnlyOffice callbacks.
+    26. Give Traefik a quota-controlled backup dataset and a dedicated 10Ti PV/PVC.
+    27. Enable structured Traefik service and access logs on stdout.
+    28. Disable the Traefik dashboard and leave unknown HTTPS hosts without a route.
+    29. Keep DDNS credentials separate from Traefik and Stalwart certificate credentials.
+    30. Maintain the permitted connection matrix in [NETWORKING.md](docs/NETWORKING.md).
 17. Setup ARR STACK
     1. Keep Sonarr, Radarr, Prowlarr, qBittorrent, and OpenVPN templates under k0s-services/arr
     2. Deploy the arr stack in the media namespace through the media installer stage
@@ -170,7 +200,18 @@ This file records the target architecture and major repository decisions. Reposi
     7. Block direct Internet fallback when the VPN fails
     8. Keep dashboards, peer ports, and discovery protocols unpublished
     9. Bind qBittorrent to tun0, disable UPnP, and enable anonymous mode
-    10. Configure indexers, API keys, download clients, root folders, and quality profiles after deployment
+    10. Connect Prowlarr, Sonarr, Radarr, and qBittorrent automatically with native API keys and a Vault-managed qBittorrent password
+    11. Keep Sonarr, Radarr, Prowlarr, OpenVPN, and network helpers on native console output.
+    12. Enable qBittorrent file logging and forward /config/qBittorrent/logs/qbittorrent.log through the file-logs sidecar.
+    13. Mount qBittorrent source logs read-only in the sidecar and persist read positions on its dataset.
+    14. Start the logging sidecar before qBittorrent and stop it after the application.
+    15. Rotate qBittorrent source logs at 10MiB and remove them after seven days.
+    16. Use Recreate deployments to prevent overlapping log checkpoint writers.
+    17. Pin the OpenVPN endpoint to a literal IP and allow only its transport outside the tunnel.
+    18. Route external DNS through the VPN and cluster-local DNS through cluster DNS.
+    19. Disable guarded media IPv6 until equivalent capture and filtering exist.
+    20. Configure /media/tv and /media/movies as ARR root folders.
+    21. Select indexer providers and quality profiles during operator setup.
 18. Setup JELLYFIN
     1. Keep Jellyfin templates under k0s-services/jellyfin
     2. Deploy Jellyfin in the media namespace through the media installer stage
@@ -179,145 +220,43 @@ This file records the target architecture and major repository decisions. Reposi
     5. Use one shared Intel i915 GPU allocation for transcoding
     6. Expose the configured hostname through Traefik HTTPS
     7. Accept connections only from Traefik and deny Jellyfin-initiated network traffic
-    8. Keep online metadata, subtitle, plugin, and remote-media integrations disabled
-    9. Use native console logging without a logging sidecar
-    10. Keep separate FFmpeg diagnostic logs on the Jellyfin dataset
-
-## Installation and security decisions
-
-- Keep the Python installer as the entry point for one dependency-ordered Ansible playbook.
-- Support create, update, reapply, and secret rotation for greenfield installations.
-- Store public settings in YAML and secrets in Ansible Vault.
-- Keep Kubernetes definitions in service-owned Jinja templates and credentials in role-owned Secret templates.
-- Validate the full configuration before changing infrastructure.
-- Require explicit authorization before creating a new ZFS pool.
-- Give each persistent service a quota-controlled dataset and dedicated 10Ti PV/PVC.
-- Default service datasets to `tank/secure/backup/k0s/services`.
-- Use `tank/secure/no-backup/k0s/services` only for explicitly disposable data.
-- Track each enabled dataset in the shared catalog and Zabbix inventory.
-- Run applications without host root privileges and drop unnecessary capabilities.
-- Use Kubernetes user namespaces for AFFiNE, Immich, and OnlyOffice container root.
-- Reserve infrastructure privileges for networking, GPU support, and log collection.
-- Keep namespace boundaries and permitted network flows in [NETWORKING.md](docs/NETWORKING.md).
-
-## Central logging
-
-### Collection and coverage
-
-- Deploy Grafana Alloy 1.19.2 as a node collector in the `observability` namespace.
-- Read Kubernetes CRI files through read-only host mounts and narrowly scoped discovery RBAC.
-- Collect workload containers, init containers, sidecars, host journal entries, and Kubernetes events.
-- Retain journal records for the kernel, k0s, ZFS, SSH, Zabbix Agent, and logging heartbeat.
-- Keep applications on native stdout/stderr wherever supported.
-- Use file-forwarding sidecars only for logs unavailable on stdout/stderr.
-- Collect qBittorrent from the `file-logs` container after its file is tailed.
-- Use OnlyOffice 9.4.0.1's native entrypoint to tail `/var/log/onlyoffice` without another sidecar.
-- Collect Jellyfin console logs and retain closed FFmpeg diagnostics locally.
-- Enable structured Traefik service and access logs on stdout.
-- Preserve source timestamps, parse CRI framing, and join multiline exceptions.
-- Parse structured severity fields and known console formats, including qBittorrent's wrapped messages.
-- Normalize warning, error, fatal, panic, and critical levels before alert evaluation.
-- Preserve unclassified messages without assigning an alert level.
-- Index only namespace, service, container, node, job, and severity labels.
-- Keep request IDs, filenames, email addresses, and message text out of indexed labels.
-- Redact credentials, authorization headers, cookies, and mail bodies before ingestion.
-- Avoid duplicate collection through both container files and the Kubernetes log API.
-
-Use [Alloy Kubernetes collection](https://grafana.com/docs/alloy/latest/collect/logs-in-kubernetes/) and [journal collection](https://grafana.com/docs/alloy/latest/reference/components/loki/loki.source.journal/) for the collector configuration.
-
-### Storage, retention, and access
-
-| Component | Deployment | Dataset | Initial quota |
-| --- | --- | --- | --- |
-| Alloy 1.19.2 | One collector with persistent write-ahead buffering. | `tank/secure/no-backup/k0s/services/alloy` | 5G |
-| OpenObserve 0.90.3 | One local-mode node with disk storage and SQLite metadata. | `tank/secure/backup/k0s/services/openobserve` | 50G |
-
-Each component receives its own 10Ti PV/PVC; quotas remain configurable. Alloy buffers are disposable, while OpenObserve state and log history are designated for backup.
-
-- Use OpenObserve local mode with disk object storage and SQLite metadata.
-- Retain logs for 14 days through OpenObserve compaction.
-- Authenticate Alloy with OpenObserve's ingestion-only passcode.
-- Keep the OpenObserve administrator password out of the collector pod.
-- Include the OpenObserve dataset in independent snapshot and backup schedules.
-- Enable Alloy's persistent write-ahead log with retry backoff and finite retries.
-- Enforce CPU, memory, ingestion, query, and buffering limits.
-- Store container logs under `tank/secure/k0s/kubelet/logs` in the quota-controlled ephemeral kubelet dataset.
-- Rotate container logs as five 10Mi files per container.
-- Bound the persistent host journal to 1GiB and seven days initially.
-- Rotate qBittorrent source files at 10MiB and seven days.
-- Rotate OnlyOffice source files at 10MiB with seven-day retention.
-- Prune closed Jellyfin FFmpeg diagnostics after seven days or above 1GiB.
-- Keep source rotation independent of OpenObserve retention and dataset quotas.
-- Expose OpenObserve through an exact Traefik HTTPS hostname with authentication required.
-- Keep the Alloy endpoint private with default-deny policies.
-- Permit only collector ingestion, OpenObserve UI access, DNS, discovery, SMTP, and monitoring flows.
-- Read media logs from the node without granting media applications new egress.
-
-Retention does not replace capacity monitoring; quota alerts must precede exhaustion. See [OpenObserve local-mode storage](https://openobserve.ai/docs/architecture/) and [Alloy buffering](https://grafana.com/docs/alloy/latest/reference/components/loki/loki.write/).
-
-### Log warnings and monitoring
-
-- Provision OpenObserve's email destination and log alert rules through Ansible.
-- Keep Zabbix responsible for infrastructure metrics and OpenObserve responsible for application log alerts.
-- Evaluate warning-or-higher log counts every minute over the preceding five minutes.
-- Fire on a count greater than zero with no pending period.
-- Include recognized warning, error, and critical levels, including Kubernetes Warning events.
-- Classify Traefik HTTP 5xx responses as errors even without a severity field.
-- Exclude OpenObserve's own logs from its rules to prevent notification feedback loops.
-- Report OpenObserve internal warnings through Zabbix instead.
-- Monitor OpenObserve, Alloy, ingestion errors, delivery failures, and certificates through Zabbix.
-- Add Zabbix dataset warnings at 80% and high alerts at 90% from the service catalog.
-- Monitor HTTPS and SMTP STARTTLS certificate expiry at 21 and 7 days.
-- Use a host-journal heartbeat to distinguish a quiet service from missing collection.
-- Disable OpenObserve rules and SMTP unless the notifications stage is enabled.
-
-Zabbix checks the heartbeat through OpenObserve's authenticated search API so an unavailable query path cannot appear healthy.
-
-## Email warnings to the Stalwart inbox
-
-The destination is the existing Stalwart mailbox, `<stalwart.mailbox_username>@<stalwart.domain>`. Send to its existing forwarding-domain alias, `<stalwart.mailbox_username>@<stalwart.forwarding_domain>`, through the configured authenticated inbox.eu SMTP relay.
-
-`Zabbix / OpenObserve → inbox.eu SMTP over TLS → forwarding-domain MX → Traefik TCP 25 → Stalwart mailbox`
-
-- Use the configured relay hostname, port, and TLS mode with certificate verification enabled.
-- Use a relay-authorized sender address and credentials stored in Vault and Kubernetes Secrets.
-- Permit SMTP egress only from Zabbix server and OpenObserve to the configured relay destinations.
-- Account for relay address changes when maintaining kube-router IP-based egress rules.
-- Preserve the existing public-port policy and Stalwart Proxy Protocol path.
-- Deliver to the forwarding alias directly without relying on primary-domain forwarding rules.
-- Configure Zabbix SMTP media, administrator recipient media, and a Warning-or-higher action.
-- Send Zabbix problem, recovery, and hourly reminder messages to the forwarding alias.
-- Provision OpenObserve SMTP, an email destination, and four managed log rules.
-- Evaluate each log rule every minute and silence repeated notifications for five minutes.
-- Include severity, source, service or host, time, event count where applicable, and investigation links.
-- Retry failed notifications and expose failures in monitoring.
-- Apply notification silences only during explicit operator maintenance.
-
-“Every warning” means every recognized warning-or-higher alert instance receives email coverage, including an isolated warning log entry. Repeated lines during the five-minute silence do not produce one email per raw line. Per-line delivery would require a separate durable event notification pipeline.
-
-Stalwart delivery depends on this host, PostgreSQL, the external relay, DNS, and inbound SMTP reachability. Local email cannot report a complete host or mailbox outage until delivery recovers; independent outage monitoring remains operator work.
-
-SMTP relay addresses are resolved when the notification policies are applied. Reapply after a relay address change so the IP-based egress policy is updated.
-
-## Remaining implementation and acceptance
-
-- Confirm timestamped logs from every enabled service and host source appear in OpenObserve.
-- Review unclassified application formats and add bounded severity parsing where needed.
-- Confirm collection resumes after a collector restart and a bounded OpenObserve outage.
-- Confirm source rotation and expired OpenObserve data deletion reclaim space.
-- Verify an isolated log warning, log error, and Kubernetes Warning each generate email.
-- Verify Zabbix Warning and higher problems generate email and recovery messages.
-- Verify query failure, missing heartbeat, and SMTP failure remain visible as problems.
-- Confirm actual messages arrive in the Stalwart inbox rather than only reaching the relay.
-- Verify logging access does not weaken media VPN or Jellyfin isolation.
-- Confirm the router, DNS, certificates, and media integrations in the live environment.
-
-## Backup and recovery decisions
-
-- Treat `backup` as a dataset classification rather than an implemented backup schedule.
-- Keep independent copies of PostgreSQL, application files, OpenObserve state, and k0s control-plane data.
-- Coordinate database and application-file recovery points.
-- Keep the encryption passphrase, Vault recovery material, and configuration outside this host.
-- Define snapshot retention, backup frequency, and recovery targets before production use.
-- Verify independent restores and ZFS-to-k0s startup ordering after reboot.
-- Use [OPERATIONS.md](docs/OPERATIONS.md) for runtime monitoring and incident response.
+    8. Apply local-only library settings and disable plugin repositories before Jellyfin starts.
+    9. Keep online metadata, subtitle, plugin, and remote-media integrations disabled
+    10. Use native console logging without a logging sidecar
+    11. Keep separate FFmpeg diagnostic logs on the Jellyfin dataset
+    12. Prune closed FFmpeg diagnostics after seven days or above 1GiB while preserving active files.
+19. Setup ALLOY LOG COLLECTION
+    1. Deploy digest-pinned Grafana Alloy 1.19.2 as one node collector in observability.
+    2. Create tank/secure/no-backup/k0s/services/alloy with a configurable 5G initial quota and dedicated 10Ti PV/PVC.
+    3. Persist source positions and write-ahead buffers as disposable data.
+    4. Read Kubernetes CRI files through read-only host mounts and narrowly scoped discovery RBAC.
+    5. Collect workload containers, init containers, sidecars, host journal entries, and Kubernetes events.
+    6. Retain journal records for the kernel, k0s, ZFS, SSH, Zabbix Agent, and logging heartbeat.
+    7. Keep applications on native stdout/stderr wherever supported.
+    8. Use file-forwarding sidecars only for logs unavailable on stdout/stderr.
+    9. Preserve source timestamps, parse CRI framing, and join multiline exceptions.
+    10. Parse structured severity fields and known console formats, including qBittorrent's wrapped messages.
+    11. Normalize warning, error, fatal, panic, and critical levels before alert evaluation.
+    12. Preserve unclassified messages without assigning an alert level.
+    13. Index only namespace, service, container, node, job, and severity labels.
+    14. Keep request IDs, filenames, email addresses, and message text out of indexed labels.
+    15. Redact credentials, authorization headers, cookies, and mail bodies before ingestion.
+    16. Avoid duplicate collection through both container files and the Kubernetes log API.
+    17. Authenticate Alloy with OpenObserve's ingestion-only passcode.
+    18. Keep the OpenObserve administrator password out of the collector pod.
+    19. Enable Alloy's persistent write-ahead log with retry backoff and finite retries.
+    20. Keep the Alloy endpoint private with default-deny policies.
+    21. Read media logs from the node without granting media applications new egress.
+    22. Limit memory and buffering with a six-hour maximum WAL segment age.
+    23. Retry ingestion up to 120 times with one-second to 30-second backoff.
+    24. Keep source rotation independent of central retention and dataset quotas.
+20. Setup OPENOBSERVE LOG STORAGE
+    1. Deploy one digest-pinned OpenObserve 0.90.3 node in observability.
+    2. Create tank/secure/no-backup/k0s/services/openobserve with a configurable 50G initial quota and dedicated 10Ti PV/PVC.
+    3. Use OpenObserve local mode with disk object storage and SQLite metadata.
+    4. Retain logs for 14 days through OpenObserve compaction.
+    5. Keep OpenObserve state and log history in disposable no-backup storage.
+    6. Expose OpenObserve through an exact Traefik HTTPS hostname with authentication required.
+    7. Enforce memory limits, 10MiB ingestion payloads, and 60-second query timeouts.
+    8. Return 1,000 query rows by default and activate the memory circuit breaker at 90%.
+    9. Use native stdout/stderr logging for collection by Alloy.

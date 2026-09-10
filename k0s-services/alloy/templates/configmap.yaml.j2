@@ -67,7 +67,7 @@ data:
       stage.cri {}
       stage.decolorize {}
       stage.multiline {
-        firstline = `^(\[?\d{4}[-/]|\{|\([NIWC]\)|level=|time=|[IWEF]\d{4}|\[?(INFO|WARN|ERROR|DEBUG|FATAL))`
+        firstline = `^(\[Nest\]|\[\d{2}:\d{2}:\d{2}\]|\[?\d{4}[-/]|\{|\([NIWC]\)|level=|time=|[IWEF]\d{4}|\[?(INFO|WARN|ERROR|DEBUG|FATAL))`
         max_wait_time = "1s"
         max_lines = 128
       }
@@ -152,6 +152,18 @@ data:
           expression = `(?:^|\s)level=(?P<severity>[A-Za-z]+)`
         }
       }
+      stage.match {
+        selector = `{job="containers",service=~"postgres|stalwart|meilisearch|openobserve|immich|immich-machine-learning"}`
+        stage.regex {
+          expression = `^\[?\d{4}[-/]\d{2}[-/]\d{2}[T ][0-9:.+-]+(?:Z| ?[A-Z]{2,5}|[+-][0-9:]+)?\]?\s+(?:\[[0-9]+\]\s+)?(?P<severity>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL|PANIC|CRITICAL)\b`
+        }
+      }
+      stage.match {
+        selector = `{job="containers",service="immich"}`
+        stage.regex {
+          expression = `^\[Nest\]\s+[0-9]+\s+-\s+[0-9/,: APMapm-]+\s+(?P<severity>WARN|ERROR|FATAL|LOG|DEBUG|VERBOSE)\s`
+        }
+      }
       stage.template {
         source = "severity"
         template = "{{ '{{ if .Value }}{{ .Value }}{{ else if .alternate_severity }}{{ .alternate_severity }}{{ else }}{{ .short_severity }}{{ end }}' }}"
@@ -211,7 +223,7 @@ data:
       }
       stage.match {
         selector = `{level=""}`
-        stage.static_labels { values = {level = "info"} }
+        stage.static_labels { values = {level = "unknown"} }
       }
       stage.replace {
         expression = `(?i)(?:authorization|proxy-authorization|cookie|set-cookie)["\s]*[:=]\s*("[^"]*"|[^,\r\n]+)`

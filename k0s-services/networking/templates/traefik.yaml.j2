@@ -38,7 +38,7 @@ spec:
             - --accesslog.fields.names.RequestPath=drop
             - --accesslog.fields.names.RequestLine=drop
             - --providers.kubernetesingress=true
-            - --providers.kubernetesingress.namespaces=private-cloud,media
+            - --providers.kubernetesingress.namespaces=private-cloud,media,observability
             - --providers.kubernetesingress.ingressclass=traefik
             - --providers.kubernetesingress.allowexternalnameservices=false
             - --providers.file.filename=/etc/traefik/dynamic/tcp.yaml
@@ -58,7 +58,7 @@ spec:
           livenessProbe: {httpGet: {path: /ping, port: 8080}, periodSeconds: 10}
           resources:
             requests: {cpu: 100m, memory: 128Mi}
-            limits: {cpu: '1', memory: 512Mi}
+            limits: {memory: 512Mi}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

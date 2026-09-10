@@ -26,7 +26,7 @@ spec:
                   valueFrom: {secretKeyRef: {name: cloudflare-ddns-api, key: api-token}}
               resources:
                 requests: {cpu: 20m, memory: 32Mi}
-                limits: {cpu: 200m, memory: 128Mi}
+                limits: {memory: 128Mi}
               securityContext:
                 runAsNonRoot: true
                 runAsUser: 65532

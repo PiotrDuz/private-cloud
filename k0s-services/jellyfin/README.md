@@ -14,6 +14,19 @@ The Jellyfin templates are managed by `ansible/roles/media` through the `media` 
 
 The [arr stack](../arr/README.md) provisions the shared library and downloads media independently of Jellyfin playback.
 
+## Local library configuration
+
+- A Python init container applies local-only settings before the server starts.
+- Initial libraries use `/media/movies` and `/media/tv` from the shared read-only mount.
+- Existing library options retain their paths and disable remote metadata and image fetchers.
+- Automatic subtitle downloads and writes alongside media remain disabled.
+- Plugin repositories and installed plugin manifests are disabled at startup.
+- The server runs as UID 1000 with the host render-device group.
+- NetworkPolicy blocks all initiated connections, including remote media URLs.
+- Configure any newly added libraries for local-only use before scanning.
+
+Library settings follow Jellyfin's [LibraryOptions](https://github.com/jellyfin/jellyfin/blob/v10.11.4/MediaBrowser.Model/Configuration/LibraryOptions.cs) and [persisted library configuration](https://github.com/jellyfin/jellyfin/blob/v10.11.4/MediaBrowser.Controller/Entities/CollectionFolder.cs).
+
 ## Logging
 
 Jellyfin supports native console logging and receives no logging sidecar. The pinned image enables the Console sink in its [default logging configuration](https://github.com/jellyfin/jellyfin/blob/v10.11.4/Jellyfin.Server/Resources/Configuration/logging.json).

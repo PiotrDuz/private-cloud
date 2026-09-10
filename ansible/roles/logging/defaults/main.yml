@@ -1,5 +1,5 @@
 ---
 logging_kubeconfig: /run/private-cloud/kubeconfig
 logging_services:
-  - {name: openobserve, dataset: tank/secure/backup/k0s/services/openobserve, uid: 10000, port: 5080}
+  - {name: openobserve, dataset: tank/secure/no-backup/k0s/services/openobserve, uid: 10000, port: 5080}
   - {name: alloy, dataset: tank/secure/no-backup/k0s/services/alloy, uid: 0, port: 12345}

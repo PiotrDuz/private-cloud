@@ -4,3 +4,5 @@ metadata: {name: qbittorrent-logging, namespace: media}
 data:
   configure.py: |
 {{ lookup('file', playbook_dir ~ '/../logging/configure_qbittorrent.py') | indent(4, true) }}
+  qbittorrent_helpers.py: |
+{{ lookup('file', playbook_dir ~ '/../logging/qbittorrent_helpers.py') | indent(4, true) }}

@@ -21,6 +21,12 @@ Alloy is managed by `ansible/roles/logging` through the `logging` stage.
 - Collection is best effort during source rotation, crashes, and prolonged OpenObserve outages.
 - Container, journal, qBittorrent, OnlyOffice, and FFmpeg retention are configured independently of Alloy.
 
+## Severity parsing
+
+- Parse structured levels, timestamped PostgreSQL and Rust logs, and Immich console prefixes.
+- Use `unknown` for unclassified messages without treating them as alert severities.
+- Preserve the Kubernetes timestamp when the source has no parsed application timestamp.
+
 ## Operations
 
 - Check the host heartbeat before treating a quiet stream as healthy.

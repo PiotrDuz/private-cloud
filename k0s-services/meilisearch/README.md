@@ -13,3 +13,5 @@ The Meilisearch service is managed by `ansible/roles/meilisearch`.
 ## Manifest review
 
 - Ansible renders the `templates/*.yaml.j2` workload files during deployment.
+
+- Emit JSON logs to stderr through `MEILI_EXPERIMENTAL_LOGS_MODE=json`.

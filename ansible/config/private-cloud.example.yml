@@ -113,12 +113,9 @@ private_cloud:
     hostname: photos.example.com
     timezone: Etc/UTC
     max_ram: 4Gi
-    max_cpu: "4"
     machine_learning_max_ram: 4Gi
-    machine_learning_max_cpu: "4"
     machine_learning_accelerator: openvino
     valkey_max_ram: 512Mi
-    valkey_max_cpu: "1"
   stalwart:
     storage_size: 100G
     max_ram: 2Gi

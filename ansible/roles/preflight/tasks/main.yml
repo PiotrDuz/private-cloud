@@ -45,7 +45,7 @@
       - (private_cloud.manticore.keys() | list | sort) == ['max_ram', 'storage_size']
       - (private_cloud.redis_affine.keys() | list) == ['max_ram']
       - (private_cloud.affine.keys() | list | sort) == ['hostname', 'max_ram', 'storage_size']
-      - (private_cloud.immich.keys() | list | sort) == ['hostname', 'machine_learning_accelerator', 'machine_learning_max_cpu', 'machine_learning_max_ram', 'max_cpu', 'max_ram', 'storage_size', 'timezone', 'valkey_max_cpu', 'valkey_max_ram']
+      - (private_cloud.immich.keys() | list | sort) == ['hostname', 'machine_learning_accelerator', 'machine_learning_max_ram', 'max_ram', 'storage_size', 'timezone', 'valkey_max_ram']
       - (private_cloud.stalwart.keys() | list | sort) == ['acme_contact', 'admin_username', 'domain', 'forwarding_domain', 'hostname', 'mailbox_username', 'max_ram', 'relay_host', 'relay_implicit_tls', 'relay_port', 'relay_username', 'storage_size']
       - (private_cloud.zabbix.keys() | list | sort) == ['admin_username', 'storage_size']
       - (private_cloud.logging.keys() | list | sort) == ['alloy_max_ram', 'alloy_storage_size', 'hostname', 'openobserve_max_ram', 'openobserve_storage_size', 'retention_days']
@@ -86,7 +86,7 @@
     - {name: affine, keys: [database_password]}
     - {name: immich, keys: [database_password]}
     - {name: networking, keys: [amneziawg_private_key, cloudflare_api_token, cloudflare_ddns_api_token]}
-    - {name: media, keys: [openvpn_configuration, openvpn_password, openvpn_username, proxy_password]}
+    - {name: media, keys: [openvpn_configuration, openvpn_password, openvpn_username, proxy_password, qbittorrent_password]}
   no_log: true
 
 - name: Validate logging and notification configuration
@@ -102,6 +102,15 @@
       - private_cloud_secrets.logging.admin_password is string
       - private_cloud_secrets.logging.admin_password | length >= 32
   when: private_cloud.stages.logging | bool
+  no_log: true
+
+- name: Require qBittorrent credentials
+  ansible.builtin.assert:
+    that:
+      - private_cloud_secrets.media.qbittorrent_password is string
+      - private_cloud_secrets.media.qbittorrent_password | length >= 16
+    fail_msg: The qBittorrent WebUI password must contain at least 16 characters.
+  when: private_cloud.stages.media | bool
   no_log: true
 
 - name: Require Boolean stage flags
@@ -265,12 +274,6 @@
       - (private_cloud.immich.max_ram | human_to_bytes | int) >= 2147483648
       - (private_cloud.immich.machine_learning_max_ram | human_to_bytes | int) >= 1073741824
       - (private_cloud.immich.valkey_max_ram | human_to_bytes | int) >= 134217728
-      - private_cloud.immich.max_cpu is match('^([1-9][0-9]*m|[1-9][0-9]*)$')
-      - private_cloud.immich.machine_learning_max_cpu is match('^([1-9][0-9]*m|[1-9][0-9]*)$')
-      - private_cloud.immich.valkey_max_cpu is match('^([1-9][0-9]*m|[1-9][0-9]*)$')
-      - (not private_cloud.immich.max_cpu.endswith('m')) or (private_cloud.immich.max_cpu[:-1] | int) >= 500
-      - (not private_cloud.immich.machine_learning_max_cpu.endswith('m')) or (private_cloud.immich.machine_learning_max_cpu[:-1] | int) >= 250
-      - (not private_cloud.immich.valkey_max_cpu.endswith('m')) or (private_cloud.immich.valkey_max_cpu[:-1] | int) >= 100
       - private_cloud.immich.machine_learning_accelerator in ['cpu', 'openvino']
       - private_cloud.immich.machine_learning_accelerator != 'openvino' or private_cloud.stages.intel_gpu | bool
       - private_cloud.immich.timezone is match('^[A-Za-z_+-]+/[A-Za-z_+/-]+$')
@@ -787,7 +790,7 @@
     - { dataset: 'tank/secure/backup/k0s/services/affine', quota: '{{ private_cloud.affine.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/immich', quota: '{{ private_cloud.immich.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/stalwart', quota: '{{ private_cloud.stalwart.storage_size }}' }
-    - { dataset: 'tank/secure/backup/k0s/services/openobserve', quota: '{{ private_cloud.logging.openobserve_storage_size }}' }
+    - { dataset: 'tank/secure/no-backup/k0s/services/openobserve', quota: '{{ private_cloud.logging.openobserve_storage_size }}' }
     - { dataset: 'tank/secure/no-backup/k0s/services/alloy', quota: '{{ private_cloud.logging.alloy_storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/zabbix', quota: '{{ private_cloud.zabbix.storage_size }}' }
   register: preflight_existing_usage

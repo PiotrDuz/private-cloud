@@ -48,6 +48,12 @@ spec:
             - wal_init_zero=off
             - -c
             - wal_recycle=off
+            - -c
+            - logging_collector=off
+            - -c
+            - log_destination=stderr
+            - -c
+            - 'log_line_prefix=%m [%p] '
           env:
             - name: POSTGRES_DB
               valueFrom:
@@ -72,7 +78,7 @@ spec:
               protocol: TCP
           resources:
             requests: {cpu: 500m, memory: {{ private_cloud.postgres.max_ram | to_json }}, ephemeral-storage: 512Mi}
-            limits: {cpu: 4, memory: {{ private_cloud.postgres.max_ram | to_json }}, ephemeral-storage: 4Gi}
+            limits: {memory: {{ private_cloud.postgres.max_ram | to_json }}, ephemeral-storage: 4Gi}
           startupProbe:
             exec:
               command: [pg_isready, -U, postgres, -d, postgres]

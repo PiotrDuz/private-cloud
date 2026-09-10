@@ -54,7 +54,7 @@ SECRET_SCHEMAS = {
     "immich": {"database_password"},
     "networking": {"cloudflare_api_token", "cloudflare_ddns_api_token", "amneziawg_private_key"},
     "logging": {"admin_password"},
-    "media": {"openvpn_configuration", "openvpn_username", "openvpn_password", "proxy_password"},
+    "media": {"openvpn_configuration", "openvpn_username", "openvpn_password", "proxy_password", "qbittorrent_password"},
 }
 SECRET_STAGES = {
     "storage": "zfs",
@@ -424,7 +424,7 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if not isinstance(affine.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(affine["hostname"]):
         raise InstallerError("Invalid affine.hostname")
     immich = cloud["immich"]
-    expected_immich = {"storage_size", "hostname", "timezone", "max_ram", "max_cpu", "machine_learning_max_ram", "machine_learning_max_cpu", "machine_learning_accelerator", "valkey_max_ram", "valkey_max_cpu"}
+    expected_immich = {"storage_size", "hostname", "timezone", "max_ram", "machine_learning_max_ram", "machine_learning_accelerator", "valkey_max_ram"}
     if not isinstance(immich, dict) or set(immich) != expected_immich:
         raise InstallerError("Immich configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(immich.get("storage_size", ""))):
@@ -434,11 +434,6 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
             raise InstallerError(f"Invalid immich.{key}")
     if ram_to_bytes(immich["max_ram"]) < 2147483648 or ram_to_bytes(immich["machine_learning_max_ram"]) < 1073741824 or ram_to_bytes(immich["valkey_max_ram"]) < 134217728:
         raise InstallerError("Immich memory limits are too small")
-    for key in ("max_cpu", "machine_learning_max_cpu", "valkey_max_cpu"):
-        if not isinstance(immich.get(key), str) or not re.fullmatch(r"(?:[1-9][0-9]*m|[1-9][0-9]*)", immich[key]):
-            raise InstallerError(f"Invalid immich.{key}")
-    if cpu_to_millicores(immich["max_cpu"]) < 500 or cpu_to_millicores(immich["machine_learning_max_cpu"]) < 250 or cpu_to_millicores(immich["valkey_max_cpu"]) < 100:
-        raise InstallerError("Immich CPU limits are below their requests")
     if immich.get("machine_learning_accelerator") not in {"cpu", "openvino"}:
         raise InstallerError("Invalid immich.machine_learning_accelerator")
     if immich["machine_learning_accelerator"] == "openvino" and not stages["intel_gpu"]:
@@ -564,6 +559,8 @@ def validate_secrets_configuration(configuration: Mapping[str, Any], stages: Map
             raise InstallerError("The AmneziaWG private key is invalid")
     if "media" in secrets_root and not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", secrets_root["media"].get("proxy_password", "")):
         raise InstallerError("The media VPN proxy password must contain 16 to 64 URL-safe characters")
+    if "media" in secrets_root and len(secrets_root["media"].get("qbittorrent_password", "")) < 16:
+        raise InstallerError("The qBittorrent WebUI password must contain at least 16 characters")
     if "stalwart" in secrets_root and len(secrets_root["stalwart"].get("certificate_dns_api_token", "")) < 20:
         raise InstallerError("The Stalwart certificate DNS API token must contain at least 20 characters")
     if "logging" in secrets_root:
@@ -687,9 +684,6 @@ def ram_to_bytes(value: str) -> int:
     return int(value[:-2]) * units[value[-2:]]
 
 
-
-def cpu_to_millicores(value: str) -> int:
-    return int(value[:-1]) if value.endswith("m") else int(value) * 1000
 
 
 def _write_command_failure_log(args: Sequence[str], stdout: str, stderr: str) -> Path:

@@ -14,9 +14,24 @@ The arr stack templates are managed by `ansible/roles/media` through the `media`
 - Provision the shared `media-library` dataset and claim in this folder.
 - Mount the shared library writable in Sonarr, Radarr, and qBittorrent.
 
-The OpenVPN endpoint must be a literal IP address so its transport exception stays exact. Indexers, API keys, download clients, root folders, and quality profiles still require application setup after deployment.
+The OpenVPN endpoint must be a literal IP address so its transport exception stays exact. The media role connects the applications through their native APIs after deployment.
 
 [Jellyfin](../jellyfin/README.md) has its own templates and mounts the shared library read-only. The media role applies the arr stack and library storage before Jellyfin.
+
+## Application configuration
+
+- The installer reads Sonarr, Radarr, and Prowlarr API keys from their protected datasets.
+- Prowlarr synchronizes selected indexers to Sonarr and Radarr.
+- Sonarr and Radarr use qBittorrent with separate download categories.
+- Sonarr uses `/media/tv` and Radarr uses `/media/movies` as library roots.
+- Store `media.qbittorrent_password` in Vault and use `private-cloud` as the WebUI username.
+- The startup initializer applies the qBittorrent password before its WebUI starts.
+- Select indexer providers, provider credentials, and quality profiles after deployment.
+- Managed connections use names beginning with `private-cloud-`.
+
+Indexers provide searchable release listings; quality profiles specify acceptable formats, resolutions, and upgrade cutoffs.
+
+The integration uses the native [Prowlarr application settings](https://github.com/Prowlarr/Prowlarr/blob/develop/src/NzbDrone.Core/Applications/Sonarr/SonarrSettings.cs) and [Sonarr qBittorrent settings](https://github.com/Sonarr/Sonarr/blob/develop/src/NzbDrone.Core/Download/Clients/QBittorrent/QBittorrentSettings.cs).
 
 ## File logs
 
@@ -34,7 +49,7 @@ The configuration is [file-logs.conf](files/file-logs.conf). It discovers new fi
 
 Forwarding is best effort across abrupt crashes or rotation during an outage. Lines larger than 1 MiB are skipped with a Fluent Bit warning. Original application timestamps remain inside `message`; `collected_at` records collection time.
 
-The installer seeds qBittorrent logging settings only when creating its configuration. It enables file logging, rotates at 10MiB, and removes logs after seven days. An existing configuration must use the documented path; forwarding remains best effort during abrupt crashes, rotation, and collector outages.
+The installer seeds qBittorrent defaults and the startup initializer reapplies logging and WebUI credentials on every pod start. File logging rotates at 10MiB and removes logs after seven days. An existing configuration must use the documented path; forwarding remains best effort during abrupt crashes, rotation, and collector outages.
 
 After deployment, browse the stream with:
 

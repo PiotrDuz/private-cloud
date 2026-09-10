@@ -54,7 +54,7 @@ spec:
             seccompProfile: {type: RuntimeDefault}
           resources:
             requests: {cpu: 100m, memory: 128Mi, ephemeral-storage: 256Mi}
-            limits: {cpu: 1, memory: 512Mi, ephemeral-storage: 1Gi}
+            limits: {memory: 512Mi, ephemeral-storage: 1Gi}
           volumeMounts:
             - {name: data, mountPath: /opencloud}
       containers:
@@ -103,7 +103,7 @@ spec:
             - {name: http, containerPort: 9200, protocol: TCP}
           resources:
             requests: {cpu: 500m, memory: {{ private_cloud.opencloud.max_ram | to_json }}, ephemeral-storage: 512Mi}
-            limits: {cpu: 4, memory: {{ private_cloud.opencloud.max_ram | to_json }}, ephemeral-storage: 4Gi}
+            limits: {memory: {{ private_cloud.opencloud.max_ram | to_json }}, ephemeral-storage: 4Gi}
           startupProbe:
             httpGet: {path: /health, port: http}
             periodSeconds: 10

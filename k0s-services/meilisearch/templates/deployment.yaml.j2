@@ -36,6 +36,7 @@ spec:
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL]}
           env:
+            - {name: MEILI_EXPERIMENTAL_LOGS_MODE, value: json}
             - {name: MEILI_ENV, value: production}
             - {name: MEILI_NO_ANALYTICS, value: "true"}
             - name: MEILI_MASTER_KEY
@@ -47,7 +48,7 @@ spec:
             - {name: http, containerPort: 7700, protocol: TCP}
           resources:
             requests: {cpu: 250m, memory: {{ private_cloud.meilisearch.max_ram | to_json }}, ephemeral-storage: 256Mi}
-            limits: {cpu: 2, memory: {{ private_cloud.meilisearch.max_ram | to_json }}, ephemeral-storage: 2Gi}
+            limits: {memory: {{ private_cloud.meilisearch.max_ram | to_json }}, ephemeral-storage: 2Gi}
           startupProbe:
             httpGet: {path: /health, port: http}
             periodSeconds: 10

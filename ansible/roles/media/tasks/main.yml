@@ -11,6 +11,8 @@
       - private_cloud_secrets.media.openvpn_configuration | length > 0
       - private_cloud_secrets.media.openvpn_username | length > 0
       - private_cloud_secrets.media.openvpn_password | length > 0
+      - private_cloud_secrets.media.qbittorrent_password is string
+      - private_cloud_secrets.media.qbittorrent_password | length >= 16
       - private_cloud_secrets.media.proxy_password is match('^[A-Za-z0-9_-]{16,64}$')
       - >-
         (private_cloud_secrets.media.openvpn_configuration |
@@ -62,6 +64,15 @@
     private_cloud_service_dataset_group: 1000
   loop: "{{ media_services }}"
 
+- name: Create shared library and download folders
+  ansible.builtin.file:
+    path: "/{{ media_datasets['media-library'] }}/{{ item }}"
+    state: directory
+    owner: 1000
+    group: 1000
+    mode: '0750'
+  loop: [movies, tv, downloads, incomplete]
+
 - name: Create qBittorrent log and checkpoint directories
   ansible.builtin.file:
     path: "/{{ media_datasets[item.service] }}/{{ item.directory }}"
@@ -101,6 +112,13 @@
     definition: "{{ lookup('template', 'openvpn-secret.yml.j2') | from_yaml }}"
   no_log: true
 
+- name: Apply qBittorrent credentials
+  kubernetes.core.k8s:
+    kubeconfig: "{{ media_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'qbittorrent-secret.yml.j2') | from_yaml }}"
+  no_log: true
+
 - name: Render arr stack manifests
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
   vars:
@@ -126,3 +144,6 @@
     state: present
     definition: "{{ private_cloud_rendered_manifests }}"
   no_log: true
+
+- name: Configure ARR application connections
+  ansible.builtin.import_tasks: configure_arr.yml

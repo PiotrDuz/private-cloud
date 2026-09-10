@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: jellyfin-settings, namespace: media}
+data:
+  configure_jellyfin.py: |
+{{ lookup('file', playbook_dir ~ '/../media/configure_jellyfin.py') | indent(4, true) }}
+  jellyfin_helpers.py: |
+{{ lookup('file', playbook_dir ~ '/../media/jellyfin_helpers.py') | indent(4, true) }}

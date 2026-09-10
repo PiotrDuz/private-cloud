@@ -55,7 +55,7 @@ spec:
           livenessProbe: {tcpSocket: {port: proxy-tcp}, initialDelaySeconds: 20, periodSeconds: 10}
           resources:
             requests: {cpu: 100m, memory: 128Mi}
-            limits: {cpu: '1', memory: 512Mi}
+            limits: {memory: 512Mi}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL], add: [NET_ADMIN]}
@@ -72,7 +72,7 @@ spec:
           readinessProbe: {tcpSocket: {port: dns-tcp}, periodSeconds: 5}
           resources:
             requests: {cpu: 20m, memory: 32Mi}
-            limits: {cpu: 250m, memory: 128Mi}
+            limits: {memory: 128Mi}
           securityContext:
             runAsNonRoot: true
             runAsUser: 65532
@@ -128,7 +128,8 @@ spec:
         private-cloud.example/openvpn-guarded: 'true'
 {% if app.name == 'qbittorrent' %}
       annotations:
-        checksum/logging-settings: {{ lookup('file', playbook_dir ~ '/../logging/configure_qbittorrent.py') | hash('sha256') }}
+        checksum/logging-settings: {{ (lookup('file', playbook_dir ~ '/../logging/configure_qbittorrent.py') ~ lookup('file', playbook_dir ~ '/../logging/qbittorrent_helpers.py')) | hash('sha256') }}
+        checksum/qbittorrent-credentials: {{ private_cloud_secrets.media.qbittorrent_password | hash('sha256') }}
         checksum/file-logs: {{ lookup('file', playbook_dir ~ '/../k0s-services/arr/files/file-logs.conf') | hash('sha256') }}
 {% endif %}
     spec:
@@ -138,6 +139,10 @@ spec:
         - name: configure-logging
           image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
           command: [python3, /scripts/configure.py]
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
+            - name: QBITTORRENT_PASSWORD
+              valueFrom: {secretKeyRef: {name: qbittorrent-credentials, key: password}}
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -148,7 +153,7 @@ spec:
             seccompProfile: {type: RuntimeDefault}
           resources:
             requests: {cpu: 10m, memory: 32Mi}
-            limits: {cpu: 100m, memory: 64Mi}
+            limits: {memory: 64Mi}
           volumeMounts:
             - {name: config, mountPath: /config}
             - {name: logging-settings, mountPath: /scripts, readOnly: true}
@@ -160,7 +165,7 @@ spec:
             - {name: LOG_PATH, value: /logs/qbittorrent.log}
           resources:
             requests: {cpu: 10m, memory: 32Mi}
-            limits: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 128Mi}
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -172,8 +177,7 @@ spec:
           volumeMounts:
             - {name: config, mountPath: /logs, subPath: qBittorrent/logs, readOnly: true}
             - {name: config, mountPath: /state, subPath: .log-forwarder}
-            - {name: logging-settings, configMap: {name: qbittorrent-logging}}
-        - {name: file-logs-config, mountPath: /etc/file-logs, readOnly: true}
+            - {name: file-logs-config, mountPath: /etc/file-logs, readOnly: true}
 {% endif %}
       dnsPolicy: None
       dnsConfig:
@@ -197,7 +201,7 @@ spec:
           readinessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 10, periodSeconds: 10}
           resources:
             requests: {cpu: 100m, memory: 256Mi}
-            limits: {cpu: '2', memory: 2Gi}
+            limits: {memory: 2Gi}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: {drop: [NET_ADMIN, NET_RAW, SYS_ADMIN, SYS_MODULE, SYS_PTRACE]}
@@ -229,7 +233,7 @@ spec:
             seccompProfile: {type: RuntimeDefault}
           resources:
             requests: {cpu: 20m, memory: 32Mi}
-            limits: {cpu: 250m, memory: 256Mi}
+            limits: {memory: 256Mi}
           volumeMounts:
             - {name: tun, mountPath: /dev/net/tun}
       volumes:
@@ -237,6 +241,7 @@ spec:
         - {name: tun, hostPath: {path: /dev/net/tun, type: CharDevice}}
 {% if app.name == 'qbittorrent' %}
         - {name: file-logs-config, configMap: {name: arr-file-logs}}
+        - {name: logging-settings, configMap: {name: qbittorrent-logging}}
 {% endif %}
 {% if app.name in ['sonarr', 'radarr', 'qbittorrent'] %}
         - {name: library, persistentVolumeClaim: {claimName: media-library-data}}

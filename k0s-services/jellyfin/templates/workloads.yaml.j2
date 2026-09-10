@@ -11,19 +11,47 @@ spec:
   template:
     metadata:
       labels: {app.kubernetes.io/name: jellyfin}
+      annotations:
+        checksum/settings: {{ (lookup('file', playbook_dir ~ '/../media/configure_jellyfin.py') ~ lookup('file', playbook_dir ~ '/../media/jellyfin_helpers.py')) | hash('sha256') }}
     spec:
       automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        supplementalGroups: [{{ intel_gpu_render_group_id | int }}]
+      initContainers:
+        - name: configure-local-library
+          image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
+          command: [python3, /scripts/configure_jellyfin.py]
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          volumeMounts:
+            - {name: config, mountPath: /config}
+            - {name: settings, mountPath: /scripts, readOnly: true}
       containers:
         - name: jellyfin
           image: {{ media_images.jellyfin }}
           env:
             - {name: JELLYFIN_PublishedServerUrl, value: {{ ('https://' ~ private_cloud.media.hostname) | to_json }}}
             - {name: JELLYFIN_LOG_DIR, value: /config/log}
+            - {name: JELLYFIN_DATA_DIR, value: /config}
+            - {name: JELLYFIN_CONFIG_DIR, value: /config/config}
+            - {name: JELLYFIN_CACHE_DIR, value: /config/cache}
           ports:
             - {name: http, containerPort: 8096, protocol: TCP}
           resources:
             requests: {cpu: 250m, memory: 1Gi, gpu.intel.com/i915: 1}
-            limits: {cpu: '4', memory: 4Gi, gpu.intel.com/i915: 1}
+            limits: {memory: 4Gi, gpu.intel.com/i915: 1}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL]}
@@ -32,6 +60,7 @@ spec:
             - {name: config, mountPath: /config}
             - {name: library, mountPath: /media, readOnly: true}
       volumes:
+        - {name: settings, configMap: {name: jellyfin-settings}}
         - {name: config, persistentVolumeClaim: {claimName: jellyfin-data}}
         - {name: library, persistentVolumeClaim: {claimName: media-library-data}}
 ---

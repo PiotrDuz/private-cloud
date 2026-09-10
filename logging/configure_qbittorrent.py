@@ -7,6 +7,8 @@ import os
 import stat
 from pathlib import Path
 
+from qbittorrent_helpers import password_value
+
 
 def main():
     path = Path("/config/qBittorrent/qBittorrent.conf")
@@ -17,7 +19,19 @@ def main():
         configuration.add_section("Application")
     desired = {"Enabled": "true", "Path": "/config/qBittorrent/logs", "Backup": "true", "DeleteOld": "true", "MaxSizeBytes": "10485760", "Age": "7", "AgeType": "0"}
     changed = any(configuration.get("Application", "FileLogger\\" + key, fallback=None) != value for key, value in desired.items())
+    if not configuration.has_section("Preferences"):
+        configuration.add_section("Preferences")
+    preferences = {
+        "WebUI\\Username": "private-cloud",
+        "WebUI\\Password_PBKDF2": password_value(
+            os.environ["QBITTORRENT_PASSWORD"],
+            configuration.get("Preferences", "WebUI\\Password_PBKDF2", fallback=""),
+        ),
+    }
+    changed |= any(configuration.get("Preferences", key, fallback=None) != value for key, value in preferences.items())
     if changed:
+        for key, value in preferences.items():
+            configuration.set("Preferences", key, value)
         for key, value in desired.items():
             configuration.set("Application", "FileLogger\\" + key, value)
         output = io.StringIO()

@@ -62,3 +62,7 @@ sudo python3 ansible/install.py
 - Use [the operations runbook](docs/OPERATIONS.md) for monitoring and incident investigation.
 - Treat backups, router/NAT configuration, external monitoring, and live acceptance as operator work.
 - Read [the networking architecture and boundaries](docs/NETWORKING.md) for the implemented VPN, ingress, firewall, and media isolation design.
+
+Kubernetes workloads keep CPU requests without CPU limits; remove the former Immich `max_cpu`, `machine_learning_max_cpu`, and `valkey_max_cpu` settings from public configuration.
+
+The media stage requires `private_cloud_secrets.media.qbittorrent_password` in Vault for automatic ARR connections.

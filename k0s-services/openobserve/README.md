@@ -4,7 +4,7 @@ OpenObserve is managed by `ansible/roles/logging` through the `logging` stage.
 
 - OpenObserve 0.90.3 uses a digest-pinned official image.
 - It runs as one local-mode node with disk storage and SQLite metadata.
-- The dataset is `tank/secure/backup/k0s/services/openobserve`.
+- The dataset is `tank/secure/no-backup/k0s/services/openobserve`.
 - The dataset uses the configured quota and a dedicated `10Ti` PV.
 - Traefik publishes the configured logging hostname over HTTPS.
 - Alloy authenticates to the Loki-compatible ingestion endpoint.
@@ -23,4 +23,4 @@ OpenObserve is managed by `ansible/roles/logging` through the `logging` stage.
 
 - Search the `logs` stream in the OpenObserve UI.
 - Check the host heartbeat before treating a quiet stream as healthy.
-- Back up the OpenObserve dataset with the other protected service datasets.
+- Treat OpenObserve state and log history as disposable no-backup data.

@@ -45,7 +45,7 @@ spec:
             - {name: http, containerPort: 80, protocol: TCP}
           resources:
             requests: {cpu: 500m, memory: {{ private_cloud.onlyoffice.max_ram | to_json }}, ephemeral-storage: 512Mi}
-            limits: {cpu: 4, memory: {{ private_cloud.onlyoffice.max_ram | to_json }}, ephemeral-storage: 4Gi}
+            limits: {memory: {{ private_cloud.onlyoffice.max_ram | to_json }}, ephemeral-storage: 4Gi}
           startupProbe:
             httpGet: {path: /hosting/discovery, port: http}
             periodSeconds: 10

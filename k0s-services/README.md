@@ -20,3 +20,8 @@
 - User-namespaced root maps to an unprivileged and pod-specific host UID.
 - Stateful user namespaces require Linux 6.3+, OpenZFS 2.2+, and containerd 2.0+.
 - The Intel GPU plugin publishes shared `gpu.intel.com/i915` resources for OpenVINO and media workloads.
+
+## Resource policy
+
+- Keep CPU requests for scheduling and omit CPU limits from every container.
+- Retain memory, ephemeral-storage, and GPU limits where configured.

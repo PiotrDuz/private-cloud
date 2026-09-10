@@ -17,3 +17,5 @@ The PostgreSQL service is managed by `ansible/roles/postgres`.
 ## Manifest review
 
 - Ansible renders the `templates/*.yaml.j2` workload files during deployment.
+
+- Send logs to stderr with an explicit timestamp and process prefix and disable the file collector.

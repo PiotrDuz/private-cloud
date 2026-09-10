@@ -37,7 +37,7 @@ spec:
             - {name: valkey, containerPort: 6379, protocol: TCP}
           resources:
             requests: {cpu: 100m, memory: {{ private_cloud.immich.valkey_max_ram | to_json }}, ephemeral-storage: 128Mi}
-            limits: {cpu: {{ private_cloud.immich.valkey_max_cpu | to_json }}, memory: {{ private_cloud.immich.valkey_max_ram | to_json }}, ephemeral-storage: 1Gi}
+            limits: {memory: {{ private_cloud.immich.valkey_max_ram | to_json }}, ephemeral-storage: 1Gi}
           startupProbe:
             exec: {command: [valkey-cli, ping]}
             periodSeconds: 10

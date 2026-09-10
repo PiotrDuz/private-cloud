@@ -284,7 +284,7 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
         for key in ("storage_size", "max_ram", "hostname"):
             cloud["affine"][key] = prompt_line(f"AFFiNE {key}", cloud["affine"][key])
     if "immich" in sections:
-        for key in ("storage_size", "hostname", "timezone", "max_ram", "max_cpu", "machine_learning_max_ram", "machine_learning_max_cpu", "machine_learning_accelerator", "valkey_max_ram", "valkey_max_cpu"):
+        for key in ("storage_size", "hostname", "timezone", "max_ram", "machine_learning_max_ram", "machine_learning_accelerator", "valkey_max_ram"):
             cloud["immich"][key] = prompt_line(f"Immich {key}", cloud["immich"][key])
     if "stalwart" in sections:
         for key in ("storage_size", "max_ram", "domain", "forwarding_domain", "hostname", "acme_contact", "admin_username", "mailbox_username", "relay_host", "relay_username"):
@@ -360,6 +360,7 @@ def collect_missing_secrets(configuration: dict[str, Any], public: dict[str, Any
         ("media", "openvpn_username"): "OpenVPN username",
         ("media", "openvpn_password"): "OpenVPN password",
         ("media", "proxy_password"): "Media VPN proxy password",
+        ("media", "qbittorrent_password"): "qBittorrent WebUI password",
     }
     for section, keys in SECRET_SCHEMAS.items():
         if not stages[SECRET_STAGES[section]]:

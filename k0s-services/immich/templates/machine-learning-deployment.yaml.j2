@@ -56,7 +56,6 @@ spec:
               gpu.intel.com/i915: 1
 {% endif %}
             limits:
-              cpu: {{ private_cloud.immich.machine_learning_max_cpu | to_json }}
               memory: {{ private_cloud.immich.machine_learning_max_ram | to_json }}
               ephemeral-storage: 10Gi
 {% if private_cloud.immich.machine_learning_accelerator == 'openvino' %}

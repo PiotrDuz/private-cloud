@@ -33,7 +33,7 @@ spec:
           ports: [{name: http, containerPort: 12345}]
           resources:
             requests: {cpu: 100m, memory: 128Mi, ephemeral-storage: 128Mi}
-            limits: {cpu: "2", memory: {{ private_cloud.logging.alloy_max_ram | to_json }}, ephemeral-storage: 512Mi}
+            limits: {memory: {{ private_cloud.logging.alloy_max_ram | to_json }}, ephemeral-storage: 512Mi}
           startupProbe:
             httpGet: {path: /-/ready, port: http}
             periodSeconds: 5
