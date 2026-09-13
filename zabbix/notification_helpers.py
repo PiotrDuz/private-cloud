@@ -1,4 +1,4 @@
-"""Managed notification actions and independent logging health items."""
+"""Managed notification actions and Alloy and certificate health items."""
 from api_helpers import same
 
 
@@ -44,22 +44,18 @@ def configure_email(api, config):
 def configure_health(api, config):
     host_id = config["host_id"]
     host = config["host"]
-    master = {"hostid": host_id, "name": "Logging and certificate health", "key_": "observability.health", "type": 7, "value_type": 4, "delay": "1m", "history": "1d", "status": 0}
+    master = {"hostid": host_id, "name": "Alloy and certificate health", "key_": "observability.health", "type": 7, "value_type": 4, "delay": "1m", "history": "1d", "status": 0}
     master_id = ensure_item(api, master)
-    ensure_trigger(api, host_id, "Logging health collector stopped", 'nodata(/' + host + '/observability.health,5m)=1', 4)
+    ensure_trigger(api, host_id, "Alloy and certificate health collector stopped", 'nodata(/' + host + '/observability.health,5m)=1', 4)
     gauges = [
-        ("openobserve_up", "OpenObserve unavailable"), ("alloy_up", "Alloy unhealthy"),
-        ("heartbeat", "Host logs have not reached OpenObserve for five minutes"),
-        ("metrics_up", "Logging metrics collection failed"),
+        ("alloy_up", "Alloy unhealthy"),
+        ("metrics_up", "Alloy metrics collection failed"),
     ]
     for field, title in gauges:
         key = "observability." + field
         dependent(api, host_id, master_id, key, title, "$." + field)
         ensure_trigger(api, host_id, title, 'max(/' + host + '/' + key + ',2m)=0', 4)
-    key = "observability.openobserve_internal_warnings"
-    dependent(api, host_id, master_id, key, "OpenObserve internal warning logs", "$.openobserve_internal_warnings")
-    ensure_trigger(api, host_id, "OpenObserve emitted warning-or-higher logs", 'max(/' + host + '/' + key + ',5m)>0', 2)
-    for field in ("alloy_retries", "alloy_dropped", "openobserve_ingest_errors", "openobserve_notifications_failed"):
+    for field in ("alloy_retries", "alloy_dropped"):
         key = "observability." + field
         dependent(api, host_id, master_id, key, field.replace("_", " "), "$." + field, rate=True)
         ensure_trigger(api, host_id, field.replace("_", " ") + " increased", 'max(/' + host + '/' + key + ',5m)>0', 2)

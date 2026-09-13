@@ -5,6 +5,8 @@
       - private_cloud.media.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.media.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$')
       - private_cloud.media.timezone is match('^[A-Za-z_+-]+/[A-Za-z_+/-]+$')
+      - private_cloud.media.quality_profiles.sonarr in ['720p', '1080p', '2160p']
+      - private_cloud.media.quality_profiles.radarr in ['720p', '1080p', '2160p']
       - private_cloud.media.openvpn.endpoint_port | int >= 1
       - private_cloud.media.openvpn.endpoint_port | int <= 65535
       - private_cloud.media.openvpn.endpoint_protocol in ['TCP', 'UDP']

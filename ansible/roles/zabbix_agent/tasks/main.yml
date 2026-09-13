@@ -59,6 +59,15 @@
     - /etc/zabbix/zabbix_agent2.d
     - /etc/zabbix/zabbix_agent2.d/plugins.d
 
+- name: Copy the host collector logging helper
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../zabbix/collector_logging.py"
+    dest: /usr/local/libexec/zabbix/collector_logging.py
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Zabbix Agent 2
+
 - name: Copy the retained ZFS collector
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../zabbix/zabbix-zfs-collector.py"
@@ -168,7 +177,7 @@
 
 - name: Remove conflicting settings and duplicate managed includes
   ansible.builtin.set_fact:
-    zabbix_agent_sanitized_content: "{{ zabbix_agent_without_block | regex_replace('(?m)^[ \\t]*(Server|ServerActive|Hostname|ListenIP|Timeout|TLSConnect|TLSAccept|TLSPSKIdentity|TLSPSKFile)[ \\t]*=[^\\r\\n]*(?:\\r?\\n|$)', '') | regex_replace('(?m)^[ \\t]*Include[ \\t]*=[ \\t]*/etc/zabbix/zabbix_agent2\\.d/\\*\\.conf[ \\t]*$[\\r\\n]?', '') | trim }}"
+    zabbix_agent_sanitized_content: "{{ zabbix_agent_without_block | regex_replace('(?m)^[ \\t]*(Server|ServerActive|Hostname|ListenIP|Timeout|LogType|LogFile|LogFileSize|TLSConnect|TLSAccept|TLSPSKIdentity|TLSPSKFile)[ \\t]*=[^\\r\\n]*(?:\\r?\\n|$)', '') | regex_replace('(?m)^[ \\t]*Include[ \\t]*=[ \\t]*/etc/zabbix/zabbix_agent2\\.d/\\*\\.conf[ \\t]*$[\\r\\n]?', '') | trim }}"
 
 - name: Build the desired Agent configuration
   ansible.builtin.set_fact:

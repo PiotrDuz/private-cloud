@@ -15,7 +15,8 @@ OpenObserve is managed by `ansible/roles/logging` through the `logging` stage.
 - The memory circuit breaker activates at 90%.
 - The notifications flag disables SMTP and all four managed alerts together.
 - Severity alerts exclude OpenObserve logs to prevent notification feedback loops.
-- Independent Zabbix checks report OpenObserve delivery failures.
+- Zabbix does not probe OpenObserve health, metrics, internal logs, or heartbeat searches.
+- OpenObserve reports missing host heartbeats through its own managed alert.
 - The Stalwart forwarding alias is the OpenObserve administrator identity and alert recipient.
 - Changing that alias does not rename an existing OpenObserve administrator.
 
@@ -23,4 +24,5 @@ OpenObserve is managed by `ansible/roles/logging` through the `logging` stage.
 
 - Search the `logs` stream in the OpenObserve UI.
 - Check the host heartbeat before treating a quiet stream as healthy.
+- Inspect OpenObserve internal logs and notification failures directly during delivery incidents.
 - Treat OpenObserve state and log history as disposable no-backup data.

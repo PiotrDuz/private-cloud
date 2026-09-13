@@ -26,7 +26,12 @@ The OpenVPN endpoint must be a literal IP address so its transport exception sta
 - Sonarr uses `/media/tv` and Radarr uses `/media/movies` as library roots.
 - Store `media.qbittorrent_password` in Vault and use `private-cloud` as the WebUI username.
 - The startup initializer applies the qBittorrent password before its WebUI starts.
-- Select indexer providers, provider credentials, and quality profiles after deployment.
+- Select indexer providers and provider credentials after deployment.
+- The installer maintains the `private-cloud` quality profile from the configured Sonarr and Radarr preferences.
+- The profile accepts standard HDTV, WEB, and Blu-ray qualities from 720p through the selected resolution.
+- The profile excludes remux, raw, disc, and low-quality theatrical sources.
+- The profile stops automatic upgrades at Blu-ray in the selected resolution.
+- Select the `private-cloud` profile when adding series or movies and when configuring import lists.
 - Managed connections use names beginning with `private-cloud-`.
 
 Indexers provide searchable release listings; quality profiles specify acceptable formats, resolutions, and upgrade cutoffs.

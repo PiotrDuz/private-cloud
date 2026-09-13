@@ -39,7 +39,7 @@ KUBECONFIG_FILE = RUNTIME_DIRECTORY / "kubeconfig"
 INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
 SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate")
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 CURRENT_SECRETS_SCHEMA_VERSION = 3
 SECRET_SCHEMAS = {
     "storage": {"encryption_passphrase"},
@@ -325,12 +325,17 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
             if rule["protocol"] not in {"TCP", "UDP"} or type(rule["port"]) is not int or not 1 <= rule["port"] <= 65535:
                 raise InstallerError("Invalid AmneziaWG LAN protocol or port")
     media = cloud["media"]
-    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "timezone", "openvpn"}:
+    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "timezone", "quality_profiles", "openvpn"}:
         raise InstallerError("Media configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(media.get("storage_size", ""))) or not DOMAIN_PATTERN.fullmatch(str(media.get("hostname", ""))):
         raise InstallerError("Invalid media storage size or hostname")
     if not isinstance(media.get("timezone"), str) or not re.fullmatch(r"[A-Za-z_+-]+/[A-Za-z_+/-]+", media["timezone"]):
         raise InstallerError("Invalid media.timezone")
+    quality_profiles = media.get("quality_profiles")
+    if not isinstance(quality_profiles, dict) or set(quality_profiles) != {"sonarr", "radarr"}:
+        raise InstallerError("Media quality profile configuration is incomplete")
+    if any(value not in {"720p", "1080p", "2160p"} for value in quality_profiles.values()):
+        raise InstallerError("Media quality profiles must be 720p, 1080p, or 2160p")
     openvpn = media.get("openvpn")
     if not isinstance(openvpn, dict) or set(openvpn) != {"gateway_cluster_ip", "endpoint_ip", "endpoint_port", "endpoint_protocol"}:
         raise InstallerError("OpenVPN configuration has missing or unknown keys")

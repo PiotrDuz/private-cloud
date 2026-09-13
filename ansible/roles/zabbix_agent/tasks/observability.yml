@@ -1,19 +1,18 @@
 ---
-- name: Resolve logging monitoring endpoints
+- name: Resolve the Alloy monitoring endpoint
   kubernetes.core.k8s_info:
     kubeconfig: /run/private-cloud/kubeconfig
     api_version: v1
     kind: Service
-    name: "{{ item }}"
+    name: alloy
     namespace: observability
-  loop: [openobserve, alloy]
-  register: observability_services
+  register: observability_alloy_service
   changed_when: false
 
 - name: Select certificate endpoints
   ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/observability_certificates.yml"
 
-- name: Copy logging health collector
+- name: Copy Alloy and certificate health collector
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../logging/{{ item }}"
     dest: "/usr/local/libexec/zabbix/{{ item }}"
@@ -23,37 +22,23 @@
   loop: [health.py, health_helpers.py]
   notify: Restart Zabbix Agent 2
 
-- name: Configure logging health probe targets
+- name: Configure Alloy and certificate health probe targets
   ansible.builtin.copy:
     dest: /etc/zabbix/private-cloud-observability.json
     content: >-
       {{ {'endpoints': {
-        'openobserve': 'http://' ~ observability_services.results[0].resources[0].spec.clusterIP ~ ':5080',
-        'alloy': 'http://' ~ observability_services.results[1].resources[0].spec.clusterIP ~ ':12345'
-      }, 'credentials': {
-        'username': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
-        'password': private_cloud_secrets.logging.admin_password
+        'alloy': 'http://' ~ observability_alloy_service.resources[0].spec.clusterIP ~ ':12345'
       }, 'address': private_cloud.networking.traefik_internal_ip,
       'certificates': observability_certificates} | to_nice_json }}
     owner: root
     group: root
-    mode: '0600'
-  no_log: true
+    mode: '0644'
   notify: Restart Zabbix Agent 2
 
-- name: Permit the logging health probe
-  ansible.builtin.copy:
-    dest: /etc/sudoers.d/zabbix-observability
-    content: "zabbix ALL=(root) NOPASSWD: /usr/bin/python3 /usr/local/libexec/zabbix/health.py /etc/zabbix/private-cloud-observability.json\n"
-    owner: root
-    group: root
-    mode: '0440'
-    validate: /usr/sbin/visudo -cf %s
-
-- name: Enable logging health user parameter
+- name: Enable Alloy and certificate health user parameter
   ansible.builtin.copy:
     dest: /etc/zabbix/zabbix_agent2.d/observability.conf
-    content: "UserParameter=observability.health,sudo /usr/bin/python3 /usr/local/libexec/zabbix/health.py /etc/zabbix/private-cloud-observability.json\n"
+    content: "UserParameter=observability.health,/usr/bin/python3 /usr/local/libexec/zabbix/health.py /etc/zabbix/private-cloud-observability.json\n"
     owner: root
     group: root
     mode: '0644'

@@ -71,8 +71,10 @@ Outstanding implementation, operator setup, and acceptance checks are tracked in
     7. Link active Linux, SMART, ZFS, and ECC templates to private-cloud-zabbix
     8. Maintain the Dataset capacity dashboard from the enabled dataset catalog
     9. Alert on stale collectors, old snapshots, overdue scrubs, and unavailable ECC telemetry
-    10. Email every Warning, Average, High, and Disaster problem through the observation and email alert design
-    11. Use native stdout/stderr for Zabbix containers and the host journal for Zabbix Agent.
+    10. Email Warning, Average, High, and Disaster problems through the configured relay when notifications are enabled.
+    11. Use native stdout/stderr for Zabbix containers.
+    12. Route Zabbix Agent and host collector diagnostics through system logging, the journal, and Alloy into OpenObserve.
+    13. Keep ZFS, ECC, and SMART metric results in Zabbix while forwarding collector failures as logs.
 5. Setup MEILISEARCH
     1. Create a Meilisearch dataset under tank/secure/backup/k0s/services/meilisearch with a quota
     2. Deploy Meilisearch in k0s with its own 10Ti PV
@@ -92,7 +94,17 @@ Outstanding implementation, operator setup, and acceptance checks are tracked in
     12. Keep IMAPS 993 and submission ports 465 and 587 unexposed
     13. Filter forwarded messages in Stalwart without source-CIDR restrictions at the host firewall
     14. Map forwarding-subdomain recipients to primary-domain Stalwart accounts
-    15. Store inbox.eu credentials in a Secret and relay non-local outbound mail through its SMTP service over TLS
+    15. Configure the inbox.eu SMTP relay.
+        - Deliver local-domain mail locally and route other outbound mail through inbox.eu.
+        - Use the configured relay hostname, port, username, and implicit TLS or STARTTLS mode.
+        - Reject invalid relay certificates.
+        - Supply the relay password through the Stalwart runtime Secret.
+        - Use the same relay settings for Zabbix and OpenObserve notification delivery.
+        - Use the configured notification sender address for alert emails.
+        - Address alerts to `<stalwart.mailbox_username>@<stalwart.forwarding_domain>`.
+        - Route alert delivery through the forwarding-domain MX and Traefik TCP 25 to Stalwart.
+        - Deliver the forwarding alias into `<stalwart.mailbox_username>@<stalwart.domain>`.
+        - Restrict notification SMTP egress to the relay IPv4 addresses resolved when policies are applied.
     16. Support JMAP access, SMTP forwarding, filtering, outbound relay, and automatic certificate renewal
     17. Use native stdout/stderr logging for collection by Alloy.
 7. Setup APACHE TIKA
@@ -211,7 +223,13 @@ Outstanding implementation, operator setup, and acceptance checks are tracked in
     18. Route external DNS through the VPN and cluster-local DNS through cluster DNS.
     19. Disable guarded media IPv6 until equivalent capture and filtering exist.
     20. Configure /media/tv and /media/movies as ARR root folders.
-    21. Select indexer providers and quality profiles during operator setup.
+    21. Collect separate 720p, 1080p, or 2160p preferences for Sonarr and Radarr during initial configuration.
+    22. Create or update a `private-cloud` quality profile in each application during installation.
+    23. Allow standard HDTV, WEB, and Blu-ray qualities from 720p through the selected resolution.
+    24. Exclude remux, raw, disc, and low-quality theatrical sources.
+    25. Use Blu-ray at the selected resolution as the automatic upgrade cutoff.
+    26. Select the `private-cloud` profile when adding series or movies and configuring import lists.
+    27. Select indexer providers and credentials during operator setup.
 18. Setup JELLYFIN
     1. Keep Jellyfin templates under k0s-services/jellyfin
     2. Deploy Jellyfin in the media namespace through the media installer stage
@@ -250,7 +268,8 @@ Outstanding implementation, operator setup, and acceptance checks are tracked in
     22. Limit memory and buffering with a six-hour maximum WAL segment age.
     23. Retry ingestion up to 120 times with one-second to 30-second backoff.
     24. Keep source rotation independent of central retention and dataset quotas.
-20. Setup OPENOBSERVE LOG STORAGE
+    25. Collect Zabbix Agent journal records and host collector errors identified by private-cloud-zabbix-* syslog names.
+20. Setup OPENOBSERVE AND OBSERVABILITY
     1. Deploy one digest-pinned OpenObserve 0.90.3 node in observability.
     2. Create tank/secure/no-backup/k0s/services/openobserve with a configurable 50G initial quota and dedicated 10Ti PV/PVC.
     3. Use OpenObserve local mode with disk object storage and SQLite metadata.
@@ -260,3 +279,40 @@ Outstanding implementation, operator setup, and acceptance checks are tracked in
     7. Enforce memory limits, 10MiB ingestion payloads, and 60-second query timeouts.
     8. Return 1,000 query rows by default and activate the memory circuit breaker at 90%.
     9. Use native stdout/stderr logging for collection by Alloy.
+    10. Keep infrastructure metric alerts in Zabbix and recognized log alerts in OpenObserve.
+    11. Provision three severity rules and one missing-heartbeat rule in the logs stream.
+    12. Evaluate each rule every minute over the preceding five minutes.
+    13. Trigger severity alerts on at least one warn, error, or critical entry without an additional pending period.
+    14. Include Kubernetes Warning events and classify Traefik HTTP 5xx responses as errors.
+    15. Suppress repeated notifications from each rule for five minutes.
+    16. Exclude OpenObserve's own logs from severity alerts to prevent notification feedback loops.
+    17. Trigger the missing-heartbeat rule when no host logging heartbeat appears in the five-minute window.
+    18. Disable OpenObserve SMTP and all four managed rules when notifications are disabled.
+    19. Include the alert name, matching row count, severity, namespace, service, message, and investigation link in log emails.
+    20. Send Zabbix problem, recovery, and hourly reminder emails to the forwarding alias.
+    21. Retry Zabbix email delivery up to ten times at one-minute intervals.
+    22. Pause Zabbix notifications for suppressed problems during maintenance.
+    23. Warn on service dataset quota utilization at 80% and raise high alerts at 90% through Zabbix.
+    24. Check enabled HTTPS and Stalwart SMTP STARTTLS certificates through Zabbix with expiry alerts at 21 and 7 days.
+    25. Keep log alert delivery dependent on OpenObserve, the external relay, DNS, inbound SMTP, and the local mailbox services.
+    26. Keep OpenObserve health, metrics, internal warnings, and heartbeat searches outside Zabbix application probes.
+    27. Keep Alloy health, retry, and dropped-entry monitoring in Zabbix.
+    28. Keep shared dataset capacity and edge certificate monitoring separate from OpenObserve application health probes.
+    29. Keep OpenObserve's internal logs searchable without sending them through its own severity email rules.
+    30. Run the Zabbix Alloy and certificate collector without sudo or OpenObserve administrator credentials.
+21. SECURITY
+    1. Run ordinary application containers with fixed non-root UIDs and disabled privilege escalation.
+    2. Run AFFiNE, Immich server, and OnlyOffice container root inside Kubernetes user namespaces.
+    3. Map user-namespaced root to an unprivileged host UID.
+    4. Preserve the container startup capabilities required by AFFiNE and OnlyOffice inside their user namespaces.
+    5. Drop Linux capabilities except for workload-specific startup and networking requirements.
+    6. Retain NET_RAW for Zabbix ICMP checks and NET_BIND_SERVICE for services binding privileged ports.
+    7. Reserve host access and network administration for networking, GPU support, and log collection workloads.
+    8. Run Alloy with root read access to host logs through read-only mounts and with all capabilities dropped.
+    9. Align persistent dataset ownership with each workload's UID and GID.
+    10. Disable service-account token automounting for applications that do not need Kubernetes API access.
+    11. Limit Alloy Kubernetes API access to workload discovery and event collection.
+    12. Enforce namespace default-deny policies with explicit service and port exceptions.
+    13. Keep application credentials in role-owned Kubernetes Secrets and persistent plaintext secrets out of the repository.
+    14. Keep ingestion credentials separate from OpenObserve administrator credentials.
+    15. Keep media VPN isolation and Jellyfin egress restrictions independent of log collection.

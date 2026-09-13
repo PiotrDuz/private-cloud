@@ -6,13 +6,21 @@ import re
 import time
 from pathlib import Path
 
+from collector_logging import log_collector_errors
+
 
 EDAC_ROOT = Path("/sys/devices/system/edac/mc")
 
 
 def main():
-    collector = Collector(EDAC_ROOT)
-    print(json.dumps(collector.collect(), separators=(",", ":"), sort_keys=True))
+    try:
+        collector = Collector(EDAC_ROOT)
+        result = collector.collect()
+    except Exception as error:
+        log_collector_errors("memory-ecc", [f"collector failed: {error}"])
+        raise
+    log_collector_errors("memory-ecc", result["errors"])
+    print(json.dumps(result, separators=(",", ":"), sort_keys=True))
 
 
 def numeric_suffix(path):

@@ -2,7 +2,7 @@
 - name: Require the supported public schema version
   ansible.builtin.assert:
     that:
-      - schema_version == 6
+      - schema_version == 7
     fail_msg: Public configuration schema version is unsupported
 
 - name: Require supported Debian-family target
@@ -33,7 +33,8 @@
       - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'images_quota']
       - (private_cloud.networking.keys() | list | sort) == ['acme_email', 'amneziawg', 'cloudflare_zone_id', 'cluster_dns_ip', 'local_network_cidrs', 'managed_records', 'pod_cidr', 'public_ip_url', 'service_cidr', 'storage_size', 'traefik_internal_ip', 'zabbix_hostname']
       - (private_cloud.networking.amneziawg.keys() | list | sort) == ['address', 'hostname', 'listen_port', 'peers', 'tunnel_cidr']
-      - (private_cloud.media.keys() | list | sort) == ['hostname', 'openvpn', 'storage_size', 'timezone']
+      - (private_cloud.media.keys() | list | sort) == ['hostname', 'openvpn', 'quality_profiles', 'storage_size', 'timezone']
+      - (private_cloud.media.quality_profiles.keys() | list | sort) == ['radarr', 'sonarr']
       - (private_cloud.media.openvpn.keys() | list | sort) == ['endpoint_ip', 'endpoint_port', 'endpoint_protocol', 'gateway_cluster_ip']
       - (private_cloud.postgres.keys() | list | sort) == ['max_ram', 'volume_size']
       - (private_cloud.meilisearch.keys() | list | sort) == ['max_ram', 'storage_size']
@@ -159,6 +160,8 @@
       - private_cloud.media.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.media.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
       - private_cloud.media.timezone is match('^[A-Za-z_+-]+/[A-Za-z_+/-]+$')
+      - private_cloud.media.quality_profiles.sonarr in ['720p', '1080p', '2160p']
+      - private_cloud.media.quality_profiles.radarr in ['720p', '1080p', '2160p']
       - private_cloud.media.openvpn.endpoint_protocol in ['TCP', 'UDP']
       - private_cloud.media.openvpn.endpoint_port | int >= 1
       - private_cloud.media.openvpn.endpoint_port | int <= 65535

@@ -75,9 +75,9 @@ data:
     loki.relabel "journal" {
       forward_to = []
       rule {
-        source_labels = ["__journal__systemd_unit", "__journal__transport"]
+        source_labels = ["__journal__systemd_unit", "__journal__transport", "__journal_syslog_identifier"]
         separator = ";"
-        regex = "(k0s.*|zfs.*|zabbix.*|ssh.*|systemd.*|private-cloud-log-heartbeat.service);.*|.*;kernel"
+        regex = "(k0s.*|zfs.*|zabbix.*|ssh.*|systemd.*|private-cloud-log-heartbeat.service);.*;.*|.*;kernel;.*|.*;.*;private-cloud-zabbix-.*"
         action = "keep"
       }
       rule {
@@ -87,6 +87,11 @@ data:
       rule {
         source_labels = ["__journal__systemd_unit"]
         regex = "(.+)"
+        target_label = "service"
+      }
+      rule {
+        source_labels = ["__journal_syslog_identifier"]
+        regex = "(private-cloud-zabbix-.+)"
         target_label = "service"
       }
       rule {

@@ -12,7 +12,7 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 ## Service and network operator setup
 
 - [ ] Select Prowlarr indexers and provide their credentials.
-- [ ] Choose Sonarr and Radarr quality profiles.
+- [ ] Select the `private-cloud` profile when adding Sonarr series, Radarr movies, or import lists.
 - [ ] Verify the provisioned ARR connections and library folders after deployment.
 - [ ] Verify Jellyfin local library scans, playback, and disabled online integrations after deployment.
 - [ ] Configure router forwarding for TCP 25, TCP 443, and the AmneziaWG UDP port.
@@ -30,7 +30,9 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 - [ ] Confirm source rotation and expired OpenObserve data deletion reclaim space.
 - [ ] Verify an isolated log warning, log error, and Kubernetes Warning each generate email.
 - [ ] Verify Zabbix Warning and higher problems generate email and recovery messages.
-- [ ] Verify query failure, missing heartbeat, and SMTP failure remain visible as problems.
+- [ ] Verify the OpenObserve missing-heartbeat alert and Zabbix Alloy health alerts.
+- [ ] Verify Zabbix Agent and ZFS, ECC, and SMART collector failures appear in OpenObserve.
+- [ ] Verify OpenObserve query and SMTP failures remain inspectable in its logs and interface.
 - [ ] Confirm actual messages arrive in the Stalwart inbox rather than only reaching the relay.
 - [ ] Verify logging access does not weaken media VPN or Jellyfin isolation.
 - [ ] Confirm the router, DNS, certificates, and media integrations in the live environment.

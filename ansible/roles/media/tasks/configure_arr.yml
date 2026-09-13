@@ -26,13 +26,14 @@
   loop: [sonarr, radarr, prowlarr, qbittorrent]
   register: media_arr_services
 
-- name: Configure internal ARR connections and library folders
+- name: Configure ARR quality profiles, connections, and library folders
   ansible.builtin.command:
     argv: [python3, "{{ playbook_dir }}/../media/configure_arr.py"]
     stdin: >-
       {{ {
         'addresses': dict(media_arr_services.results | map(attribute='item') | zip(media_arr_services.results | map(attribute='resources') | map('first') | map(attribute='spec.clusterIP'))),
         'datasets': media_datasets,
+        'quality_profiles': private_cloud.media.quality_profiles,
         'qbittorrent_password': private_cloud_secrets.media.qbittorrent_password
       } | to_json }}
   register: media_arr_configuration
