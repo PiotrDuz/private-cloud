@@ -3,6 +3,50 @@
 This file is the source of truth for the desired system state and its major decisions.
 Implementation may lag behind this specification; this file does not certify deployment.
 
+## Table of contents
+
+- [ZFS storage](#zfs-storage)
+- [k0s cluster](#k0s-cluster)
+- [PostgreSQL](#postgresql)
+- [Keycloak](#keycloak)
+- [Meilisearch](#meilisearch)
+- [Stalwart email](#stalwart-email)
+- [Apache Tika](#apache-tika)
+- [Bleve](#bleve)
+- [OnlyOffice](#onlyoffice)
+- [OpenCloud](#opencloud)
+- [Grist](#grist)
+- [Manticore Search](#manticore-search)
+- [Redis for AFFiNE](#redis-for-affine)
+- [AFFiNE](#affine)
+- [Valkey for Immich](#valkey-for-immich)
+- [Immich](#immich)
+- [ARR stack](#arr-stack)
+    * [Sonarr](#sonarr)
+    * [Radarr](#radarr)
+    * [Prowlarr](#prowlarr)
+    * [qBittorrent](#qbittorrent)
+    * [OpenVPN](#openvpn)
+- [Jellyfin](#jellyfin)
+- [Security](#security)
+- [Networking](#networking)
+    * [Public entry and DNS](#public-entry-and-dns)
+    * [Traefik](#traefik)
+    * [Host access and service isolation](#host-access-and-service-isolation)
+    * [Namespace and host placement](#namespace-and-host-placement)
+    * [VPN and media routing](#vpn-and-media-routing)
+    * [AmneziaWG](#amneziawg)
+- [Observability](#observability)
+    * [System-wide requirements](#system-wide-requirements)
+    * [Zabbix metrics and alerts](#zabbix-metrics-and-alerts)
+        + [Zabbix host](#zabbix-host)
+        + [Zabbix k0s service](#zabbix-k0s-service)
+    * [Alloy log collection](#alloy-log-collection)
+    * [OpenObserve](#openobserve)
+        + [Storage and queries](#storage-and-queries)
+        + [Log alert rules and delivery](#log-alert-rules-and-delivery)
+    * [Monitoring boundaries](#monitoring-boundaries)
+
 ## ZFS storage
 
 - Configure disks as RAIDZ1 in the `tank` pool
@@ -50,6 +94,22 @@ Implementation may lag behind this specification; this file does not certify dep
 - Use the TensorChord PostgreSQL 18 image and verify pgvector and VectorChord
 - Disable the file collector and send PostgreSQL logs to stderr with an explicit timestamp and process prefix
 
+## Keycloak
+
+- Deploy Keycloak in the private-cloud namespace as the shared OpenID Connect (OIDC) identity provider
+- Create tank/secure/backup/k0s/services/keycloak with a quota and a dedicated 10Ti PV/PVC
+- Create a dedicated Keycloak database, login role, and credentials Secret in the shared PostgreSQL service
+- Persist identity, realm, and client configuration in the backed-up PostgreSQL database
+- Expose Keycloak at a configured hostname through Traefik HTTPS
+- Use one shared realm with separate OIDC clients for each application and its supported web, desktop, and mobile clients
+- Store client secrets in role-owned Kubernetes Secrets and restrict redirect URIs to configured application callbacks
+- Use Keycloak login for every user-facing service except AmneziaWG, the ARR stack, and OpenObserve
+    * Include Stalwart web access and management, OpenCloud, Grist, AFFiNE, Immich, Jellyfin, and Zabbix
+    * Use native OIDC or an integration that establishes the application's authenticated user session
+    * Keep backend APIs, database connections, mail transport, and log ingestion on their service credentials
+    * Keep internal services without interactive logins private
+- Use native stdout/stderr logging for collection by Alloy
+
 ## Meilisearch
 
 - Create a Meilisearch dataset under tank/secure/backup/k0s/services/meilisearch with a quota
@@ -65,6 +125,7 @@ Implementation may lag behind this specification; this file does not certify dep
 - Configure the search store to use Meilisearch
 - Configure the Default in-memory store to use the postgres data store
 - Configure Stalwart as the mailbox and JMAP submission service for the user-provided domain
+- Use the [Keycloak-backed OIDC directory](https://stalw.art/docs/install/directory/) for user authentication and retain Stalwart mailbox and administrator permissions
 - Publish JMAP, web access, and management through Traefik HTTPS TCP 443
 - Accept forwarded inbound mail through Traefik SMTP TCP 25 with Proxy Protocol v2
 - Terminate SMTP STARTTLS in Stalwart with an automatically renewed certificate
@@ -102,6 +163,7 @@ Implementation may lag behind this specification; this file does not certify dep
 - Create an OnlyOffice dataset under tank/secure/backup/k0s/services/onlyoffice with a quota
 - Deploy OnlyOffice Community Edition in k0s with its own 10Ti PV
 - Enable the OnlyOffice WOPI integration
+- Authenticate document users through the Keycloak-authenticated OpenCloud session and its WOPI authorization
 - Expose OnlyOffice for the user-provided domain through a valid TLS reverse proxy
 - Use OnlyOffice 9.4.0.1's native entrypoint to forward /var/log/onlyoffice to container output without a logging sidecar
 - Persist source logs on the OnlyOffice dataset
@@ -111,6 +173,7 @@ Implementation may lag behind this specification; this file does not certify dep
 ## OpenCloud
 
 - Deploy OpenCloud with its own dataset under tank/secure/backup/k0s/services/opencloud, 10Ti PV, and quota
+- Authenticate OpenCloud web, desktop, and mobile clients through [Keycloak OIDC with authorization code flow and PKCE](https://docs.opencloud.eu/docs/admin/configuration/authentication-and-user-management/external-idp/)
 - Configure OpenCloud to use Apache Tika for content extraction
 - Configure the search service to use the Bleve backend
 - Configure supported cache stores to use in-memory storage
@@ -125,6 +188,7 @@ Implementation may lag behind this specification; this file does not certify dep
 - Deploy Grist with its own dataset under tank/secure/backup/k0s/services/grist, 10Ti PV, and quota
 - Create a Grist database, login role, and credentials Secret in the existing postgres service
 - Persist Grist documents on its PV and isolate formulas with Pyodide
+- Enable [Grist native OIDC](https://support.getgrist.com/install/oidc/) with Keycloak and the required full-edition activation key
 - Expose Grist for the user-provided domain through a valid TLS reverse proxy
 - Use native stdout/stderr logging for collection by Alloy
 
@@ -145,6 +209,7 @@ Implementation may lag behind this specification; this file does not certify dep
 
 - Deploy AFFiNE with its own dataset under tank/secure/backup/k0s/services/affine, 10Ti PV, and quota
 - Create an AFFiNE database with pgvector enabled in the shared PostgreSQL service
+- Configure [AFFiNE OIDC sign-in](https://affine.pro/enterprise) with Keycloak through its administration settings
 - Configure the server-side indexer to use Manticore Search
 - Use the independent `redis-affine` service
 - Prepare the fresh AFFiNE database schema before the server starts
@@ -170,41 +235,60 @@ Implementation may lag behind this specification; this file does not certify dep
 - Deploy the Immich machine-learning service for face detection and recognition
 - Enable Intel OpenVINO acceleration through the shared i915 Kubernetes device resource
 - Persist the Immich media library on its PV
+- Enable [Immich native OIDC](https://docs.immich.app/administration/oauth/) with Keycloak for web and mobile clients
 - Use native stdout/stderr logging for collection by Alloy
 - Run container root inside a Kubernetes user namespace
 
 ## ARR stack
 
 - Keep Sonarr, Radarr, Prowlarr, qBittorrent, and OpenVPN templates under k0s-services/arr
-- Deploy the arr stack in the media namespace through the media installer stage
-- Give each ARR service a dataset under tank/secure/no-backup/k0s/services with a quota and a dedicated 10Ti PV
+- Deploy the ARR stack in the media namespace through the media installer stage
+- Give each ARR service a dataset under tank/secure/no-backup/k0s/services/<service> with a quota and a dedicated 10Ti PV
 - Create the shared media-library dataset under tank/secure/no-backup/k0s/services/media-library with a quota and a dedicated 10Ti PV
-- Mount the shared library writable in Sonarr, Radarr, and qBittorrent
-- Route external traffic and DNS through OpenVPN with per-pod tun2socks helpers
-- Block direct Internet fallback when the VPN fails
 - Keep dashboards, peer ports, and discovery protocols unpublished
-- Bind qBittorrent to tun0, disable UPnP, and enable anonymous mode
 - Connect Prowlarr, Sonarr, Radarr, and qBittorrent automatically with native API keys and a Vault-managed qBittorrent password
 - Keep Sonarr, Radarr, Prowlarr, OpenVPN, and network helpers on native console output
-- Enable qBittorrent file logging and forward /config/qBittorrent/logs/qbittorrent.log through the file-logs sidecar
-- Mount qBittorrent source logs read-only in the sidecar and persist read positions on its dataset
-- Start the logging sidecar before qBittorrent and stop it after the application
-- Rotate qBittorrent source logs at 10MiB and remove them after seven days
 - Use Recreate deployments to prevent overlapping log checkpoint writers
+- Apply the shared quality policy to Sonarr and Radarr
+    * Create or update a `private-cloud` quality profile in each application during installation
+    * Allow standard HDTV, WEB, and Blu-ray qualities from 720p through the selected resolution
+    * Exclude remux, raw, disc, and low-quality theatrical sources
+    * Use Blu-ray at the selected resolution as the automatic upgrade cutoff
+    * Select the `private-cloud` profile when adding series or movies and configuring import lists
+
+### Sonarr
+
+- Mount the shared media library writable
+- Configure `/media/tv` as the root folder
+- Collect a separate 720p, 1080p, or 2160p preference during initial configuration
+
+### Radarr
+
+- Mount the shared media library writable
+- Configure `/media/movies` as the root folder
+- Collect a separate 720p, 1080p, or 2160p preference during initial configuration
+
+### Prowlarr
+
+- Select indexer providers and credentials during operator setup
+
+### qBittorrent
+
+- Mount the shared media library writable
+- Bind qBittorrent to tun0, disable UPnP, and enable anonymous mode
+- Use the `private-cloud` WebUI username with the Vault-managed qBittorrent password
+- Enable file logging and forward /config/qBittorrent/logs/qbittorrent.log through the file-logs sidecar
+- Mount source logs read-only in the sidecar and persist read positions on the qBittorrent dataset
+- Start the logging sidecar before qBittorrent and stop it after the application
+- Rotate source logs at 10MiB and remove them after seven days
+
+### OpenVPN
+
+- Route guarded media external traffic and DNS through OpenVPN with per-pod tun2socks helpers
+- Block direct Internet fallback when the VPN fails
 - Pin the OpenVPN endpoint to a literal IP and allow only its transport outside the tunnel
 - Route external DNS through the VPN and cluster-local DNS through cluster DNS
 - Disable guarded media IPv6 until equivalent capture and filtering exist
-- Configure /media/tv and /media/movies as ARR root folders
-- Collect separate 720p, 1080p, or 2160p preferences for Sonarr and Radarr during initial configuration
-- Create or update a `private-cloud` quality profile in each application during installation
-- Allow standard HDTV, WEB, and Blu-ray qualities from 720p through the selected resolution
-- Exclude remux, raw, disc, and low-quality theatrical sources
-- Use Blu-ray at the selected resolution as the automatic upgrade cutoff
-- Select the `private-cloud` profile when adding series or movies and configuring import lists
-- Select indexer providers and credentials during operator setup
-- Create Sonarr, Radarr, Prowlarr, and qBittorrent datasets under tank/secure/no-backup/k0s/services/<service>
-- Use the `private-cloud` WebUI username with the Vault-managed qBittorrent password
-- Mount the shared media library read-only in Jellyfin
 
 ## Jellyfin
 
@@ -215,8 +299,10 @@ Implementation may lag behind this specification; this file does not certify dep
 - Use one shared Intel i915 GPU allocation for transcoding
 - Expose the configured hostname through Traefik HTTPS
 - Accept connections only from Traefik and allow direct Internet metadata egress
-- Apply library settings with plugin repositories disabled before Jellyfin starts
-- Keep online metadata and image download enabled while disabling subtitle, plugin, and remote-media integrations
+- Enable Keycloak OIDC login through a compatible Jellyfin SSO plugin
+- Support native Jellyfin clients through [OIDC-authorized Quick Connect](https://github.com/aussierk/jellyfin-plugin-oidc#mobile--native-apps-quick-connect) where the client supports it
+- Apply library settings and install only the approved SSO plugin before Jellyfin starts
+- Keep online metadata and image download enabled while disabling subtitle, unrelated plugin, and remote-media integrations
 - Use native console logging without a logging sidecar
 - Keep separate FFmpeg diagnostic logs on the Jellyfin dataset
 - Prune closed FFmpeg diagnostics after seven days or above 1GiB while preserving active files
@@ -236,6 +322,7 @@ Implementation may lag behind this specification; this file does not certify dep
     * Limit Alloy Kubernetes API access to workload discovery and event collection
 - Enforce namespace default-deny policies with explicit service and port exceptions
 - Keep application credentials in role-owned Kubernetes Secrets and persistent plaintext secrets out of the repository
+- Use Keycloak as the shared source of interactive user identity while retaining application-specific authorization
 - Keep ingestion credentials separate from OpenObserve administrator credentials
 - Keep media VPN isolation independent of log collection
 
@@ -243,17 +330,17 @@ Implementation may lag behind this specification; this file does not certify dep
 
 ### Public entry and DNS
 
+- Maintain configured public A records with a dedicated Cloudflare DDNS token
+
+### Traefik
+
 - Deploy Traefik with host TCP 443 for HTTPS and host TCP 25 for SMTP
 - Publish application services as ClusterIP endpoints behind exact Traefik host rules
 - Obtain Traefik HTTPS certificates with Cloudflare DNS-01
 - Proxy SMTP TCP 25 to Stalwart without terminating STARTTLS
-- Maintain configured public A records with a dedicated Cloudflare DDNS token
-- Use router forwarding for public entry and split DNS for LAN and VPN application access
-- Use split DNS and the internal Traefik address for OpenCloud and OnlyOffice callbacks
 - Give Traefik a quota-controlled backup dataset and a dedicated 10Ti PV/PVC
 - Enable structured Traefik service and access logs on stdout
 - Disable the Traefik dashboard and leave unknown HTTPS hosts without a route
-- Keep DDNS credentials separate from Traefik and Stalwart certificate credentials
 
 ### Host access and service isolation
 
@@ -262,11 +349,11 @@ Implementation may lag behind this specification; this file does not certify dep
 - Block obsolete application NodePorts and undeclared host ports
 - Label managed namespaces and enforce default-deny ingress and egress with explicit exceptions
 - Permit application dependencies only through declared service ports and namespace selectors
-- Maintain the permitted connection matrix in [NETWORKING.md](docs/NETWORKING.md)
+- Permit OIDC-enabled services to reach Keycloak for discovery, token exchange, and signing keys
 
 ### Namespace and host placement
 
-- Place application services, their databases, search dependencies, and Zabbix in private-cloud
+- Place application services, Keycloak, their databases, search dependencies, and Zabbix in private-cloud
 - Place Sonarr, Radarr, Prowlarr, qBittorrent, the OpenVPN gateway, and Jellyfin in media
 - Place Traefik in edge, AmneziaWG in network-access, and Cloudflare DDNS in dns-system
 - Place Alloy and OpenObserve in observability
@@ -292,7 +379,6 @@ Implementation may lag behind this specification; this file does not certify dep
 ### System-wide requirements
 
 - Probe every workload for readiness and liveness so unhealthy containers restart or leave service
-- Keep infrastructure metric alerts in Zabbix and recognized log alerts in OpenObserve
 - Preserve unclassified messages as investigation evidence without assigning an alert level
 - Deduplicate and suppress repeated alerts while a problem stays open
 - Email every Warning-or-higher problem, recovery, and recurring reminder through the mail service
@@ -300,6 +386,14 @@ Implementation may lag behind this specification; this file does not certify dep
 - Treat missing telemetry as a failure state, not as all-clear
 
 ### Zabbix metrics and alerts
+
+- Keep infrastructure metrics and metric alerts in Zabbix
+- Keep ZFS, ECC, and SMART metric results in Zabbix while forwarding collector failures as logs
+- Check enabled HTTPS and Stalwart SMTP STARTTLS certificates through Zabbix with expiry alerts at 21 and 7 days
+- Keep Alloy health, retry, and dropped-entry monitoring in Zabbix
+- Run the Zabbix Alloy and certificate collector without sudo or OpenObserve administrator credentials
+
+#### Zabbix host
 
 - Run the Zabbix metrics gatherer on the host at system startup
     * ZFS errors
@@ -310,9 +404,15 @@ Implementation may lag behind this specification; this file does not certify dep
     * System RAM and CPU performance
     * RAM ECC corrected and uncorrected errors
     * Old snapshots, large snapshots
+- Route Zabbix Agent and host collector diagnostics through system logging, the journal, and Alloy into OpenObserve
+
+#### Zabbix k0s service
+
 - Deploy Zabbix server with its own dataset, quota, and 10Ti PV in the cluster
 - Zabbix service creates its database, login role, and credentials Secret
 - Connect Zabbix to its database
+- Bridge Keycloak OIDC to [Zabbix HTTP authentication](https://www.zabbix.com/documentation/current/en/manual/web_interface/frontend_sections/users/authentication/http) through a trusted web-server integration
+- Provision matching Zabbix users and accept authenticated identity only from that integration
 - Expose the Zabbix server port to the host metrics gatherer
 - Alert thresholds
     * Warn when tank usage exceeds 80% and raise a high alert above 90%
@@ -327,17 +427,13 @@ Implementation may lag behind this specification; this file does not certify dep
 - Alert on stale collectors, old snapshots, overdue scrubs, and unavailable ECC telemetry
 - Email Warning, Average, High, and Disaster problems through the configured relay when notifications are enabled
 - Use native stdout/stderr for Zabbix containers
-- Route Zabbix Agent and host collector diagnostics through system logging, the journal, and Alloy into OpenObserve
-- Keep ZFS, ECC, and SMART metric results in Zabbix while forwarding collector failures as logs
 - Send Zabbix problem, recovery, and hourly reminder emails to the local Stalwart mailbox
 - Retry Zabbix email delivery up to ten times at one-minute intervals
 - Pause Zabbix notifications for suppressed problems during maintenance
-- Check enabled HTTPS and Stalwart SMTP STARTTLS certificates through Zabbix with expiry alerts at 21 and 7 days
-- Keep Alloy health, retry, and dropped-entry monitoring in Zabbix
-- Run the Zabbix Alloy and certificate collector without sudo or OpenObserve administrator credentials
 
 ### Alloy log collection
 
+- Emit a host logging heartbeat to detect missing collection during quiet periods
 - Deploy digest-pinned Grafana Alloy as one node collector in observability
 - Create tank/secure/no-backup/k0s/services/alloy with a configurable 5G initial quota and dedicated 10Ti PV/PVC
 - Collect workload containers, init containers, sidecars, host journal entries, and Kubernetes events
@@ -355,7 +451,12 @@ Implementation may lag behind this specification; this file does not certify dep
 - Keep the Alloy endpoint private with default-deny policies
 - Read media logs from the node without granting media applications new egress
 
-### OpenObserve storage and queries
+### OpenObserve
+
+- Use local username/password login for diagnostic access without Keycloak OIDC or Dex
+- Evaluate log alert rules and send their notifications in OpenObserve
+
+#### Storage and queries
 
 - Deploy one digest-pinned OpenObserve 0.90.3 node in observability
 - Create tank/secure/no-backup/k0s/services/openobserve with a configurable 50G initial quota and dedicated 10Ti PV/PVC
@@ -364,21 +465,13 @@ Implementation may lag behind this specification; this file does not certify dep
 - Return 1,000 query rows by default and activate the memory circuit breaker at 90%
 - Use native stdout/stderr logging for collection by Alloy
 
-### Log alerts and delivery
+#### Log alert rules and delivery
 
-- Provision three severity rules and one missing-heartbeat rule in the logs stream
-- Evaluate each rule every minute over the preceding five minutes
-- Trigger severity alerts on at least one warn, error, or critical entry without an additional pending period
+- Evaluate four rules in the logs stream every minute over the preceding five minutes
+    * Warning: trigger on at least one entry with normalized warn severity
+    * Error: trigger on at least one entry with normalized error severity
+    * Critical: trigger on at least one entry with normalized critical severity
+    * Missing heartbeat: trigger when no host logging heartbeat appears in the window
 - Include Kubernetes Warning events and classify Traefik HTTP 5xx responses as errors
 - Suppress repeated notifications from each rule for five minutes
 - Keep OpenObserve internal logs searchable while excluding them from severity alerts to prevent notification feedback loops
-- Emit a host logging heartbeat to detect missing collection during quiet periods
-- Trigger the missing-heartbeat rule when no host logging heartbeat appears in the five-minute window
-- Disable OpenObserve SMTP and all four managed rules when notifications are disabled
-- Include the alert name, matching row count, severity, namespace, service, message, and investigation link in log emails
-- Keep log alert delivery dependent on OpenObserve, the external relay, DNS, inbound SMTP, and the local mailbox services
-
-### Monitoring boundaries
-
-- Keep OpenObserve health, metrics, internal warnings, and heartbeat searches outside Zabbix application probes
-- Keep shared dataset capacity and edge certificate monitoring separate from OpenObserve application health probes
