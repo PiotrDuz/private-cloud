@@ -1,7 +1,6 @@
 # Whole-system target specification
 
 This file is the source of truth for the desired system state and its major decisions.
-Implementation may lag behind this specification; this file does not certify deployment.
 
 ## Table of contents
 
@@ -45,7 +44,6 @@ Implementation may lag behind this specification; this file does not certify dep
     * [OpenObserve](#openobserve)
         + [Storage and queries](#storage-and-queries)
         + [Log alert rules and delivery](#log-alert-rules-and-delivery)
-    * [Monitoring boundaries](#monitoring-boundaries)
 
 ## ZFS storage
 
@@ -91,7 +89,7 @@ Implementation may lag behind this specification; this file does not certify dep
         + Set full_page_writes=off and disable checksumming and compression
         + Tune wal_init_zero and wal_recycle
 - Postgres service with its own Kubernetes volume linked with dataset is deployed in k0s
-- Use the TensorChord PostgreSQL 18 image and verify pgvector and VectorChord
+- Use the TensorChord PostgreSQL 18 image with pgvector and VectorChord
 - Disable the file collector and send PostgreSQL logs to stderr with an explicit timestamp and process prefix
 
 ## Keycloak
@@ -102,9 +100,14 @@ Implementation may lag behind this specification; this file does not certify dep
 - Persist identity, realm, and client configuration in the backed-up PostgreSQL database
 - Expose Keycloak at a configured hostname through Traefik HTTPS
 - Use one shared realm with separate OIDC clients for each application and its supported web, desktop, and mobile clients
-- Store client secrets in role-owned Kubernetes Secrets and restrict redirect URIs to configured application callbacks
-- Use Keycloak login for every user-facing service except AmneziaWG, the ARR stack, and OpenObserve
-    * Include Stalwart web access and management, OpenCloud, Grist, AFFiNE, Immich, Jellyfin, and Zabbix
+- Store confidential-client secrets in role-owned Kubernetes Secrets and keep public clients secret-free
+- Restrict redirect URIs and web origins to each application's documented browser and native-client callbacks
+- Use one stable HTTPS realm issuer reachable by browsers and pods through split DNS
+- Configure Keycloak's [public hostname and trusted proxy headers](https://www.keycloak.org/server/reverseproxy) for Traefik TLS termination
+- Keep Keycloak administration restricted to designated administrators
+- End local application sessions on logout and use provider logout where supported
+- Use Keycloak login for every user-facing service except AmneziaWG, the ARR stack, Zabbix, and OpenObserve
+    * Include Stalwart web access and management, OpenCloud, Grist, AFFiNE, Immich, and Jellyfin
     * Use native OIDC or an integration that establishes the application's authenticated user session
     * Keep backend APIs, database connections, mail transport, and log ingestion on their service credentials
     * Keep internal services without interactive logins private
@@ -119,13 +122,17 @@ Implementation may lag behind this specification; this file does not certify dep
 ## Stalwart email
 
 - Deploy Stalwart with its own dataset under tank/secure/backup/k0s/services/stalwart, 10Ti PV, and quota
-- Create a Stalwart database, login role, and credentials Secret in the existing postgres service
+- Create a Stalwart database, login role, and credentials Secret in the shared PostgreSQL service
 - Configure the data store to use the Stalwart postgres database
 - Configure the blob store as filesystem storage on the Stalwart PV
 - Configure the search store to use Meilisearch
 - Configure the Default in-memory store to use the postgres data store
 - Configure Stalwart as the mailbox and JMAP submission service for the user-provided domain
-- Use the [Keycloak-backed OIDC directory](https://stalw.art/docs/install/directory/) for user authentication and retain Stalwart mailbox and administrator permissions
+- Use the Keycloak-backed OIDC directory for user authentication and retain Stalwart mailbox and administrator permissions
+    * Require OIDC-capable web and JMAP clients to obtain Keycloak access tokens
+    * Validate the Stalwart token audience and map identity claims to primary-domain mailboxes
+    * Pre-create mailboxes and forwarding aliases through the management API or CLI before first login
+    * Manage mailbox suspension and deletion explicitly without relying on OIDC or Enterprise SCIM
 - Publish JMAP, web access, and management through Traefik HTTPS TCP 443
 - Accept forwarded inbound mail through Traefik SMTP TCP 25 with Proxy Protocol v2
 - Terminate SMTP STARTTLS in Stalwart with an automatically renewed certificate
@@ -163,7 +170,7 @@ Implementation may lag behind this specification; this file does not certify dep
 - Create an OnlyOffice dataset under tank/secure/backup/k0s/services/onlyoffice with a quota
 - Deploy OnlyOffice Community Edition in k0s with its own 10Ti PV
 - Enable the OnlyOffice WOPI integration
-- Authenticate document users through the Keycloak-authenticated OpenCloud session and its WOPI authorization
+- Authenticate document users through the Keycloak-authenticated OpenCloud session and its WOPI access tokens
 - Expose OnlyOffice for the user-provided domain through a valid TLS reverse proxy
 - Use OnlyOffice 9.4.0.1's native entrypoint to forward /var/log/onlyoffice to container output without a logging sidecar
 - Persist source logs on the OnlyOffice dataset
@@ -173,22 +180,30 @@ Implementation may lag behind this specification; this file does not certify dep
 ## OpenCloud
 
 - Deploy OpenCloud with its own dataset under tank/secure/backup/k0s/services/opencloud, 10Ti PV, and quota
-- Authenticate OpenCloud web, desktop, and mobile clients through [Keycloak OIDC with authorization code flow and PKCE](https://docs.opencloud.eu/docs/admin/configuration/authentication-and-user-management/external-idp/)
+- Authenticate OpenCloud web, desktop, and mobile clients through Keycloak OIDC with authorization code flow and PKCE
+- Use OpenCloud autoprovisioning mode  with Keycloak as the identity source and OpenCloud's internal user directory
+- Register public PKCE clients for OpenCloud web, desktop, Android, and iOS with matching WebFinger configuration
+- Map Keycloak claims to stable OpenCloud user identities and explicit user or administrator roles
 - Configure OpenCloud to use Apache Tika for content extraction
 - Configure the search service to use the Bleve backend
 - Configure supported cache stores to use in-memory storage
 - Configure the file storage to use filesystem storage on the OpenCloud PV
 - Enable the built-in collaboration service and connect it to OnlyOffice
-- Install and configure the Draw.io web extension
+- Install and configure the Draw.io web extension within authenticated OpenCloud sessions
 - Expose OpenCloud for the user-provided domain through a valid TLS reverse proxy
 - Use native stdout/stderr logging for collection by Alloy
 
 ## Grist
 
 - Deploy Grist with its own dataset under tank/secure/backup/k0s/services/grist, 10Ti PV, and quota
-- Create a Grist database, login role, and credentials Secret in the existing postgres service
+- Create a Grist database, login role, and credentials Secret in the shared PostgreSQL service
 - Persist Grist documents on its PV and isolate formulas with Pyodide
-- Enable [Grist native OIDC](https://support.getgrist.com/install/oidc/) with Keycloak and the required full-edition activation key
+- Use [Grist forwarded-header authentication](https://support.getgrist.com/install/forwarded-headers/) through Traefik and a Keycloak OIDC ForwardAuth helper
+    * Set `GRIST_FORWARD_AUTH_HEADER=X-Forwarded-User` to receive the authenticated user's email
+    * Route Grist `/auth/login`, the OIDC callback, and configured logout path through the authentication helper
+- Use verified Keycloak email identities for Grist accounts and keep document permissions in Grist
+- Use a single Grist team site for the supported forwarded-header login flow
+- Accept Grist user-facing traffic only from Traefik and discard client-supplied identity headers
 - Expose Grist for the user-provided domain through a valid TLS reverse proxy
 - Use native stdout/stderr logging for collection by Alloy
 
@@ -210,6 +225,8 @@ Implementation may lag behind this specification; this file does not certify dep
 - Deploy AFFiNE with its own dataset under tank/secure/backup/k0s/services/affine, 10Ti PV, and quota
 - Create an AFFiNE database with pgvector enabled in the shared PostgreSQL service
 - Configure [AFFiNE OIDC sign-in](https://affine.pro/enterprise) with Keycloak through its administration settings
+- Configure its confidential client, issuer, verified email claims, and HTTPS `/oauth/callback` redirect
+- Permit AFFiNE's OIDC client to reach only the trusted Keycloak issuer when it resolves to a private address
 - Configure the server-side indexer to use Manticore Search
 - Use the independent `redis-affine` service
 - Prepare the fresh AFFiNE database schema before the server starts
@@ -228,14 +245,17 @@ Implementation may lag behind this specification; this file does not certify dep
 ## Immich
 
 - Deploy Immich with its own dataset under tank/secure/backup/k0s/services/immich, 10Ti PV, and quota
-- Create an Immich database, login role, and credentials Secret in the existing PostgreSQL service
-- Install and verify pgvector and VectorChord in the shared PostgreSQL service
+- Create an Immich database, login role, and credentials Secret in the shared PostgreSQL service
+- Provide pgvector and VectorChord in the shared PostgreSQL service
 - Enable pgvector, VectorChord, and earthdistance in the Immich database
 - Deploy a disposable Valkey service for Immich background jobs
 - Deploy the Immich machine-learning service for face detection and recognition
 - Enable Intel OpenVINO acceleration through the shared i915 Kubernetes device resource
 - Persist the Immich media library on its PV
 - Enable [Immich native OIDC](https://docs.immich.app/administration/oauth/) with Keycloak for web and mobile clients
+- Register a confidential client with HTTPS `/auth/login`, `/user-settings`, and `app.immich:///oauth-callback` redirects
+- Map approved users to Immich accounts and manage administrator grants explicitly
+- Configure Immich backchannel logout and manage account permissions within Immich
 - Use native stdout/stderr logging for collection by Alloy
 - Run container root inside a Kubernetes user namespace
 
@@ -299,7 +319,8 @@ Implementation may lag behind this specification; this file does not certify dep
 - Use one shared Intel i915 GPU allocation for transcoding
 - Expose the configured hostname through Traefik HTTPS
 - Accept connections only from Traefik and allow direct Internet metadata egress
-- Enable Keycloak OIDC login through a compatible Jellyfin SSO plugin
+- Enable Keycloak OIDC login through a pinned [Jellyfin OIDC plugin](https://github.com/aussierk/jellyfin-plugin-oidc) compatible with the deployed Jellyfin version
+- Map Keycloak application roles to Jellyfin users, library access, and administrator permissions
 - Support native Jellyfin clients through [OIDC-authorized Quick Connect](https://github.com/aussierk/jellyfin-plugin-oidc#mobile--native-apps-quick-connect) where the client supports it
 - Apply library settings and install only the approved SSO plugin before Jellyfin starts
 - Keep online metadata and image download enabled while disabling subtitle, unrelated plugin, and remote-media integrations
@@ -322,7 +343,8 @@ Implementation may lag behind this specification; this file does not certify dep
     * Limit Alloy Kubernetes API access to workload discovery and event collection
 - Enforce namespace default-deny policies with explicit service and port exceptions
 - Keep application credentials in role-owned Kubernetes Secrets and persistent plaintext secrets out of the repository
-- Use Keycloak as the shared source of interactive user identity while retaining application-specific authorization
+- Use Keycloak as the shared identity source for OIDC-enabled applications while retaining application-specific authorization
+- Keep host and Kubernetes administration on their own credentials and workload identities
 - Keep ingestion credentials separate from OpenObserve administrator credentials
 - Keep media VPN isolation independent of log collection
 
@@ -341,6 +363,13 @@ Implementation may lag behind this specification; this file does not certify dep
 - Give Traefik a quota-controlled backup dataset and a dedicated 10Ti PV/PVC
 - Enable structured Traefik service and access logs on stdout
 - Disable the Traefik dashboard and leave unknown HTTPS hosts without a route
+- Run a stateless [traefik-forward-auth](https://github.com/thomseddon/traefik-forward-auth) helper in edge for Grist's Keycloak OIDC login
+- Keep the helper's OIDC client secret and cookie-signing secret in Kubernetes Secrets
+- Configure ForwardAuth to pass the authenticated email to Grist through `X-Forwarded-User`
+- Strip incoming identity headers before authentication and forward only the helper's verified identity
+- Give the helper a dedicated confidential Keycloak client and restrict access to approved email identities
+- Handle Grist login, OIDC callbacks, and logout without an authentication redirect loop
+- Preserve native application authentication for OIDC APIs, mail protocols, and WOPI callbacks
 
 ### Host access and service isolation
 
@@ -349,7 +378,8 @@ Implementation may lag behind this specification; this file does not certify dep
 - Block obsolete application NodePorts and undeclared host ports
 - Label managed namespaces and enforce default-deny ingress and egress with explicit exceptions
 - Permit application dependencies only through declared service ports and namespace selectors
-- Permit OIDC-enabled services to reach Keycloak for discovery, token exchange, and signing keys
+- Permit OIDC-enabled services and the edge ForwardAuth helper to reach Keycloak for discovery, token exchange, user information, and signing keys
+- Permit configured Keycloak backchannel logout calls to applications that support them
 
 ### Namespace and host placement
 
@@ -372,6 +402,7 @@ Implementation may lag behind this specification; this file does not certify dep
 ### AmneziaWG
 
 - Deploy AmneziaWG in the network-access namespace with a configured UDP hostPort
+- Authenticate VPN peers using their configured keys
 - Use native stdout/stderr logging for collection by Alloy
 
 ## Observability
@@ -411,8 +442,7 @@ Implementation may lag behind this specification; this file does not certify dep
 - Deploy Zabbix server with its own dataset, quota, and 10Ti PV in the cluster
 - Zabbix service creates its database, login role, and credentials Secret
 - Connect Zabbix to its database
-- Bridge Keycloak OIDC to [Zabbix HTTP authentication](https://www.zabbix.com/documentation/current/en/manual/web_interface/frontend_sections/users/authentication/http) through a trusted web-server integration
-- Provision matching Zabbix users and accept authenticated identity only from that integration
+- Use local username/password login over HTTPS for the Zabbix web interface without Keycloak OIDC
 - Expose the Zabbix server port to the host metrics gatherer
 - Alert thresholds
     * Warn when tank usage exceeds 80% and raise a high alert above 90%
@@ -453,7 +483,7 @@ Implementation may lag behind this specification; this file does not certify dep
 
 ### OpenObserve
 
-- Use local username/password login for diagnostic access without Keycloak OIDC or Dex
+- Use local username/password login over HTTPS for diagnostic access without Keycloak OIDC or Dex
 - Evaluate log alert rules and send their notifications in OpenObserve
 
 #### Storage and queries
