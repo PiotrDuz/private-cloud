@@ -23,7 +23,10 @@ data:
         changed = []
         for hostname in RECORDS:
             record = get_record(token, hostname)
-            if record["content"] != address:
+            if record is None:
+                create_record(token, hostname, address)
+                changed.append(hostname)
+            elif record["content"] != address:
                 update_record(token, record["id"], hostname, address)
                 changed.append(hostname)
         print(json.dumps({"address": address, "updated": changed}))
@@ -48,9 +51,15 @@ data:
     def get_record(token, hostname):
         quoted = urllib.parse.quote(hostname, safe="")
         records = request(token, f"{API_ROOT}/zones/{ZONE_ID}/dns_records?type=A&name={quoted}")
-        if len(records) != 1:
-            raise RuntimeError(f"Expected one existing A record for {hostname}")
-        return records[0]
+        if len(records) > 1:
+            raise RuntimeError(f"Expected at most one existing A record for {hostname}")
+        return records[0] if records else None
+
+
+    def create_record(token, hostname, address):
+        request(token, f"{API_ROOT}/zones/{ZONE_ID}/dns_records", "POST", {
+            "type": "A", "name": hostname, "content": address, "ttl": 300, "proxied": False,
+        })
 
 
     def update_record(token, record_id, hostname, address):

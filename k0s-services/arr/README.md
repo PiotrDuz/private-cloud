@@ -10,6 +10,7 @@ The arr stack templates are managed by `ansible/roles/media` through the `media`
 - Block direct Internet fallback with NetworkPolicy.
 - Bind qBittorrent to `tun0` and disable UPnP.
 - Keep dashboards, peer ports, and discovery protocols unpublished.
+- Keep the arr stack and shared library on `no-backup` datasets.
 - Give each application a quota-controlled dataset and a dedicated `10Ti` PV.
 - Provision the shared `media-library` dataset and claim in this folder.
 - Mount the shared library writable in Sonarr, Radarr, and qBittorrent.

@@ -195,9 +195,9 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
         return existing
     source = existing or default_public_configuration()
     if mode == "update":
-        sections = prompt_line("Sections to change (stages, storage, k0s, networking, media, postgres, meilisearch, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, stalwart, zabbix, logging, notifications)", "").split()
+        sections = prompt_line("Sections to change (stages, storage, k0s, networking, media, postgres, meilisearch, keycloak, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, stalwart, zabbix, logging, notifications)", "").split()
     else:
-        sections = ["stages", "storage", "k0s", "networking", "media", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix", "logging", "notifications"]
+        sections = ["stages", "storage", "k0s", "networking", "media", "postgres", "meilisearch", "keycloak", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix", "logging", "notifications"]
     result = _copy_mapping(source)
     stages = result["private_cloud"]["stages"]
     if "stages" in sections:
@@ -267,6 +267,9 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
     if "meilisearch" in sections:
         for key in ("storage_size", "max_ram"):
             cloud["meilisearch"][key] = prompt_line(f"Meilisearch {key}", cloud["meilisearch"][key])
+    if "keycloak" in sections:
+        for key in ("storage_size", "max_ram", "hostname", "admin_username"):
+            cloud["keycloak"][key] = prompt_line(f"Keycloak {key}", cloud["keycloak"][key])
     if "tika" in sections:
         for key in ("storage_size", "max_ram"):
             cloud["tika"][key] = prompt_line(f"Tika {key}", cloud["tika"][key])
@@ -281,6 +284,9 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
     if "grist" in sections:
         for key in ("storage_size", "max_ram", "default_email", "hostname"):
             cloud["grist"][key] = prompt_line(f"Grist {key}", cloud["grist"][key])
+        cloud["grist"]["allowed_emails"] = prompt_line(
+            "Grist allowed emails separated by spaces", " ".join(cloud["grist"]["allowed_emails"])
+        ).split()
     if "manticore" in sections:
         for key in ("storage_size", "max_ram"):
             cloud["manticore"][key] = prompt_line(f"Manticore {key}", cloud["manticore"][key])
@@ -344,13 +350,19 @@ def collect_missing_secrets(configuration: dict[str, Any], public: dict[str, Any
         ("storage", "encryption_passphrase"): "ZFS encryption passphrase",
         ("postgres", "admin_password"): "PostgreSQL administrator password",
         ("meilisearch", "master_key"): "Meilisearch master key",
+        ("keycloak", "database_password"): "Keycloak database password",
+        ("keycloak", "admin_password"): "Keycloak administrator password",
         ("onlyoffice", "jwt_secret"): "OnlyOffice JWT secret",
         ("opencloud", "admin_password"): "OpenCloud administrator password",
         ("grist", "database_password"): "Grist database password",
         ("grist", "session_secret"): "Grist session secret",
         ("grist", "boot_key"): "Grist boot key",
+        ("grist", "oidc_client_secret"): "Grist OIDC client secret",
+        ("grist", "oidc_cookie_secret"): "Grist OIDC cookie secret",
         ("affine", "database_password"): "AFFiNE database password",
+        ("affine", "oidc_client_secret"): "AFFiNE OIDC client secret",
         ("immich", "database_password"): "Immich database password",
+        ("immich", "oidc_client_secret"): "Immich OIDC client secret",
         ("stalwart", "database_password"): "Stalwart database password",
         ("stalwart", "admin_password"): "Stalwart administrator password",
         ("stalwart", "mailbox_password"): "Stalwart mailbox password",
@@ -367,6 +379,7 @@ def collect_missing_secrets(configuration: dict[str, Any], public: dict[str, Any
         ("media", "openvpn_password"): "OpenVPN password",
         ("media", "proxy_password"): "Media VPN proxy password",
         ("media", "qbittorrent_password"): "qBittorrent WebUI password",
+        ("media", "jellyfin_oidc_client_secret"): "Jellyfin OIDC client secret",
     }
     for section, keys in SECRET_SCHEMAS.items():
         if not stages[SECRET_STAGES[section]]:
@@ -386,6 +399,7 @@ def update_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
     result = _copy_mapping(configuration)
     for section, key in (
         ("meilisearch", "master_key"),
+        ("keycloak", "database_password"),
         ("stalwart", "database_password"),
         ("stalwart", "admin_password"),
         ("stalwart", "mailbox_password"),
@@ -395,6 +409,7 @@ def update_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         ("grist", "database_password"),
         ("grist", "session_secret"),
         ("grist", "boot_key"),
+        ("grist", "oidc_cookie_secret"),
         ("affine", "database_password"),
         ("immich", "database_password"),
         ("zabbix", "database_password"),
@@ -405,6 +420,7 @@ def update_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         ("media", "openvpn_username"),
         ("media", "openvpn_password"),
         ("media", "proxy_password"),
+        ("media", "qbittorrent_password"),
     ):
         if stages[SECRET_STAGES[section]] and prompt_bool(f"Change {section}.{key}", False):
             result["private_cloud_secrets"][section][key] = (
@@ -417,7 +433,7 @@ def update_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
 
 def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> dict[str, Any]:
     result = _copy_mapping(configuration)
-    names = "meilisearch stalwart_database stalwart_admin mailbox relay stalwart_dns onlyoffice grist_database grist_session grist_boot affine_database immich_database zabbix_database cloudflare_acme cloudflare_ddns amneziawg openvpn_configuration openvpn_username openvpn_password media_proxy"
+    names = "meilisearch keycloak_database stalwart_database stalwart_admin mailbox relay stalwart_dns onlyoffice grist_database grist_session grist_boot grist_oidc_cookie affine_database immich_database zabbix_database cloudflare_acme cloudflare_ddns amneziawg openvpn_configuration openvpn_username openvpn_password media_proxy qbittorrent"
     selected = prompt_line(f"Secrets to rotate ({names})", "all").split()
     supported = {"all", *names.split()}
     if set(selected) - supported:
@@ -426,6 +442,7 @@ def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         selected = names.split()
     mapping = {
         "meilisearch": ("meilisearch", "master_key"),
+        "keycloak_database": ("keycloak", "database_password"),
         "stalwart_database": ("stalwart", "database_password"),
         "stalwart_admin": ("stalwart", "admin_password"),
         "mailbox": ("stalwart", "mailbox_password"),
@@ -436,6 +453,7 @@ def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         "grist_database": ("grist", "database_password"),
         "grist_session": ("grist", "session_secret"),
         "grist_boot": ("grist", "boot_key"),
+        "grist_oidc_cookie": ("grist", "oidc_cookie_secret"),
         "affine_database": ("affine", "database_password"),
         "immich_database": ("immich", "database_password"),
         "cloudflare_acme": ("networking", "cloudflare_api_token"),
@@ -445,6 +463,7 @@ def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         "openvpn_username": ("media", "openvpn_username"),
         "openvpn_password": ("media", "openvpn_password"),
         "media_proxy": ("media", "proxy_password"),
+        "qbittorrent": ("media", "qbittorrent_password"),
     }
     for name in selected:
         if name in mapping:
@@ -463,6 +482,11 @@ def reject_unsupported_secret_rotations(previous: dict[str, Any], candidate: dic
         ("logging", "admin_password"),
         ("storage", "encryption_passphrase"),        ("postgres", "admin_password"),
         ("zabbix", "admin_password"),
+        ("keycloak", "admin_password"),
+        ("grist", "oidc_client_secret"),
+        ("affine", "oidc_client_secret"),
+        ("immich", "oidc_client_secret"),
+        ("media", "jellyfin_oidc_client_secret"),
     )
     changed = [
         f"{section}.{key}"
@@ -472,24 +496,6 @@ def reject_unsupported_secret_rotations(previous: dict[str, Any], candidate: dic
     ]
     if changed:
         raise InstallerError(f"Unsupported credential rotation requested: {', '.join(changed)}")
-
-
-def configured_secret_markers() -> dict[str, Any]:
-    return {
-        "storage": {"encryption_passphrase": "configured"},
-        "postgres": {"admin_password": "configured"},
-        "meilisearch": {"master_key": "configured"},
-        "stalwart": {"database_password": "configured", "admin_password": "configured", "mailbox_password": "configured", "relay_password": "configured", "certificate_dns_api_token": "configured"},
-        "onlyoffice": {"jwt_secret": "configured"},
-        "opencloud": {"admin_password": "configured"},
-        "grist": {"database_password": "configured", "session_secret": "configured", "boot_key": "configured"},
-        "affine": {"database_password": "configured"},
-        "immich": {"database_password": "configured"},
-        "zabbix": {"database_password": "configured", "admin_password": "configured"},
-        "networking": {"cloudflare_api_token": "configured", "cloudflare_ddns_api_token": "configured", "amneziawg_private_key": "configured"},
-        "logging": {"admin_password": "configured"},
-        "media": {"openvpn_configuration": "configured", "openvpn_username": "configured", "openvpn_password": "configured", "proxy_password": "configured"},
-    }
 
 
 def prompt_bool(prompt: str, default: bool) -> bool:

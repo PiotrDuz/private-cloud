@@ -20,6 +20,7 @@ spec:
         private-cloud.example/apps-config-checksum: "{{ lookup('template', manifest_template_dir ~ '/apps-configmap.yaml.j2') | hash('sha256') }}"
         private-cloud.example/app-registry-config-checksum: "{{ lookup('template', manifest_template_dir ~ '/app-registry-configmap.yaml.j2') | hash('sha256') }}"
         private-cloud.example/csp-config-checksum: "{{ lookup('template', manifest_template_dir ~ '/csp-configmap.yaml.j2') | hash('sha256') }}"
+        private-cloud.example/wopi-secret-checksum: "{{ opencloud_wopi_secret_checksum }}"
     spec:
       serviceAccountName: opencloud
       automountServiceAccountToken: false
@@ -78,6 +79,27 @@ spec:
             - {name: IDM_CREATE_DEMO_USERS, value: "false"}
             - name: IDM_ADMIN_PASSWORD
               valueFrom: {secretKeyRef: {name: opencloud-credentials, key: IDM_ADMIN_PASSWORD}}
+            - {name: OC_EXCLUDE_RUN_SERVICES, value: idp}
+            - {name: OC_OIDC_ISSUER, value: {{ ("https://" ~ private_cloud.keycloak.hostname ~ "/realms/private-cloud") | to_json }}}
+            - {name: IDP_DOMAIN, value: {{ private_cloud.keycloak.hostname | to_json }}}
+            - {name: OC_OIDC_CLIENT_ID, value: opencloud}
+            - {name: WEBFINGER_WEB_OIDC_CLIENT_ID, value: opencloud}
+            - {name: WEBFINGER_DESKTOP_OIDC_CLIENT_ID, value: opencloud}
+            - {name: WEBFINGER_ANDROID_OIDC_CLIENT_ID, value: opencloud}
+            - {name: WEBFINGER_IOS_OIDC_CLIENT_ID, value: opencloud}
+            - {name: PROXY_OIDC_REWRITE_WELLKNOWN, value: "true"}
+            - {name: PROXY_OIDC_ACCESS_TOKEN_VERIFY_METHOD, value: jwt}
+            - {name: PROXY_USER_OIDC_CLAIM, value: sub}
+            - {name: PROXY_USER_CS3_CLAIM, value: username}
+            - {name: PROXY_AUTOPROVISION_ACCOUNTS, value: "true"}
+            - {name: PROXY_AUTOPROVISION_CLAIM_USERNAME, value: sub}
+            - {name: PROXY_ROLE_ASSIGNMENT_DRIVER, value: oidc}
+            - {name: PROXY_ROLE_ASSIGNMENT_OIDC_CLAIM, value: roles}
+            - {name: GRAPH_ASSIGN_DEFAULT_USER_ROLE, value: "false"}
+            - {name: GRAPH_USERNAME_MATCH, value: none}
+            - {name: SETTINGS_SETUP_DEFAULT_ASSIGNMENTS, value: "false"}
+            - {name: OC_ADMIN_USER_ID, value: ""}
+            - {name: WEB_OPTION_ACCOUNT_EDIT_LINK_HREF, value: {{ ("https://" ~ private_cloud.keycloak.hostname ~ "/realms/private-cloud/account") | to_json }}}
             - {name: SEARCH_ENGINE_TYPE, value: bleve}
             - {name: SEARCH_ENGINE_BLEVE_DATA_PATH, value: /var/lib/opencloud/search}
             - {name: SEARCH_EXTRACTOR_TYPE, value: tika}
@@ -86,7 +108,7 @@ spec:
             - {name: OC_CACHE_STORE, value: memory}
             - {name: STORAGE_USERS_DRIVER, value: posix}
             - {name: STORAGE_USERS_POSIX_ROOT, value: /var/lib/opencloud/storage/users}
-            - {name: STORAGE_USERS_ID_CACHE_STORE, value: nats-js-kv}
+            - {name: STORAGE_USERS_ID_CACHE_STORE, value: memory}
             - {name: STORAGE_SYSTEM_DRIVER, value: decomposed}
             - {name: WEB_ASSET_APPS_PATH, value: /var/lib/opencloud/web/assets/apps}
             - {name: PROXY_CSP_CONFIG_FILE_LOCATION, value: /etc/opencloud/csp.yaml}
@@ -98,6 +120,8 @@ spec:
             - {name: COLLABORATION_APP_INSECURE, value: "false"}
             - {name: COLLABORATION_APP_PROOF_DISABLE, value: "true"}
             - {name: COLLABORATION_WOPI_SRC, value: {{ ("https://" ~ private_cloud.opencloud.hostname) | to_json }}}
+            - name: COLLABORATION_WOPI_SECRET
+              valueFrom: {secretKeyRef: {name: onlyoffice-credentials, key: JWT_SECRET}}
             - {name: COLLABORATION_CS3API_DATAGATEWAY_INSECURE, value: "false"}
           ports:
             - {name: http, containerPort: 9200, protocol: TCP}

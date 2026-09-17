@@ -16,6 +16,8 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: immich
+      annotations:
+        checksum/oauth-config: {{ (private_cloud.keycloak.hostname ~ private_cloud_secrets.immich.oidc_client_secret) | hash('sha256') }}
     spec:
       serviceAccountName: immich
       automountServiceAccountToken: false
@@ -25,6 +27,57 @@ spec:
         runAsGroup: 0
         seccompProfile: {type: RuntimeDefault}
       terminationGracePeriodSeconds: 60
+      initContainers:
+        - name: render-config
+          image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
+          imagePullPolicy: IfNotPresent
+          command: [python3, /scripts/render_config.py]
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
+            - {name: IMMICH_OAUTH_ENABLED, value: 'true'}
+            - {name: IMMICH_OAUTH_ISSUER_URL, value: {{ ('https://' ~ private_cloud.keycloak.hostname ~ '/realms/private-cloud') | to_json }}}
+            - {name: IMMICH_OAUTH_CLIENT_ID, value: immich}
+            - name: IMMICH_OAUTH_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: immich-credentials, key: IMMICH_OAUTH_CLIENT_SECRET}}
+            - {name: IMMICH_OAUTH_SCOPE, value: 'openid email profile'}
+            - {name: IMMICH_OAUTH_AUTO_REGISTER, value: 'false'}
+            - {name: IMMICH_OAUTH_AUTO_LAUNCH, value: 'true'}
+            - {name: IMMICH_OAUTH_MOBILE_OVERRIDE_ENABLED, value: 'false'}
+            - {name: IMMICH_OAUTH_MOBILE_REDIRECT_URI, value: 'app.immich:///oauth-callback'}
+            - {name: IMMICH_OAUTH_ROLE_CLAIM, value: immich_role}
+            - {name: IMMICH_OAUTH_STORAGE_LABEL_CLAIM, value: preferred_username}
+            - {name: IMMICH_OAUTH_TOKEN_ENDPOINT_AUTH_METHOD, value: client_secret_post}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: config, mountPath: /config}
+            - {name: config-template, mountPath: /scripts, readOnly: true}
+        - name: prepare-library
+          image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, -c]
+          args:
+            - |
+              set -eu
+              mkdir -p /data/library
+              chown 0:0 /data/library
+              chmod 0750 /data/library
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL], add: [CHOWN, FOWNER]}
+            seccompProfile: {type: RuntimeDefault}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: data, mountPath: /data}
       containers:
         - name: immich-server
           image: ghcr.io/immich-app/immich-server:v3.1.0@sha256:b434cb9287eea1471c9974845914d4dd328c9c2d652e446ed4930f99944f0ceb
@@ -36,6 +89,8 @@ spec:
           env:
             - {name: TZ, value: {{ private_cloud.immich.timezone | to_json }}}
             - {name: IMMICH_ENV, value: production}
+            - {name: IMMICH_CONFIG_FILE, value: /config/immich-config.json}
+            - {name: IMMICH_MEDIA_LOCATION, value: /data/library}
             - {name: DB_HOSTNAME, value: {{ immich_postgres_service | to_json }}}
             - {name: DB_PORT, value: "5432"}
             - {name: DB_DATABASE_NAME, value: {{ immich_database_name | to_json }}}
@@ -68,7 +123,12 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 5
           volumeMounts:
-            - {name: data, mountPath: /data, subPath: library}
+            - {name: data, mountPath: /data}
+            - {name: config, mountPath: /config, readOnly: true}
       volumes:
         - name: data
           persistentVolumeClaim: {claimName: immich-data}
+        - name: config
+          emptyDir: {}
+        - name: config-template
+          configMap: {name: immich-config}

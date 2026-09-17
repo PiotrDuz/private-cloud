@@ -24,6 +24,14 @@ spec:
         - {protocol: UDP, port: 53}
         - {protocol: TCP, port: 53}
     - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: private-cloud}
+      ports: [{protocol: TCP, port: 443}]
+    - to:
+        - ipBlock:
+            cidr: {{ private_cloud.networking.traefik_internal_ip }}/32
+      ports: [{protocol: TCP, port: 443}]
+    - to:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:

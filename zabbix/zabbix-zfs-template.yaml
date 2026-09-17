@@ -1096,6 +1096,33 @@ zabbix_export:
               expression: 'min(/ZFS by Zabbix agent active/zfs.dataset.utilization["config"],5m)>={$ZFS.DATASET.CAPACITY.HIGH}'
               name: 'ZFS dataset config is over 90% utilized'
               priority: HIGH
+        - uuid: ec01f4cc16f64bd5a1aaab396627e7ad
+          name: 'Dataset config: Quota'
+          type: DEPENDENT
+          key: 'zfs.dataset.quota["config"]'
+          delay: '0'
+          history: 90d
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$["datasets"]["tank/secure/backup/k0s/config"]["quota"]'
+          master_item:
+            key: zfs.metrics
+          tags:
+            - tag: component
+              value: dataset
+        - uuid: a861b2029fab4944ba526bff805691c3
+          name: 'Dataset config: Quota headroom'
+          type: CALCULATED
+          key: 'zfs.dataset.headroom["config"]'
+          delay: 1m
+          history: 90d
+          units: B
+          params: 'last(/ZFS by Zabbix agent active/zfs.dataset.quota["config"])-last(/ZFS by Zabbix agent active/zfs.dataset.used["config"])'
+          tags:
+            - tag: component
+              value: dataset-capacity
         - uuid: feba17967bf140238298cd6b6b0c1304
           name: 'Dataset images: Used'
           type: DEPENDENT

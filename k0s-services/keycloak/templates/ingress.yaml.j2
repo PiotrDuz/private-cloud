@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ keycloak_service_name }}
+  namespace: {{ keycloak_namespace }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls.certresolver: cloudflare
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [{{ private_cloud.keycloak.hostname }}]
+  rules:
+    - host: {{ private_cloud.keycloak.hostname }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ keycloak_service_name }}
+                port: {number: {{ keycloak_container_port }}}

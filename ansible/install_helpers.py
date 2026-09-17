@@ -39,27 +39,29 @@ KUBECONFIG_FILE = RUNTIME_DIRECTORY / "kubeconfig"
 INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
 SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate")
-CURRENT_SCHEMA_VERSION = 7
-CURRENT_SECRETS_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 8
+CURRENT_SECRETS_SCHEMA_VERSION = 4
 SECRET_SCHEMAS = {
     "storage": {"encryption_passphrase"},
     "postgres": {"admin_password"},
     "meilisearch": {"master_key"},
+    "keycloak": {"database_password", "admin_password"},
     "stalwart": {"database_password", "admin_password", "mailbox_password", "relay_password", "certificate_dns_api_token"},
     "zabbix": {"database_password", "admin_password"},
     "onlyoffice": {"jwt_secret"},
     "opencloud": {"admin_password"},
-    "grist": {"database_password", "session_secret", "boot_key"},
-    "affine": {"database_password"},
-    "immich": {"database_password"},
+    "grist": {"database_password", "session_secret", "boot_key", "oidc_client_secret", "oidc_cookie_secret"},
+    "affine": {"database_password", "oidc_client_secret"},
+    "immich": {"database_password", "oidc_client_secret"},
     "networking": {"cloudflare_api_token", "cloudflare_ddns_api_token", "amneziawg_private_key"},
     "logging": {"admin_password"},
-    "media": {"openvpn_configuration", "openvpn_username", "openvpn_password", "proxy_password", "qbittorrent_password"},
+    "media": {"openvpn_configuration", "openvpn_username", "openvpn_password", "proxy_password", "qbittorrent_password", "jellyfin_oidc_client_secret"},
 }
 SECRET_STAGES = {
     "storage": "zfs",
     "postgres": "postgres",
     "meilisearch": "meilisearch",
+    "keycloak": "keycloak",
     "stalwart": "stalwart",
     "zabbix": "zabbix_server",
     "onlyoffice": "onlyoffice",
@@ -217,11 +219,11 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if configuration["schema_version"] != CURRENT_SCHEMA_VERSION:
         raise InstallerError(f"Public configuration schema_version must be {CURRENT_SCHEMA_VERSION}")
     cloud = configuration["private_cloud"]
-    expected = {"stages", "storage", "k0s", "networking", "media", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix", "logging", "notifications"}
+    expected = {"stages", "storage", "k0s", "networking", "media", "postgres", "meilisearch", "keycloak", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix", "logging", "notifications"}
     if set(cloud) != expected:
         raise InstallerError("Public configuration has missing or unknown sections")
     stages = cloud["stages"]
-    if not isinstance(stages, dict) or set(stages) != {"zfs", "k0s", "networking", "media", "intel_gpu", "postgres", "meilisearch", "stalwart", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "zabbix_server", "zabbix_agent", "logging", "notifications"}:
+    if not isinstance(stages, dict) or set(stages) != {"zfs", "k0s", "networking", "media", "intel_gpu", "postgres", "meilisearch", "keycloak", "stalwart", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "zabbix_server", "zabbix_agent", "logging", "notifications"}:
         raise InstallerError("Stage configuration is incomplete")
     if any(type(value) is not bool for value in stages.values()):
         raise InstallerError("Every stage flag must be Boolean")
@@ -344,8 +346,8 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         endpoint_address = ipaddress.ip_address(openvpn["endpoint_ip"])
     except (TypeError, ValueError) as error:
         raise InstallerError("Invalid OpenVPN address") from error
-    if gateway_address not in service_network or endpoint_address.is_loopback:
-        raise InstallerError("The OpenVPN gateway must use the service CIDR and its endpoint must be public")
+    if gateway_address not in service_network or endpoint_address.version != 4 or endpoint_address.is_loopback:
+        raise InstallerError("The OpenVPN gateway must use the service CIDR and its endpoint must be a public IPv4 address")
     if type(openvpn.get("endpoint_port")) is not int or not 1 <= openvpn["endpoint_port"] <= 65535:
         raise InstallerError("Invalid OpenVPN endpoint port")
     if openvpn.get("endpoint_protocol") not in {"TCP", "UDP"}:
@@ -364,6 +366,20 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Meilisearch configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(meilisearch.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(meilisearch.get("max_ram", ""))):
         raise InstallerError("Invalid Meilisearch size configuration")
+    keycloak = cloud["keycloak"]
+    expected_keycloak = {"storage_size", "max_ram", "hostname", "admin_username"}
+    if not isinstance(keycloak, dict) or set(keycloak) != expected_keycloak:
+        raise InstallerError("Keycloak configuration has missing or unknown keys")
+    if not QUOTA_PATTERN.fullmatch(str(keycloak.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(keycloak.get("max_ram", ""))):
+        raise InstallerError("Invalid Keycloak size configuration")
+    if ram_to_bytes(keycloak["max_ram"]) < 1073741824:
+        raise InstallerError("Keycloak max_ram must be at least 1Gi")
+    if not isinstance(keycloak.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(keycloak["hostname"]):
+        raise InstallerError("Invalid keycloak.hostname")
+    if not isinstance(keycloak.get("admin_username"), str) or not keycloak["admin_username"]:
+        raise InstallerError("Missing keycloak.admin_username")
+    if any(character in keycloak["admin_username"] for character in ("\r", "\n")):
+        raise InstallerError("Keycloak administrator name must be a single-line value")
     stalwart = cloud["stalwart"]
     tika = cloud["tika"]
     if not isinstance(tika, dict) or set(tika) != {"storage_size", "max_ram"}:
@@ -394,7 +410,7 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if opencloud["hostname"] == onlyoffice["hostname"]:
         raise InstallerError("OpenCloud and OnlyOffice endpoints must differ")
     grist = cloud["grist"]
-    expected_grist = {"storage_size", "max_ram", "default_email", "hostname"}
+    expected_grist = {"storage_size", "max_ram", "default_email", "allowed_emails", "hostname"}
     if not isinstance(grist, dict) or set(grist) != expected_grist:
         raise InstallerError("Grist configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(grist.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(grist.get("max_ram", ""))):
@@ -403,6 +419,11 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Grist max_ram must be at least 512Mi")
     if not isinstance(grist.get("default_email"), str) or not EMAIL_PATTERN.fullmatch(grist["default_email"]):
         raise InstallerError("Invalid grist.default_email")
+    allowed_emails = grist.get("allowed_emails")
+    if not isinstance(allowed_emails, list) or not allowed_emails or len(allowed_emails) != len(set(allowed_emails)):
+        raise InstallerError("Grist allowed emails must be a non-empty unique list")
+    if any(not isinstance(address, str) or not EMAIL_PATTERN.fullmatch(address) for address in allowed_emails):
+        raise InstallerError("Invalid Grist allowed email address")
     if not isinstance(grist.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(grist["hostname"]):
         raise InstallerError("Invalid grist.hostname")
     manticore = cloud["manticore"]
@@ -447,7 +468,7 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Invalid immich.timezone")
     if not isinstance(immich.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(immich["hostname"]):
         raise InstallerError("Invalid immich.hostname")
-    public_hostnames = [onlyoffice["hostname"], opencloud["hostname"], grist["hostname"], affine["hostname"], immich["hostname"]]
+    public_hostnames = [onlyoffice["hostname"], opencloud["hostname"], grist["hostname"], affine["hostname"], immich["hostname"], keycloak["hostname"]]
     if len(public_hostnames) != len(set(public_hostnames)):
         raise InstallerError("Every public application hostname must be unique")
     expected_stalwart = {
@@ -509,6 +530,7 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         "logging": logging["hostname"],
         "networking": amneziawg["hostname"],
         "media": media["hostname"],
+        "keycloak": keycloak["hostname"],
         "stalwart": stalwart["hostname"],
         "zabbix_server": networking["zabbix_hostname"],
         "onlyoffice": cloud["onlyoffice"]["hostname"],
@@ -544,16 +566,28 @@ def validate_secrets_configuration(configuration: Mapping[str, Any], stages: Map
             raise InstallerError(f"Encrypted configuration is missing credentials for enabled stage {SECRET_STAGES[section]}")
     if "meilisearch" in secrets_root and "master_key" in secrets_root["meilisearch"] and len(secrets_root["meilisearch"]["master_key"].encode()) < 16:
         raise InstallerError("The Meilisearch master key must contain at least 16 bytes")
+    if "keycloak" in secrets_root and "database_password" in secrets_root["keycloak"] and len(secrets_root["keycloak"]["database_password"]) < 16:
+        raise InstallerError("The Keycloak database password must contain at least 16 characters")
+    if "keycloak" in secrets_root and "admin_password" in secrets_root["keycloak"] and len(secrets_root["keycloak"]["admin_password"]) < 16:
+        raise InstallerError("The Keycloak administrator password must contain at least 16 characters")
     if "onlyoffice" in secrets_root and "jwt_secret" in secrets_root["onlyoffice"] and len(secrets_root["onlyoffice"]["jwt_secret"]) < 32:
         raise InstallerError("The OnlyOffice JWT secret must contain at least 32 characters")
     if "grist" in secrets_root and "session_secret" in secrets_root["grist"] and len(secrets_root["grist"]["session_secret"]) < 32:
         raise InstallerError("The Grist session secret must contain at least 32 characters")
     if "grist" in secrets_root and "boot_key" in secrets_root["grist"] and len(secrets_root["grist"]["boot_key"]) < 16:
         raise InstallerError("The Grist boot key must contain at least 16 characters")
+    if "grist" in secrets_root and "oidc_client_secret" in secrets_root["grist"] and len(secrets_root["grist"]["oidc_client_secret"]) < 16:
+        raise InstallerError("The Grist OIDC client secret must contain at least 16 characters")
+    if "grist" in secrets_root and "oidc_cookie_secret" in secrets_root["grist"] and len(secrets_root["grist"]["oidc_cookie_secret"]) < 32:
+        raise InstallerError("The Grist OIDC cookie secret must contain at least 32 characters")
     if "affine" in secrets_root and "database_password" in secrets_root["affine"] and len(secrets_root["affine"]["database_password"]) < 16:
         raise InstallerError("The AFFiNE database password must contain at least 16 characters")
+    if "affine" in secrets_root and "oidc_client_secret" in secrets_root["affine"] and len(secrets_root["affine"]["oidc_client_secret"]) < 16:
+        raise InstallerError("The AFFiNE OIDC client secret must contain at least 16 characters")
     if "immich" in secrets_root and "database_password" in secrets_root["immich"] and len(secrets_root["immich"]["database_password"]) < 16:
         raise InstallerError("The Immich database password must contain at least 16 characters")
+    if "immich" in secrets_root and "oidc_client_secret" in secrets_root["immich"] and len(secrets_root["immich"]["oidc_client_secret"]) < 16:
+        raise InstallerError("The Immich OIDC client secret must contain at least 16 characters")
     if "networking" in secrets_root:
         api_token = secrets_root["networking"].get("cloudflare_api_token", "")
         ddns_api_token = secrets_root["networking"].get("cloudflare_ddns_api_token", "")
@@ -566,6 +600,8 @@ def validate_secrets_configuration(configuration: Mapping[str, Any], stages: Map
         raise InstallerError("The media VPN proxy password must contain 16 to 64 URL-safe characters")
     if "media" in secrets_root and len(secrets_root["media"].get("qbittorrent_password", "")) < 16:
         raise InstallerError("The qBittorrent WebUI password must contain at least 16 characters")
+    if "media" in secrets_root and len(secrets_root["media"].get("jellyfin_oidc_client_secret", "")) < 16:
+        raise InstallerError("The Jellyfin OIDC client secret must contain at least 16 characters")
     if "stalwart" in secrets_root and len(secrets_root["stalwart"].get("certificate_dns_api_token", "")) < 20:
         raise InstallerError("The Stalwart certificate DNS API token must contain at least 20 characters")
     if "logging" in secrets_root:

@@ -13,8 +13,8 @@ media_tun2socks_image: ghcr.io/xjasonlyu/tun2socks:v2.7.0@sha256:f89e05e123404d4
 media_coredns_image: registry.k8s.io/coredns/coredns:v1.12.4@sha256:986f04c2e15e147d00bdd51e8c51bcef3644b13ff806be7d2ff1b261d6dfbae1
 media_datasets:
   jellyfin: tank/secure/backup/k0s/services/jellyfin
-  sonarr: tank/secure/backup/k0s/services/sonarr
-  radarr: tank/secure/backup/k0s/services/radarr
-  prowlarr: tank/secure/backup/k0s/services/prowlarr
-  qbittorrent: tank/secure/backup/k0s/services/qbittorrent
-  media-library: tank/secure/backup/k0s/services/media-library
+  sonarr: tank/secure/no-backup/k0s/services/sonarr
+  radarr: tank/secure/no-backup/k0s/services/radarr
+  prowlarr: tank/secure/no-backup/k0s/services/prowlarr
+  qbittorrent: tank/secure/no-backup/k0s/services/qbittorrent
+  media-library: tank/secure/no-backup/k0s/services/media-library

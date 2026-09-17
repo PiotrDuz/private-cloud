@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ keycloak_service_name }}
+  namespace: {{ keycloak_namespace }}
+  labels:
+    app.kubernetes.io/name: {{ keycloak_service_name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ keycloak_service_name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ keycloak_service_name }}
+    spec:
+      serviceAccountName: {{ keycloak_service_name }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: keycloak
+          image: {{ keycloak_image }}
+          imagePullPolicy: IfNotPresent
+          args: [start, --import-realm]
+          securityContext:
+            runAsNonRoot: true
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          env:
+            - {name: KC_DB, value: postgres}
+            - {name: KC_DB_URL, value: {{ ("jdbc:postgresql://" ~ keycloak_postgres_service ~ ":5432/" ~ keycloak_database_name) | to_json }}}
+            - {name: KC_DB_USERNAME, value: {{ keycloak_database_username | to_json }}}
+            - name: KC_DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ keycloak_credentials_secret_name }}, key: KC_DB_PASSWORD}}
+            - {name: KC_HOSTNAME, value: {{ ("https://" ~ private_cloud.keycloak.hostname) | to_json }}}
+            - {name: KC_HTTP_ENABLED, value: "true"}
+            - {name: KC_PROXY_HEADERS, value: xforwarded}
+            - {name: KC_HEALTH_ENABLED, value: "true"}
+            - {name: KC_LOG_LEVEL, value: {{ keycloak_log_level | to_json }}}
+          ports:
+            - {name: http, containerPort: {{ keycloak_container_port }}, protocol: TCP}
+            - {name: management, containerPort: {{ keycloak_management_port }}, protocol: TCP}
+          resources:
+            requests: {cpu: {{ keycloak_cpu_request }}, memory: {{ private_cloud.keycloak.max_ram | to_json }}, ephemeral-storage: {{ keycloak_ephemeral_storage_request }}}
+            limits: {memory: {{ private_cloud.keycloak.max_ram | to_json }}, ephemeral-storage: {{ keycloak_ephemeral_storage_limit }}}
+          startupProbe:
+            httpGet: {path: /health/started, port: management}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /health/ready, port: management}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet: {path: /health/live, port: management}
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          volumeMounts:
+            - {name: data, mountPath: /opt/keycloak/data}
+            - {name: realm, mountPath: /opt/keycloak/data/import, readOnly: true}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ keycloak_pvc_name }}
+        - name: realm
+          secret:
+            secretName: {{ keycloak_realm_secret_name }}
+            items:
+              - {key: {{ keycloak_realm_file_name }}, path: {{ keycloak_realm_file_name }}}

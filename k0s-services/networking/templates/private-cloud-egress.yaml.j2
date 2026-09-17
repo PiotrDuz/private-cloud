@@ -44,6 +44,28 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: immich-machine-learning-https-egress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: immich-machine-learning}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: application-traefik-egress
   namespace: private-cloud
 spec:
@@ -52,6 +74,23 @@ spec:
       - key: app.kubernetes.io/name
         operator: In
         values: [onlyoffice, opencloud]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: {{ private_cloud.networking.traefik_internal_ip }}/32}
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-issuer-egress
+  namespace: private-cloud
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [affine, affine-database-preparation, grist, immich, opencloud, stalwart]
   policyTypes: [Egress]
   egress:
     - to:
@@ -161,7 +200,7 @@ spec:
   egress:
     - to:
         - podSelector:
-            matchLabels: {app.kubernetes.io/name: immich-valkey}
+            matchLabels: {app.kubernetes.io/name: valkey-immich}
       ports: [{protocol: TCP, port: 6379}]
     - to:
         - podSelector:

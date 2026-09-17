@@ -88,7 +88,7 @@
 
 - name: Create the qBittorrent configuration directory
   ansible.builtin.file:
-    path: /tank/secure/backup/k0s/services/qbittorrent/qBittorrent
+    path: "/{{ media_datasets['qbittorrent'] }}/qBittorrent"
     state: directory
     owner: 1000
     group: 1000
@@ -97,7 +97,7 @@
 - name: Install guarded qBittorrent defaults
   ansible.builtin.template:
     src: qbittorrent.conf.j2
-    dest: /tank/secure/backup/k0s/services/qbittorrent/qBittorrent/qBittorrent.conf
+    dest: "/{{ media_datasets['qbittorrent'] }}/qBittorrent/qBittorrent.conf"
     owner: 1000
     group: 1000
     mode: '0600'
@@ -119,6 +119,14 @@
     kubeconfig: "{{ media_kubeconfig }}"
     state: present
     definition: "{{ lookup('template', 'qbittorrent-secret.yml.j2') | from_yaml }}"
+  no_log: true
+
+- name: Apply Jellyfin credentials
+  kubernetes.core.k8s:
+    kubeconfig: "{{ media_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'jellyfin-secret.yml.j2') | from_yaml }}"
+  when: private_cloud.stages.media | bool
   no_log: true
 
 - name: Render arr stack manifests

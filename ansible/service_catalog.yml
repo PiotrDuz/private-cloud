@@ -11,13 +11,14 @@ private_cloud_dataset_catalog:
   - {name: ephemeral, stage: k0s, dataset: tank/secure/no-backup/k0s/ephemeral, color: FFA726}
   - {name: traefik, stage: networking, dataset: tank/secure/backup/k0s/services/traefik, color: 26A69A}
   - {name: jellyfin, stage: media, dataset: tank/secure/backup/k0s/services/jellyfin, color: 00897B}
-  - {name: sonarr, stage: media, dataset: tank/secure/backup/k0s/services/sonarr, color: 42A5F5}
-  - {name: radarr, stage: media, dataset: tank/secure/backup/k0s/services/radarr, color: FFC107}
-  - {name: prowlarr, stage: media, dataset: tank/secure/backup/k0s/services/prowlarr, color: 7E57C2}
-  - {name: qbittorrent, stage: media, dataset: tank/secure/backup/k0s/services/qbittorrent, color: 2196F3}
-  - {name: media-library, stage: media, dataset: tank/secure/backup/k0s/services/media-library, color: 66BB6A}
+  - {name: sonarr, stage: media, dataset: tank/secure/no-backup/k0s/services/sonarr, color: 42A5F5}
+  - {name: radarr, stage: media, dataset: tank/secure/no-backup/k0s/services/radarr, color: FFC107}
+  - {name: prowlarr, stage: media, dataset: tank/secure/no-backup/k0s/services/prowlarr, color: 7E57C2}
+  - {name: qbittorrent, stage: media, dataset: tank/secure/no-backup/k0s/services/qbittorrent, color: 2196F3}
+  - {name: media-library, stage: media, dataset: tank/secure/no-backup/k0s/services/media-library, color: 66BB6A}
   - {name: postgres, stage: postgres, dataset: tank/secure/backup/k0s/services/postgres, color: AB47BC}
   - {name: meilisearch, stage: meilisearch, dataset: tank/secure/backup/k0s/services/meilisearch, color: 26A69A}
+  - {name: keycloak, stage: keycloak, dataset: tank/secure/backup/k0s/services/keycloak, color: 00695C}
   - {name: tika, stage: tika, dataset: tank/secure/backup/k0s/services/tika, color: 8D6E63}
   - {name: bleve, stage: bleve, dataset: tank/secure/backup/k0s/services/bleve, color: 26C6DA}
   - {name: onlyoffice, stage: onlyoffice, dataset: tank/secure/backup/k0s/services/onlyoffice, color: D4E157}
@@ -32,20 +33,21 @@ private_cloud_dataset_catalog:
 private_cloud_stage_dependencies:
   k0s: [zfs]
   networking: [k0s]
-  media: [networking, intel_gpu]
+  media: [networking, intel_gpu, keycloak]
   intel_gpu: [k0s]
   postgres: [k0s]
   meilisearch: [k0s]
-  stalwart: [networking, postgres, meilisearch]
+  keycloak: [networking, postgres]
+  stalwart: [networking, postgres, meilisearch, keycloak]
   tika: [k0s]
   bleve: [k0s]
   onlyoffice: [networking]
-  opencloud: [tika, bleve, onlyoffice]
-  grist: [networking, postgres]
+  opencloud: [tika, bleve, onlyoffice, keycloak]
+  grist: [networking, postgres, keycloak]
   manticore: [k0s]
   redis_affine: [k0s]
-  affine: [networking, postgres, manticore, redis_affine]
-  immich: [networking, postgres]
+  affine: [networking, postgres, manticore, redis_affine, keycloak]
+  immich: [networking, postgres, keycloak]
   zabbix_server: [networking, postgres]
   logging: [networking]
   notifications: [logging, stalwart, zabbix_server, zabbix_agent]

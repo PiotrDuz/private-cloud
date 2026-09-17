@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: immich-valkey
+  name: valkey-immich
   namespace: private-cloud
   labels:
-    app.kubernetes.io/name: immich-valkey
+    app.kubernetes.io/name: valkey-immich
 spec:
   selector:
-    app.kubernetes.io/name: immich-valkey
+    app.kubernetes.io/name: valkey-immich
   ports:
     - {name: valkey, port: 6379, targetPort: valkey, protocol: TCP}

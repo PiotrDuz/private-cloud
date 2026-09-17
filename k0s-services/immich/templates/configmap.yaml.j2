@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: immich-config
+  namespace: private-cloud
+data:
+  render_config.py: |
+{{ lookup('file', playbook_dir ~ '/../k0s-services/immich/render_config.py') | indent(4, true) }}

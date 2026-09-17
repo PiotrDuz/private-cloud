@@ -9,6 +9,8 @@
     zabbix_all_dataset_item_keys: []
     zabbix_dataset_item_key_prefixes:
       - zfs.dataset.used
+      - zfs.dataset.quota
+      - zfs.dataset.headroom
       - zfs.dataset.utilization
       - zfs.snapshot.retained
       - zfs.snapshot.retained_percent

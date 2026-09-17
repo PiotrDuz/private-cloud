@@ -53,7 +53,7 @@ This file is the source of truth for the desired system state and its major deci
 - Create tank/secure/backup and tank/secure/no-backup datasets
 - Schedule monthly scrubs
 - Enable auto trims
-- Unlock and mount at startup through native ZFS systemd integration and ZED mount caches
+- Unlock and mount at startup through native ZFS systemd integration and ZED list cache
 - Use ashift=12, zstd compression, POSIX ACLs, xattr=sa, and atime=off
 
 ## k0s cluster
@@ -65,16 +65,17 @@ This file is the source of truth for the desired system state and its major deci
 - Install k0s
 - Start k0s after ZFS is unlocked and mounted at system startup
 - Set explicit quotas for config, images, and ephemeral leaf datasets
-- Keep Kubernetes manifests as Jinja templates under k0s-services and render them directly with Ansible
+- Keep public workload manifests as Jinja templates under k0s-services and render them directly with Ansible
+- Keep role-owned Secret and Namespace manifests in role templates
 - Load the Intel i915 driver and install the matching firmware for integrated graphics
 - Deploy the Intel Kubernetes GPU plugin with shared allocations for machine learning and media workloads
 - Run one combined controller and worker with kube-router networking
 - Pin the k0s version and checksum in the owning role
-- Use node-bound local storage and single-writer workloads on this single-host cluster
+- Use node-bound local storage and one replica per workload on this single-host cluster
 - Store container logs under /tank/secure/k0s/kubelet/logs in the quota-controlled ephemeral kubelet dataset
 - Rotate container logs as five 10Mi files per container
-- Bound the persistent host journal to 1GiB and seven days initially
-- Keep CPU requests and memory limits without CPU limits for all Kubernetes containers
+- Bound the persistent host journal to 1GiB and seven days when the logging stage is enabled
+- Keep CPU requests and memory limits without CPU limits for all repository-managed containers
 
 ## PostgreSQL
 
@@ -86,8 +87,8 @@ This file is the source of truth for the desired system state and its major deci
         + Use logbias=latency
     * PostgreSQL settings
         + Set shared_buffers to 25% of the user-provided maximum container memory
-        + Set full_page_writes=off and disable checksumming and compression
-        + Tune wal_init_zero and wal_recycle
+        + Set full_page_writes=off, data_checksums=off, and wal_compression=off
+        + Set wal_init_zero=off and wal_recycle=off
 - Postgres service with its own Kubernetes volume linked with dataset is deployed in k0s
 - Use the TensorChord PostgreSQL 18 image with pgvector and VectorChord
 - Disable the file collector and send PostgreSQL logs to stderr with an explicit timestamp and process prefix
@@ -181,7 +182,7 @@ This file is the source of truth for the desired system state and its major deci
 
 - Deploy OpenCloud with its own dataset under tank/secure/backup/k0s/services/opencloud, 10Ti PV, and quota
 - Authenticate OpenCloud web, desktop, and mobile clients through Keycloak OIDC with authorization code flow and PKCE
-- Use OpenCloud autoprovisioning mode  with Keycloak as the identity source and OpenCloud's internal user directory
+- Use OpenCloud autoprovisioning mode with Keycloak as the identity source and OpenCloud's internal user directory
 - Register public PKCE clients for OpenCloud web, desktop, Android, and iOS with matching WebFinger configuration
 - Map Keycloak claims to stable OpenCloud user identities and explicit user or administrator roles
 - Configure OpenCloud to use Apache Tika for content extraction
@@ -225,6 +226,7 @@ This file is the source of truth for the desired system state and its major deci
 - Deploy AFFiNE with its own dataset under tank/secure/backup/k0s/services/affine, 10Ti PV, and quota
 - Create an AFFiNE database with pgvector enabled in the shared PostgreSQL service
 - Configure [AFFiNE OIDC sign-in](https://affine.pro/enterprise) with Keycloak through its administration settings
+    * Keep the self-hosted OIDC sign-in licence-free within ten seats
 - Configure its confidential client, issuer, verified email claims, and HTTPS `/oauth/callback` redirect
 - Permit AFFiNE's OIDC client to reach only the trusted Keycloak issuer when it resolves to a private address
 - Configure the server-side indexer to use Manticore Search
@@ -237,7 +239,7 @@ This file is the source of truth for the desired system state and its major deci
 
 ## Valkey for Immich
 
-- Deploy `valkey-immich` as an independent k0s service for Immich
+- Deploy `valkey-immich` through the Immich installer stage
 - Keep Valkey data ephemeral without a dataset, PV, or PVC
 - Restrict Valkey ingress to the Immich server
 - Use native stdout/stderr logging for collection by Alloy
@@ -263,12 +265,13 @@ This file is the source of truth for the desired system state and its major deci
 
 - Keep Sonarr, Radarr, Prowlarr, qBittorrent, and OpenVPN templates under k0s-services/arr
 - Deploy the ARR stack in the media namespace through the media installer stage
-- Give each ARR service a dataset under tank/secure/no-backup/k0s/services/<service> with a quota and a dedicated 10Ti PV
+- Give Sonarr, Radarr, Prowlarr, and qBittorrent a dataset under tank/secure/no-backup/k0s/services/<service> with a quota and a dedicated 10Ti PV
+- Keep the OpenVPN gateway stateless without a dataset
 - Create the shared media-library dataset under tank/secure/no-backup/k0s/services/media-library with a quota and a dedicated 10Ti PV
 - Keep dashboards, peer ports, and discovery protocols unpublished
 - Connect Prowlarr, Sonarr, Radarr, and qBittorrent automatically with native API keys and a Vault-managed qBittorrent password
 - Keep Sonarr, Radarr, Prowlarr, OpenVPN, and network helpers on native console output
-- Use Recreate deployments to prevent overlapping log checkpoint writers
+- Use a Recreate deployment for qBittorrent to prevent overlapping log checkpoint writers
 - Apply the shared quality policy to Sonarr and Radarr
     * Create or update a `private-cloud` quality profile in each application during installation
     * Allow standard HDTV, WEB, and Blu-ray qualities from 720p through the selected resolution
@@ -308,7 +311,7 @@ This file is the source of truth for the desired system state and its major deci
 - Block direct Internet fallback when the VPN fails
 - Pin the OpenVPN endpoint to a literal IP and allow only its transport outside the tunnel
 - Route external DNS through the VPN and cluster-local DNS through cluster DNS
-- Disable guarded media IPv6 until equivalent capture and filtering exist
+- Disable guarded media IPv6 through the IPv4-only cluster configuration until equivalent capture and filtering exist
 
 ## Jellyfin
 
@@ -374,7 +377,7 @@ This file is the source of truth for the desired system state and its major deci
 ### Host access and service isolation
 
 - Restrict SSH, the Kubernetes API, and Zabbix TCP 31051 to local networks
-- Permit only TCP 443, TCP 25, and the AmneziaWG UDP port from untrusted networks
+- Permit only TCP 443, TCP 25, the AmneziaWG UDP port, ICMP, and DHCP from untrusted networks
 - Block obsolete application NodePorts and undeclared host ports
 - Label managed namespaces and enforce default-deny ingress and egress with explicit exceptions
 - Permit application dependencies only through declared service ports and namespace selectors
@@ -409,7 +412,8 @@ This file is the source of truth for the desired system state and its major deci
 
 ### System-wide requirements
 
-- Probe every workload for readiness and liveness so unhealthy containers restart or leave service
+- Probe every workload container for readiness and liveness so unhealthy containers restart or leave service
+    * Exempt init containers, Jobs, CronJobs, and host device plugins
 - Preserve unclassified messages as investigation evidence without assigning an alert level
 - Deduplicate and suppress repeated alerts while a problem stays open
 - Email every Warning-or-higher problem, recovery, and recurring reminder through the mail service
@@ -429,7 +433,7 @@ This file is the source of truth for the desired system state and its major deci
 - Run the Zabbix metrics gatherer on the host at system startup
     * ZFS errors
     * Scrub runs
-    * Fixed leaf dataset size, quota, and quota utilization
+    * Fixed leaf dataset quota, quota headroom, and quota utilization
     * Total pool size
     * SMART disk metrics
     * System RAM and CPU performance
@@ -447,12 +451,12 @@ This file is the source of truth for the desired system state and its major deci
 - Alert thresholds
     * Warn when tank usage exceeds 80% and raise a high alert above 90%
     * Warn on service dataset quota utilization at 80% and raise high alerts for fixed leaf datasets at 90%
-    * Alert on SMART disk low health
+    * Alert on SMART disk low health through the linked stock SMART template
     * Alert on unfixed ZFS error
     * Warn on ZFS error that has been fixed (scrub or normal operation)
     * Alert on unfixed ECC error
     * Warn on ECC error that has been fixed
-- Link active Linux, SMART, ZFS, and ECC templates to private-cloud-zabbix
+- Link active Linux, SMART, ZFS, and ECC templates to `private-cloud-zabbix`, the Zabbix host name from the service catalog
 - Maintain the Dataset capacity dashboard from the enabled dataset catalog
 - Alert on stale collectors, old snapshots, overdue scrubs, and unavailable ECC telemetry
 - Email Warning, Average, High, and Disaster problems through the configured relay when notifications are enabled
@@ -467,7 +471,7 @@ This file is the source of truth for the desired system state and its major deci
 - Deploy digest-pinned Grafana Alloy as one node collector in observability
 - Create tank/secure/no-backup/k0s/services/alloy with a configurable 5G initial quota and dedicated 10Ti PV/PVC
 - Collect workload containers, init containers, sidecars, host journal entries, and Kubernetes events
-    * Retain journal records for the kernel, k0s, ZFS, SSH, Zabbix Agent, and logging heartbeat
+    * Retain journal records for the kernel, k0s, ZFS, SSH, Zabbix Agent, systemd units, and logging heartbeat
     * Collect host collector errors identified by private-cloud-zabbix-* syslog names
 - Keep applications on native stdout/stderr wherever supported
     * Use file-forwarding sidecars only for logs unavailable on stdout/stderr
@@ -491,7 +495,7 @@ This file is the source of truth for the desired system state and its major deci
 - Deploy one digest-pinned OpenObserve 0.90.3 node in observability
 - Create tank/secure/no-backup/k0s/services/openobserve with a configurable 50G initial quota and dedicated 10Ti PV/PVC
 - Use OpenObserve local mode with disk object storage and SQLite metadata
-- Retain logs for 14 days through OpenObserve compaction
+- Retain logs for a configurable 14 days by default through OpenObserve compaction
 - Return 1,000 query rows by default and activate the memory circuit breaker at 90%
 - Use native stdout/stderr logging for collection by Alloy
 

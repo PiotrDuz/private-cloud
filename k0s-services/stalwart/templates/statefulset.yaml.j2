@@ -44,6 +44,8 @@ spec:
               valueFrom: {secretKeyRef: {name: stalwart-runtime-credentials, key: STALWART_DB_PASSWORD}}
             - name: INBOX_EU_SMTP_PASSWORD
               valueFrom: {secretKeyRef: {name: stalwart-runtime-credentials, key: INBOX_EU_SMTP_PASSWORD}}
+            - name: STALWART_CLOUDFLARE_API_TOKEN
+              valueFrom: {secretKeyRef: {name: stalwart-runtime-credentials, key: STALWART_CLOUDFLARE_API_TOKEN}}
             - name: MEILI_MASTER_KEY
               valueFrom: {secretKeyRef: {name: meilisearch-credentials, key: MEILI_MASTER_KEY}}
             - name: STALWART_RECOVERY_ADMIN

@@ -15,7 +15,9 @@
       - immich_database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
       - immich_database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
       - private_cloud.immich.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$')
+      - private_cloud.keycloak.hostname | length > 0
       - private_cloud_secrets.immich.database_password | length >= 16
+      - private_cloud_secrets.immich.oidc_client_secret | length >= 16
     fail_msg: Immich configuration is invalid.
   no_log: true
 
@@ -133,11 +135,16 @@
       {{ immich_existing.results[2].resources | length > 0 and
          immich_existing.results[2].resources[0].data.DB_PASSWORD is defined and
          (immich_existing.results[2].resources[0].data.DB_PASSWORD | b64decode == private_cloud_secrets.immich.database_password) }}
+    immich_oidc_client_secret_matches: >-
+      {{ immich_existing.results[2].resources | length > 0 and
+         immich_existing.results[2].resources[0].data.IMMICH_OAUTH_CLIENT_SECRET is defined and
+         (immich_existing.results[2].resources[0].data.IMMICH_OAUTH_CLIENT_SECRET | b64decode == private_cloud_secrets.immich.oidc_client_secret) }}
   no_log: true
 
 - name: Reject incompatible unmanaged Immich credentials
   ansible.builtin.assert:
-    that: not immich_secret_present | bool or immich_database_password_matches | bool or immich_secret_managed | bool
+    that:
+      - not immich_secret_present | bool or immich_secret_managed | bool or (immich_database_password_matches | bool and immich_oidc_client_secret_matches | bool)
     fail_msg: Existing Immich credentials conflict with the configured secrets.
   no_log: true
 
@@ -303,7 +310,7 @@
     state: present
     definition: "{{ lookup('template', 'secret.yml.j2') | from_yaml }}"
   register: immich_secret_apply
-  when: not immich_secret_present | bool or not immich_database_password_matches | bool
+  when: not immich_secret_present | bool or not immich_database_password_matches | bool or not immich_oidc_client_secret_matches | bool
   no_log: true
 
 - name: Render Immich manifests from Jinja templates

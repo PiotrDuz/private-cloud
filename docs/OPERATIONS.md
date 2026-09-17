@@ -55,6 +55,20 @@ Use `kubectl logs --previous` with the affected pod and container after a crash.
 - Check the ephemeral kubelet quota because CRI logs use `/tank/secure/k0s/kubelet/logs`.
 - Check container rotation, host journal limits, qBittorrent and OnlyOffice rotation, and FFmpeg pruning separately.
 
+## Keycloak and OIDC
+
+Keycloak is the shared OIDC provider for the enabled user-facing services.
+
+- The `private-cloud` realm is imported at first start from the `keycloak-realm` Secret.
+- The realm definition is immutable through the installer; a changed definition fails the play loudly.
+- Recreate the realm to change a client secret or client configuration.
+- Recreating the realm ends existing sessions and requires re-entering client secrets in the encrypted configuration.
+- Check the issuer discovery document at `https://<keycloak-hostname>/realms/private-cloud/.well-known/openid-configuration` after changes.
+- The Keycloak administrator password and the OIDC client secrets are not rotatable through the installer.
+- Rotate the Keycloak database password with the `keycloak_database` rotation group.
+- Rotatable groups also cover enabled service database passwords, mail and relay credentials, Cloudflare tokens, and VPN credentials.
+- PostgreSQL and Zabbix administrator passwords, the ZFS encryption passphrase, and the OpenObserve administrator password are not rotatable.
+
 ## Certificates and mail
 
 Traefik renews HTTPS certificates automatically; Stalwart renews its SMTP STARTTLS certificate independently through Cloudflare DNS-01.
@@ -75,6 +89,8 @@ Traefik renews HTTPS certificates automatically; Stalwart renews its SMTP STARTT
 
 When notifications are enabled, Zabbix sends Warning-or-higher problems, recoveries, and hourly reminders. OpenObserve evaluates recognized warning, error, and critical logs every minute and suppresses repeated notifications for five minutes. A single matching log entry can trigger an alert.
 
+The notifications stage sends a test message through the configured SMTP relay and confirms its arrival in the Stalwart mailbox over JMAP before the play finishes.
+
 OpenObserve excludes its own logs from severity alerts, and Zabbix does not probe its application health or search API. OpenObserve outages and notification failures require direct inspection or independent monitoring.
 
 | Check | Where to investigate |
@@ -92,7 +108,7 @@ OpenObserve excludes its own logs from severity alerts, and Zabbix does not prob
 
 ## Recovery
 
-Backup automation and independent outage monitoring are not configured by this repository.
+Backup automation and independent outage monitoring are not configured by this repository. Sonarr, Radarr, Prowlarr, qBittorrent, and the shared media library use `no-backup` datasets and are outside backup scope.
 
 - Check independent backup completion and age against the chosen schedule.
 - Keep PostgreSQL and application-file recovery points consistent.

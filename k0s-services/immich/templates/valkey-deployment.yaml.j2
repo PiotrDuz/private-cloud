@@ -1,22 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: immich-valkey
+  name: valkey-immich
   namespace: private-cloud
   labels:
-    app.kubernetes.io/name: immich-valkey
+    app.kubernetes.io/name: valkey-immich
 spec:
   replicas: 1
   strategy: {type: Recreate}
   selector:
     matchLabels:
-      app.kubernetes.io/name: immich-valkey
+      app.kubernetes.io/name: valkey-immich
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: immich-valkey
+        app.kubernetes.io/name: valkey-immich
     spec:
-      serviceAccountName: immich-valkey
+      serviceAccountName: valkey-immich
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true

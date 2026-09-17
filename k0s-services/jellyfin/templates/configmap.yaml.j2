@@ -6,3 +6,5 @@ data:
 {{ lookup('file', playbook_dir ~ '/../media/configure_jellyfin.py') | indent(4, true) }}
   jellyfin_helpers.py: |
 {{ lookup('file', playbook_dir ~ '/../media/jellyfin_helpers.py') | indent(4, true) }}
+  install_oidc_plugin.py: |
+{{ lookup('file', playbook_dir ~ '/../k0s-services/jellyfin/install_oidc_plugin.py') | indent(4, true) }}

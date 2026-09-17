@@ -1,0 +1,310 @@
+---
+- name: Validate Keycloak inputs
+  ansible.builtin.assert:
+    that:
+      - private_cloud.keycloak.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.keycloak.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - (private_cloud.keycloak.max_ram | human_to_bytes | int) >= 1073741824
+      - private_cloud.keycloak.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
+      - private_cloud.keycloak.admin_username is string
+      - private_cloud.keycloak.admin_username | length > 0
+      - private_cloud.keycloak.admin_username is match('^[^\r\n]+$')
+      - private_cloud_secrets.keycloak.database_password | length >= 16
+      - private_cloud_secrets.keycloak.admin_password | length >= 16
+      - not private_cloud.stages.grist | bool or ((private_cloud_secrets.grist | default({})).get('oidc_client_secret', '') | length >= 16)
+      - not private_cloud.stages.affine | bool or ((private_cloud_secrets.affine | default({})).get('oidc_client_secret', '') | length >= 16)
+      - not private_cloud.stages.immich | bool or ((private_cloud_secrets.immich | default({})).get('oidc_client_secret', '') | length >= 16)
+      - not private_cloud.stages.media | bool or ((private_cloud_secrets.media | default({})).get('jellyfin_oidc_client_secret', '') | length >= 16)
+    fail_msg: Keycloak configuration is invalid.
+  no_log: true
+
+- name: Render the Keycloak realm definition
+  ansible.builtin.set_fact:
+    keycloak_realm_definition: "{{ lookup('template', 'realm.json.j2') }}"
+  no_log: true
+
+- name: Prepare the Keycloak kubeconfig
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"
+  vars:
+    private_cloud_kubeconfig: "{{ keycloak_kubeconfig }}"
+
+- name: Resolve a Ready Kubernetes node
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    api_version: v1
+    kind: Node
+    name: "{{ ansible_hostname }}"
+  register: keycloak_nodes
+  changed_when: false
+
+- name: Select the managed storage node
+  ansible.builtin.set_fact:
+    keycloak_node_name: "{{ ansible_hostname }}"
+
+- name: Require the managed storage node to be Ready
+  ansible.builtin.assert:
+    that:
+      - keycloak_nodes.resources | length == 1
+      - keycloak_nodes.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    fail_msg: "Managed storage host {{ ansible_hostname }} is not a Ready Kubernetes node for Keycloak."
+
+- name: Prepare the Keycloak service dataset
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: Keycloak
+    private_cloud_service_dataset: "{{ keycloak_dataset }}"
+    private_cloud_service_dataset_mountpoint: "{{ keycloak_dataset_mountpoint }}"
+    private_cloud_service_storage_size: "{{ private_cloud.keycloak.storage_size }}"
+
+- name: Prepare Keycloak dataset permissions
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_permissions.yml"
+  vars:
+    private_cloud_service_dataset_mountpoint: "{{ keycloak_dataset_mountpoint }}"
+    private_cloud_service_dataset_owner: '1000'
+    private_cloud_service_dataset_group: '1000'
+
+- name: Verify the Keycloak service dataset quota
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_quota.yml"
+  vars:
+    private_cloud_service_name: Keycloak
+    private_cloud_service_dataset: "{{ keycloak_dataset }}"
+    private_cloud_service_storage_size: "{{ private_cloud.keycloak.storage_size }}"
+
+- name: Inspect existing Keycloak storage and credentials
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ item.namespace | default(omit) }}"
+  loop:
+    - {api_version: v1, kind: PersistentVolume, name: keycloak-data}
+    - {api_version: v1, kind: PersistentVolumeClaim, name: keycloak-data, namespace: private-cloud}
+    - {api_version: v1, kind: Secret, name: keycloak-credentials, namespace: private-cloud}
+    - {api_version: v1, kind: Secret, name: keycloak-realm, namespace: private-cloud}
+  register: keycloak_existing
+  changed_when: false
+  no_log: true
+
+- name: Reject incompatible Keycloak persistent storage
+  ansible.builtin.assert:
+    that:
+      - keycloak_existing.results[0].resources | length == 0 or keycloak_existing.results[0].resources[0].spec.local.path == keycloak_dataset_mountpoint
+      - keycloak_existing.results[0].resources | length == 0 or keycloak_existing.results[0].resources[0].spec.capacity.storage == keycloak_pv_capacity
+      - keycloak_existing.results[0].resources | length == 0 or keycloak_node_name in keycloak_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - keycloak_existing.results[1].resources | length == 0 or keycloak_existing.results[1].resources[0].spec.resources.requests.storage == keycloak_pv_capacity
+      - keycloak_existing.results[1].resources | length == 0 or keycloak_existing.results[1].resources[0].spec.volumeName == keycloak_pv_name
+    fail_msg: Existing Keycloak persistent storage conflicts with the configured local storage.
+
+- name: Classify the existing Keycloak credentials and realm
+  ansible.builtin.set_fact:
+    keycloak_secret_present: "{{ keycloak_existing.results[2].resources | length > 0 }}"
+    keycloak_secret_managed: >-
+      {{ keycloak_existing.results[2].resources | length > 0 and
+         ((keycloak_existing.results[2].resources[0].metadata.annotations | default({})).get('private-cloud.example/managed-by', '') == 'ansible') }}
+    keycloak_database_password_matches: >-
+      {{ keycloak_existing.results[2].resources | length > 0 and
+         keycloak_existing.results[2].resources[0].data.KC_DB_PASSWORD is defined and
+         (keycloak_existing.results[2].resources[0].data.KC_DB_PASSWORD | b64decode == private_cloud_secrets.keycloak.database_password) }}
+    keycloak_realm_secret_present: "{{ keycloak_existing.results[3].resources | length > 0 }}"
+    keycloak_realm_matches: >-
+      {{ keycloak_existing.results[3].resources | length > 0 and
+         keycloak_existing.results[3].resources[0].data[keycloak_realm_file_name] is defined and
+         (keycloak_existing.results[3].resources[0].data[keycloak_realm_file_name] | b64decode == keycloak_realm_definition) }}
+  no_log: true
+
+- name: Reject incompatible unmanaged Keycloak credentials
+  ansible.builtin.assert:
+    that: not keycloak_secret_present | bool or keycloak_database_password_matches | bool or keycloak_secret_managed | bool
+    fail_msg: Existing Keycloak credentials conflict with the configured secrets.
+  no_log: true
+
+- name: Reject a changed Keycloak realm definition
+  ansible.builtin.assert:
+    that: not keycloak_realm_secret_present | bool or keycloak_realm_matches | bool
+    fail_msg: The imported Keycloak realm is immutable through this installer; recreate the realm to apply changes.
+  no_log: true
+
+- name: Locate PostgreSQL pod for Keycloak database bootstrap
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ keycloak_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=postgres
+  register: keycloak_postgres_pods
+  until:
+    - keycloak_postgres_pods.resources | length > 0
+    - keycloak_postgres_pods.resources[0].status.containerStatuses | default([]) | selectattr('ready', 'equalto', true) | list | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Check Keycloak PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    namespace: "{{ keycloak_namespace }}"
+    pod: "{{ keycloak_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT rolcanlogin FROM pg_roles WHERE rolname = '{{ keycloak_database_username | replace("'", "''") }}';"
+  register: keycloak_role_exists
+  changed_when: false
+  no_log: true
+
+- name: Create the Keycloak PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    namespace: "{{ keycloak_namespace }}"
+    pod: "{{ keycloak_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'printf %s {{ lookup('template', 'create-role.sql.j2') | b64encode }} |
+      base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
+  when: keycloak_role_exists.stdout | trim == ''
+  changed_when: true
+  no_log: true
+
+- name: Update the Keycloak PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    namespace: "{{ keycloak_namespace }}"
+    pod: "{{ keycloak_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'printf %s {{ lookup('template', 'alter-role.sql.j2') | b64encode }} |
+      base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
+  when:
+    - keycloak_role_exists.stdout | trim != ''
+    - keycloak_role_exists.stdout | trim == 'f' or not keycloak_database_password_matches | bool
+  changed_when: true
+  no_log: true
+
+- name: Check Keycloak PostgreSQL database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    namespace: "{{ keycloak_namespace }}"
+    pod: "{{ keycloak_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '{{ keycloak_database_name | replace("'", "''") }}';"
+  register: keycloak_database_exists
+  changed_when: false
+  no_log: true
+
+- name: Create Keycloak PostgreSQL database
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    namespace: "{{ keycloak_namespace }}"
+    pod: "{{ keycloak_postgres_pods.resources[0].metadata.name }}"
+    command: createdb -U postgres -O {{ keycloak_database_username }} {{ keycloak_database_name }}
+  when: keycloak_database_exists.stdout | trim == ''
+  changed_when: true
+  no_log: true
+
+- name: Set Keycloak database owner when needed
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    namespace: "{{ keycloak_namespace }}"
+    pod: "{{ keycloak_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "ALTER DATABASE \"{{ keycloak_database_name }}\" OWNER TO \"{{ keycloak_database_username }}\";"
+  when:
+    - keycloak_database_exists.stdout | trim != ''
+    - keycloak_database_exists.stdout | trim != keycloak_database_username
+  changed_when: true
+  no_log: true
+
+- name: Apply Keycloak database credentials
+  kubernetes.core.k8s:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'credentials-secret.yml.j2') | from_yaml }}"
+  register: keycloak_credentials_apply
+  when: not keycloak_secret_present | bool or not keycloak_database_password_matches | bool
+  no_log: true
+
+- name: Apply the Keycloak realm definition
+  kubernetes.core.k8s:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'realm-secret.yml.j2') | from_yaml }}"
+  when: not keycloak_realm_secret_present | bool
+  no_log: true
+
+- name: Render Keycloak manifests from Jinja templates
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: keycloak
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/keycloak/templates"
+
+- name: Select Keycloak manifest stages
+  ansible.builtin.set_fact:
+    keycloak_storage_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | selectattr("kind", "in", ["PersistentVolume", "PersistentVolumeClaim"]) | list }}
+    keycloak_workload_manifests: >-
+      {{ private_cloud_rendered_manifests
+         | rejectattr("kind", "in", ["PersistentVolume", "PersistentVolumeClaim"]) | list }}
+
+- name: Apply Keycloak storage
+  kubernetes.core.k8s:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    state: present
+    definition: "{{ keycloak_storage_manifests }}"
+
+- name: Apply Keycloak workload
+  kubernetes.core.k8s:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    state: present
+    definition: "{{ keycloak_workload_manifests }}"
+  no_log: true
+
+- name: Restart Keycloak after a credentials change
+  kubernetes.core.k8s:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    state: patched
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ keycloak_service_name }}"
+        namespace: "{{ keycloak_namespace }}"
+      spec:
+        template:
+          metadata:
+            annotations:
+              private-cloud.example/credentials-restarted-at: "{{ ansible_date_time.iso8601 }}"
+  when: keycloak_credentials_apply.changed | default(false)
+  no_log: true
+
+- name: Wait for Keycloak deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ keycloak_service_name }}"
+    namespace: "{{ keycloak_namespace }}"
+  register: keycloak_deployment
+  until:
+    - keycloak_deployment.resources | length > 0
+    - keycloak_deployment.resources[0].status.observedGeneration | default(0) | int >= keycloak_deployment.resources[0].metadata.generation | int
+    - keycloak_deployment.resources[0].status.updatedReplicas | default(0) | int == keycloak_deployment.resources[0].spec.replicas | default(1) | int
+    - keycloak_deployment.resources[0].status.readyReplicas | default(0) | int == keycloak_deployment.resources[0].spec.replicas | default(1) | int
+    - keycloak_deployment.resources[0].status.availableReplicas | default(0) | int == keycloak_deployment.resources[0].spec.replicas | default(1) | int
+  retries: 120
+  delay: 5
+  changed_when: false
+
+- name: Wait for Keycloak service endpoint
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ keycloak_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    name: "{{ keycloak_service_name }}"
+    namespace: "{{ keycloak_namespace }}"
+  register: keycloak_endpoint
+  until: keycloak_endpoint.resources | length > 0 and (keycloak_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0)
+  retries: 90
+  delay: 5
+  changed_when: false

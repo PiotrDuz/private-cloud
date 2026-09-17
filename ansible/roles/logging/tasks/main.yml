@@ -183,3 +183,31 @@
   register: logging_openobserve_provision
   changed_when: (logging_openobserve_provision.stdout | from_json).changed
   no_log: true
+
+- name: Verify alert delivery at the destination inbox
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/../logging/verify_alert_delivery.py"
+    stdin: >-
+      {{ {
+        'address': private_cloud.networking.traefik_internal_ip,
+        'hostname': private_cloud.stalwart.hostname,
+        'port': 443,
+        'relay_host': private_cloud.stalwart.relay_host,
+        'relay_port': private_cloud.stalwart.relay_port,
+        'relay_implicit_tls': private_cloud.stalwart.relay_implicit_tls,
+        'relay_username': private_cloud.stalwart.relay_username,
+        'relay_password': private_cloud_secrets.stalwart.relay_password,
+        'sender': private_cloud.notifications.from_address,
+        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+        'accounts': [
+          private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
+          private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
+        ],
+        'password': private_cloud_secrets.stalwart.mailbox_password
+      } | to_json }}
+  register: logging_alert_delivery
+  changed_when: false
+  when: private_cloud.stages.notifications | bool
+  no_log: true

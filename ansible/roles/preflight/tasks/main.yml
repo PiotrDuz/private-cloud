@@ -2,7 +2,7 @@
 - name: Require the supported public schema version
   ansible.builtin.assert:
     that:
-      - schema_version == 7
+      - schema_version == 8
     fail_msg: Public configuration schema version is unsupported
 
 - name: Require supported Debian-family target
@@ -21,14 +21,14 @@
   ansible.builtin.assert:
     that:
       - private_cloud is mapping
-      - (private_cloud.keys() | list | difference(['stages', 'storage', 'k0s', 'networking', 'media', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'redis_affine', 'affine', 'immich', 'stalwart', 'zabbix', 'logging', 'notifications']) | length) == 0
-      - (['stages', 'storage', 'k0s', 'networking', 'media', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'redis_affine', 'affine', 'immich', 'stalwart', 'zabbix', 'logging', 'notifications'] | difference(private_cloud.keys() | list) | length) == 0
+      - (private_cloud.keys() | list | difference(['stages', 'storage', 'k0s', 'networking', 'media', 'postgres', 'meilisearch', 'keycloak', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'redis_affine', 'affine', 'immich', 'stalwart', 'zabbix', 'logging', 'notifications']) | length) == 0
+      - (['stages', 'storage', 'k0s', 'networking', 'media', 'postgres', 'meilisearch', 'keycloak', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'redis_affine', 'affine', 'immich', 'stalwart', 'zabbix', 'logging', 'notifications'] | difference(private_cloud.keys() | list) | length) == 0
     fail_msg: Public configuration has missing or unknown sections
 
 - name: Require exact nested public schema
   ansible.builtin.assert:
     that:
-      - (private_cloud.stages.keys() | list | sort) == ['affine', 'bleve', 'grist', 'immich', 'intel_gpu', 'k0s', 'logging', 'manticore', 'media', 'meilisearch', 'networking', 'notifications', 'onlyoffice', 'opencloud', 'postgres', 'redis_affine', 'stalwart', 'tika', 'zabbix_agent', 'zabbix_server', 'zfs']
+      - (private_cloud.stages.keys() | list | sort) == ['affine', 'bleve', 'grist', 'immich', 'intel_gpu', 'k0s', 'keycloak', 'logging', 'manticore', 'media', 'meilisearch', 'networking', 'notifications', 'onlyoffice', 'opencloud', 'postgres', 'redis_affine', 'stalwart', 'tika', 'zabbix_agent', 'zabbix_server', 'zfs']
       - (private_cloud.storage.keys() | list) == ['disks']
       - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'images_quota']
       - (private_cloud.networking.keys() | list | sort) == ['acme_email', 'amneziawg', 'cloudflare_zone_id', 'cluster_dns_ip', 'local_network_cidrs', 'managed_records', 'pod_cidr', 'public_ip_url', 'service_cidr', 'storage_size', 'traefik_internal_ip', 'zabbix_hostname']
@@ -38,11 +38,12 @@
       - (private_cloud.media.openvpn.keys() | list | sort) == ['endpoint_ip', 'endpoint_port', 'endpoint_protocol', 'gateway_cluster_ip']
       - (private_cloud.postgres.keys() | list | sort) == ['max_ram', 'volume_size']
       - (private_cloud.meilisearch.keys() | list | sort) == ['max_ram', 'storage_size']
+      - (private_cloud.keycloak.keys() | list | sort) == ['admin_username', 'hostname', 'max_ram', 'storage_size']
       - (private_cloud.tika.keys() | list | sort) == ['max_ram', 'storage_size']
       - (private_cloud.bleve.keys() | list) == ['storage_size']
       - (private_cloud.onlyoffice.keys() | list | sort) == ['hostname', 'max_ram', 'storage_size']
       - (private_cloud.opencloud.keys() | list | sort) == ['hostname', 'max_ram', 'storage_size']
-      - (private_cloud.grist.keys() | list | sort) == ['default_email', 'hostname', 'max_ram', 'storage_size']
+      - (private_cloud.grist.keys() | list | sort) == ['allowed_emails', 'default_email', 'hostname', 'max_ram', 'storage_size']
       - (private_cloud.manticore.keys() | list | sort) == ['max_ram', 'storage_size']
       - (private_cloud.redis_affine.keys() | list) == ['max_ram']
       - (private_cloud.affine.keys() | list | sort) == ['hostname', 'max_ram', 'storage_size']
@@ -53,10 +54,19 @@
       - (private_cloud.notifications.keys() | list) == ['from_address']
     fail_msg: Public configuration has missing or unknown nested keys
 
+- name: Require a valid dataset catalog
+  ansible.builtin.assert:
+    that:
+      - private_cloud_dataset_catalog | map(attribute='name') | list | unique | length == private_cloud_dataset_catalog | length
+      - item.stage in private_cloud.stages
+      - item.dataset is match('^tank/secure/(backup|no-backup)/k0s/(config|services|images|ephemeral)(/[A-Za-z0-9._-]+)*$')
+    fail_msg: The dataset catalog must use unique names, known stages, and managed dataset paths
+  loop: "{{ private_cloud_dataset_catalog }}"
+
 - name: Require the supported encrypted schema version
   ansible.builtin.assert:
     that:
-      - secrets_schema_version == 3
+      - secrets_schema_version == 4
     fail_msg: Encrypted configuration schema version is unsupported
   no_log: true
 
@@ -64,7 +74,7 @@
   ansible.builtin.assert:
     that:
       - private_cloud_secrets is mapping
-      - (private_cloud_secrets.keys() | list | difference(['affine', 'grist', 'immich', 'logging', 'media', 'meilisearch', 'networking', 'onlyoffice', 'opencloud', 'postgres', 'stalwart', 'storage', 'zabbix']) | length) == 0
+      - (private_cloud_secrets.keys() | list | difference(['affine', 'grist', 'immich', 'keycloak', 'logging', 'media', 'meilisearch', 'networking', 'onlyoffice', 'opencloud', 'postgres', 'stalwart', 'storage', 'zabbix']) | length) == 0
     fail_msg: Encrypted configuration has unknown sections
   no_log: true
 
@@ -78,16 +88,17 @@
     - {name: storage, keys: [encryption_passphrase]}
     - {name: postgres, keys: [admin_password]}
     - {name: meilisearch, keys: [master_key]}
+    - {name: keycloak, keys: [admin_password, database_password]}
     - {name: stalwart, keys: [admin_password, certificate_dns_api_token, database_password, mailbox_password, relay_password]}
     - {name: zabbix, keys: [admin_password, database_password]}
     - {name: logging, keys: [admin_password]}
     - {name: onlyoffice, keys: [jwt_secret]}
     - {name: opencloud, keys: [admin_password]}
-    - {name: grist, keys: [boot_key, database_password, session_secret]}
-    - {name: affine, keys: [database_password]}
-    - {name: immich, keys: [database_password]}
+    - {name: grist, keys: [boot_key, database_password, oidc_client_secret, oidc_cookie_secret, session_secret]}
+    - {name: affine, keys: [database_password, oidc_client_secret]}
+    - {name: immich, keys: [database_password, oidc_client_secret]}
     - {name: networking, keys: [amneziawg_private_key, cloudflare_api_token, cloudflare_ddns_api_token]}
-    - {name: media, keys: [openvpn_configuration, openvpn_password, openvpn_username, proxy_password, qbittorrent_password]}
+    - {name: media, keys: [jellyfin_oidc_client_secret, openvpn_configuration, openvpn_password, openvpn_username, proxy_password, qbittorrent_password]}
   no_log: true
 
 - name: Validate logging and notification configuration
@@ -119,7 +130,7 @@
     that:
       - private_cloud.stages[item] is boolean
     fail_msg: Every stage flag must be Boolean
-  loop: [zfs, k0s, networking, media, intel_gpu, postgres, meilisearch, stalwart, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, logging, notifications, zabbix_server, zabbix_agent]
+  loop: [zfs, k0s, networking, media, intel_gpu, postgres, meilisearch, keycloak, stalwart, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, logging, notifications, zabbix_server, zabbix_agent]
 
 - name: Require stage dependencies
   ansible.builtin.assert:
@@ -203,6 +214,18 @@
       - private_cloud.meilisearch.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
     fail_msg: Meilisearch configuration is invalid
 
+- name: Require Keycloak values
+  ansible.builtin.assert:
+    that:
+      - private_cloud.keycloak.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
+      - private_cloud.keycloak.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
+      - (private_cloud.keycloak.max_ram | human_to_bytes | int) >= 1073741824
+      - private_cloud.keycloak.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
+      - private_cloud.keycloak.admin_username is string
+      - private_cloud.keycloak.admin_username | length > 0
+      - private_cloud.keycloak.admin_username is match('^[^\r\n]+$')
+    fail_msg: Keycloak configuration is invalid
+
 - name: Require Tika values
   ansible.builtin.assert:
     that:
@@ -241,6 +264,11 @@
       - private_cloud.grist.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - (private_cloud.grist.max_ram | human_to_bytes | int) >= 536870912
       - private_cloud.grist.default_email is match("^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}$")
+      - private_cloud.grist.allowed_emails is sequence
+      - private_cloud.grist.allowed_emails is not string
+      - private_cloud.grist.allowed_emails | length > 0
+      - private_cloud.grist.allowed_emails | unique | list | length == private_cloud.grist.allowed_emails | length
+      - (private_cloud.grist.allowed_emails | select('match', "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}$") | list | length) == private_cloud.grist.allowed_emails | length
       - private_cloud.grist.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
     fail_msg: Grist configuration is invalid
 
@@ -286,7 +314,7 @@
 - name: Require unique public application hostnames
   ansible.builtin.assert:
     that:
-      - ([private_cloud.onlyoffice.hostname, private_cloud.opencloud.hostname, private_cloud.grist.hostname, private_cloud.affine.hostname, private_cloud.immich.hostname] | unique | length) == 5
+      - ([private_cloud.onlyoffice.hostname, private_cloud.opencloud.hostname, private_cloud.grist.hostname, private_cloud.affine.hostname, private_cloud.immich.hostname, private_cloud.keycloak.hostname] | unique | length) == 6
     fail_msg: Every public application hostname must be unique
 
 - name: Require Stalwart values
@@ -379,6 +407,17 @@
   when: private_cloud.stages.meilisearch | bool
   no_log: true
 
+- name: Require Keycloak secrets when Keycloak is enabled
+  ansible.builtin.assert:
+    that:
+      - private_cloud_secrets.keycloak.database_password is string
+      - private_cloud_secrets.keycloak.database_password | length >= 16
+      - private_cloud_secrets.keycloak.admin_password is string
+      - private_cloud_secrets.keycloak.admin_password | length >= 16
+    fail_msg: Required encrypted secrets are missing
+  when: private_cloud.stages.keycloak | bool
+  no_log: true
+
 - name: Require OnlyOffice secret when OnlyOffice is enabled
   ansible.builtin.assert:
     that:
@@ -406,6 +445,10 @@
       - private_cloud_secrets.grist.session_secret | length >= 32
       - private_cloud_secrets.grist.boot_key is string
       - private_cloud_secrets.grist.boot_key | length >= 16
+      - private_cloud_secrets.grist.oidc_client_secret is string
+      - private_cloud_secrets.grist.oidc_client_secret | length >= 16
+      - private_cloud_secrets.grist.oidc_cookie_secret is string
+      - private_cloud_secrets.grist.oidc_cookie_secret | length >= 32
     fail_msg: Required encrypted secrets are missing
   when: private_cloud.stages.grist | bool
   no_log: true
@@ -415,6 +458,8 @@
     that:
       - private_cloud_secrets.affine.database_password is string
       - private_cloud_secrets.affine.database_password | length >= 16
+      - private_cloud_secrets.affine.oidc_client_secret is string
+      - private_cloud_secrets.affine.oidc_client_secret | length >= 16
     fail_msg: Required encrypted secrets are missing
   when: private_cloud.stages.affine | bool
   no_log: true
@@ -424,6 +469,8 @@
     that:
       - private_cloud_secrets.immich.database_password is string
       - private_cloud_secrets.immich.database_password | length >= 16
+      - private_cloud_secrets.immich.oidc_client_secret is string
+      - private_cloud_secrets.immich.oidc_client_secret | length >= 16
     fail_msg: Required encrypted secrets are missing
   when: private_cloud.stages.immich | bool
   no_log: true
@@ -467,6 +514,8 @@
       - private_cloud_secrets.media.openvpn_password is string
       - private_cloud_secrets.media.openvpn_password | length > 0
       - private_cloud_secrets.media.proxy_password is match('^[A-Za-z0-9_-]{16,64}$')
+      - private_cloud_secrets.media.jellyfin_oidc_client_secret is string
+      - private_cloud_secrets.media.jellyfin_oidc_client_secret | length >= 16
     fail_msg: Required encrypted media secrets are missing
   when: private_cloud.stages.media | bool
   no_log: true
@@ -751,13 +800,14 @@
       service_pv_capacity: 10Ti
       traefik_dataset: tank/secure/backup/k0s/services/traefik
       jellyfin_dataset: tank/secure/backup/k0s/services/jellyfin
-      sonarr_dataset: tank/secure/backup/k0s/services/sonarr
-      radarr_dataset: tank/secure/backup/k0s/services/radarr
-      prowlarr_dataset: tank/secure/backup/k0s/services/prowlarr
-      qbittorrent_dataset: tank/secure/backup/k0s/services/qbittorrent
-      media_library_dataset: tank/secure/backup/k0s/services/media-library
+      sonarr_dataset: tank/secure/no-backup/k0s/services/sonarr
+      radarr_dataset: tank/secure/no-backup/k0s/services/radarr
+      prowlarr_dataset: tank/secure/no-backup/k0s/services/prowlarr
+      qbittorrent_dataset: tank/secure/no-backup/k0s/services/qbittorrent
+      media_library_dataset: tank/secure/no-backup/k0s/services/media-library
       postgres_dataset: tank/secure/backup/k0s/services/postgres
       meilisearch_dataset: tank/secure/backup/k0s/services/meilisearch
+      keycloak_dataset: tank/secure/backup/k0s/services/keycloak
       tika_dataset: tank/secure/backup/k0s/services/tika
       bleve_dataset: tank/secure/backup/k0s/services/bleve
       onlyoffice_dataset: tank/secure/backup/k0s/services/onlyoffice
@@ -777,13 +827,14 @@
     - { dataset: 'tank/secure/no-backup/k0s/ephemeral', quota: '{{ private_cloud.k0s.ephemeral_quota }}' }
     - { dataset: 'tank/secure/backup/k0s/services/traefik', quota: '{{ private_cloud.networking.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/jellyfin', quota: '{{ private_cloud.media.storage_size }}' }
-    - { dataset: 'tank/secure/backup/k0s/services/sonarr', quota: '{{ private_cloud.media.storage_size }}' }
-    - { dataset: 'tank/secure/backup/k0s/services/radarr', quota: '{{ private_cloud.media.storage_size }}' }
-    - { dataset: 'tank/secure/backup/k0s/services/prowlarr', quota: '{{ private_cloud.media.storage_size }}' }
-    - { dataset: 'tank/secure/backup/k0s/services/qbittorrent', quota: '{{ private_cloud.media.storage_size }}' }
-    - { dataset: 'tank/secure/backup/k0s/services/media-library', quota: '{{ private_cloud.media.storage_size }}' }
+    - { dataset: 'tank/secure/no-backup/k0s/services/sonarr', quota: '{{ private_cloud.media.storage_size }}' }
+    - { dataset: 'tank/secure/no-backup/k0s/services/radarr', quota: '{{ private_cloud.media.storage_size }}' }
+    - { dataset: 'tank/secure/no-backup/k0s/services/prowlarr', quota: '{{ private_cloud.media.storage_size }}' }
+    - { dataset: 'tank/secure/no-backup/k0s/services/qbittorrent', quota: '{{ private_cloud.media.storage_size }}' }
+    - { dataset: 'tank/secure/no-backup/k0s/services/media-library', quota: '{{ private_cloud.media.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/postgres', quota: '{{ private_cloud.postgres.volume_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/meilisearch', quota: '{{ private_cloud.meilisearch.storage_size }}' }
+    - { dataset: 'tank/secure/backup/k0s/services/keycloak', quota: '{{ private_cloud.keycloak.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/tika', quota: '{{ private_cloud.tika.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/bleve', quota: '{{ private_cloud.bleve.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/onlyoffice', quota: '{{ private_cloud.onlyoffice.storage_size }}' }
@@ -824,6 +875,7 @@
       {{
         (private_cloud.stages.postgres | ternary(private_cloud.postgres.max_ram | human_to_bytes, 0)) +
         (private_cloud.stages.meilisearch | ternary(private_cloud.meilisearch.max_ram | human_to_bytes, 0)) +
+        (private_cloud.stages.keycloak | ternary(private_cloud.keycloak.max_ram | human_to_bytes, 0)) +
         (private_cloud.stages.tika | ternary(private_cloud.tika.max_ram | human_to_bytes, 0)) +
         (private_cloud.stages.onlyoffice | ternary(private_cloud.onlyoffice.max_ram | human_to_bytes, 0)) +
         (private_cloud.stages.opencloud | ternary(private_cloud.opencloud.max_ram | human_to_bytes, 0)) +
@@ -871,6 +923,7 @@
         max_ram: "{{ private_cloud.postgres.max_ram }}"
         shared_buffers: "{{ private_cloud_shared_buffers }}"
       meilisearch: "{{ private_cloud.meilisearch }}"
+      keycloak: "{{ private_cloud.keycloak }}"
       tika: "{{ private_cloud.tika }}"
       bleve: "{{ private_cloud.bleve }}"
       onlyoffice: "{{ private_cloud.onlyoffice }}"
@@ -887,13 +940,19 @@
         storage_encryption_passphrase: configured
         postgres_admin_password: configured
         meilisearch_master_key: configured
+        keycloak_database_password: configured
+        keycloak_admin_password: configured
         onlyoffice_jwt_secret: configured
         opencloud_admin_password: configured
         grist_database_password: configured
         grist_session_secret: configured
         grist_boot_key: configured
+        grist_oidc_client_secret: configured
+        grist_oidc_cookie_secret: configured
         affine_database_password: configured
+        affine_oidc_client_secret: configured
         immich_database_password: configured
+        immich_oidc_client_secret: configured
         stalwart_database_password: configured
         stalwart_admin_password: configured
         stalwart_mailbox_password: configured
@@ -906,6 +965,7 @@
         media_openvpn_username: configured
         media_openvpn_password: configured
         media_proxy_password: configured
+        media_jellyfin_oidc_client_secret: configured
         zabbix_database_password: configured
         zabbix_admin_password: configured
       layout: "{{ private_cloud_layout }}"

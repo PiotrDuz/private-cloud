@@ -1,0 +1,261 @@
+{% set opencloud_enabled = private_cloud.stages.opencloud | default(false) | bool %}
+{% set stalwart_enabled = private_cloud.stages.stalwart | default(false) | bool %}
+{% set grist_enabled = private_cloud.stages.grist | default(false) | bool %}
+{% set affine_enabled = private_cloud.stages.affine | default(false) | bool %}
+{% set immich_enabled = private_cloud.stages.immich | default(false) | bool %}
+{% set jellyfin_enabled = private_cloud.stages.media | default(false) | bool %}
+{% set comma = joiner(",") %}
+{
+  "realm": {{ keycloak_realm_name | to_json }},
+  "enabled": true,
+  "displayName": "Private Cloud",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "clients": [
+{% if opencloud_enabled %}
+    {{ comma() }}
+    {
+      "clientId": {{ keycloak_opencloud_client_id | to_json }},
+      "name": "OpenCloud",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": true,
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "backchannel.logout.url": {{ ("https://" ~ private_cloud.opencloud.hostname ~ "/backchannel_logout") | to_json }},
+        "backchannel.logout.revoke.offline.tokens": "false"
+      },
+      "redirectUris": [
+        {{ ("https://" ~ private_cloud.opencloud.hostname ~ "/") | to_json }},
+        {{ ("https://" ~ private_cloud.opencloud.hostname ~ "/oidc-callback.html") | to_json }},
+        {{ ("https://" ~ private_cloud.opencloud.hostname ~ "/oidc-silent-redirect.html") | to_json }},
+        "http://127.0.0.1",
+        "http://localhost",
+        "oc://android.opencloud.eu",
+        "oc://ios.opencloud.eu"
+      ],
+      "webOrigins": [{{ ("https://" ~ private_cloud.opencloud.hostname) | to_json }}],
+      "postLogoutRedirectUris": [
+        {{ ("https://" ~ private_cloud.opencloud.hostname ~ "/") | to_json }},
+        "oc://android.opencloud.eu",
+        "oc://ios.opencloud.eu"
+      ],
+      "protocolMappers": [
+        {
+          "name": "opencloud-realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+{% endif %}
+{% if stalwart_enabled %}
+    {{ comma() }}
+    {
+      "clientId": {{ keycloak_stalwart_client_id | to_json }},
+      "name": "Stalwart",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": true,
+      "attributes": {"pkce.code.challenge.method": "S256"},
+      "redirectUris": [
+        {{ ("https://" ~ private_cloud.stalwart.hostname ~ "/admin/oauth/callback") | to_json }},
+        {{ ("https://" ~ private_cloud.stalwart.hostname ~ "/account/oauth/callback") | to_json }}
+      ],
+      "webOrigins": [{{ ("https://" ~ private_cloud.stalwart.hostname) | to_json }}],
+      "postLogoutRedirectUris": [
+        {{ ("https://" ~ private_cloud.stalwart.hostname ~ "/admin") | to_json }},
+        {{ ("https://" ~ private_cloud.stalwart.hostname ~ "/account") | to_json }}
+      ],
+      "protocolMappers": [
+        {
+          "name": "stalwart-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": {{ keycloak_stalwart_audience | to_json }},
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+    {{ comma() }}
+    {
+      "clientId": {{ keycloak_stalwart_webui_client_id | to_json }},
+      "name": "Stalwart Web UI",
+      "description": "Upstream Stalwart WebUI hardcodes this public client id for browser login.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": true,
+      "attributes": {"pkce.code.challenge.method": "S256"},
+      "redirectUris": [
+        {{ ("https://" ~ private_cloud.stalwart.hostname ~ "/admin/oauth/callback") | to_json }},
+        {{ ("https://" ~ private_cloud.stalwart.hostname ~ "/account/oauth/callback") | to_json }}
+      ],
+      "webOrigins": [{{ ("https://" ~ private_cloud.stalwart.hostname) | to_json }}],
+      "postLogoutRedirectUris": [
+        {{ ("https://" ~ private_cloud.stalwart.hostname ~ "/admin") | to_json }},
+        {{ ("https://" ~ private_cloud.stalwart.hostname ~ "/account") | to_json }}
+      ],
+      "protocolMappers": [
+        {
+          "name": "stalwart-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": {{ keycloak_stalwart_audience | to_json }},
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+{% endif %}
+{% if grist_enabled %}
+    {{ comma() }}
+    {
+      "clientId": {{ keycloak_grist_client_id | to_json }},
+      "name": "Grist Forward Authentication",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": {{ private_cloud_secrets.grist.oidc_client_secret | to_json }},
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        {{ ("https://" ~ private_cloud.grist.hostname ~ "/_oauth") | to_json }}
+      ],
+      "webOrigins": [{{ ("https://" ~ private_cloud.grist.hostname) | to_json }}]
+    }
+{% endif %}
+{% if affine_enabled %}
+    {{ comma() }}
+    {
+      "clientId": {{ keycloak_affine_client_id | to_json }},
+      "name": "AFFiNE",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": {{ private_cloud_secrets.affine.oidc_client_secret | to_json }},
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        {{ ("https://" ~ private_cloud.affine.hostname ~ "/oauth/callback") | to_json }}
+      ],
+      "webOrigins": [{{ ("https://" ~ private_cloud.affine.hostname) | to_json }}]
+    }
+{% endif %}
+{% if immich_enabled %}
+    {{ comma() }}
+    {
+      "clientId": {{ keycloak_immich_client_id | to_json }},
+      "name": "Immich",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": {{ private_cloud_secrets.immich.oidc_client_secret | to_json }},
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": true,
+      "attributes": {
+        "backchannel.logout.url": {{ ("https://" ~ private_cloud.immich.hostname ~ "/api/oauth/backchannel-logout") | to_json }},
+        "backchannel.logout.revoke.offline.tokens": "false"
+      },
+      "redirectUris": [
+        {{ ("https://" ~ private_cloud.immich.hostname ~ "/auth/login") | to_json }},
+        {{ ("https://" ~ private_cloud.immich.hostname ~ "/user-settings") | to_json }},
+        "app.immich:///oauth-callback"
+      ],
+      "webOrigins": [{{ ("https://" ~ private_cloud.immich.hostname) | to_json }}]
+    }
+{% endif %}
+{% if jellyfin_enabled %}
+    {{ comma() }}
+    {
+      "clientId": {{ keycloak_jellyfin_client_id | to_json }},
+      "name": "Jellyfin",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": {{ private_cloud_secrets.media.jellyfin_oidc_client_secret | to_json }},
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        {{ ("https://" ~ private_cloud.media.hostname ~ "/sso/OIDC/Callback/" ~ keycloak_jellyfin_provider_id) | to_json }}
+      ],
+      "webOrigins": [{{ ("https://" ~ private_cloud.media.hostname) | to_json }}]
+    }
+{% endif %}
+  ],
+  "users": [
+    {
+      "username": {{ private_cloud.keycloak.admin_username | to_json }},
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": {{ private_cloud_secrets.keycloak.admin_password | to_json }},
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "realm-management": ["realm-admin"]
+      }
+    }
+  ]
+}

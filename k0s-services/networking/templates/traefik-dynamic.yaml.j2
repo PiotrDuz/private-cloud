@@ -18,3 +18,25 @@ data:
               version: 2
             servers:
               - address: stalwart.private-cloud.svc.cluster.local:25
+    http:
+      middlewares:
+        strip-identity-headers:
+          headers:
+            customRequestHeaders:
+              X-Forwarded-User: ""
+              X-Forwarded-Email: ""
+              X-Forwarded-Preferred-Username: ""
+              X-Forwarded-Groups: ""
+              X-Auth-Request-User: ""
+              X-Auth-Request-Email: ""
+              X-Auth-Request-Preferred-Username: ""
+              X-Auth-Request-Groups: ""
+              Remote-User: ""
+              Remote-Email: ""
+              Remote-Groups: ""
+        forward-auth:
+          forwardAuth:
+            address: http://forward-auth.edge.svc.cluster.local:4181
+            trustForwardHeader: false
+            authResponseHeaders:
+              - X-Forwarded-User

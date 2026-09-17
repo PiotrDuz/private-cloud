@@ -12,7 +12,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: jellyfin}
       annotations:
-        checksum/settings: {{ (lookup('file', playbook_dir ~ '/../media/configure_jellyfin.py') ~ lookup('file', playbook_dir ~ '/../media/jellyfin_helpers.py')) | hash('sha256') }}
+        checksum/settings: {{ (lookup('file', playbook_dir ~ '/../media/configure_jellyfin.py') ~ lookup('file', playbook_dir ~ '/../media/jellyfin_helpers.py') ~ lookup('file', playbook_dir ~ '/../k0s-services/jellyfin/install_oidc_plugin.py')) | hash('sha256') }}
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -22,11 +22,36 @@ spec:
         fsGroup: 1000
         supplementalGroups: [{{ intel_gpu_render_group_id | int }}]
       initContainers:
+        - name: install-oidc-plugin
+          image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
+          command: [python3, /scripts/install_oidc_plugin.py]
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
+            - {name: JELLYFIN_OIDC_PLUGIN_NAME, value: 'SSO-OIDC Authentication'}
+            - {name: JELLYFIN_OIDC_PLUGIN_VERSION, value: '1.0.7.0'}
+            - {name: JELLYFIN_OIDC_PLUGIN_URL, value: 'https://github.com/aussierk/jellyfin-plugin-oidc/releases/download/v1.0.7.0/oidc-rbac.zip'}
+            - {name: JELLYFIN_OIDC_PLUGIN_SHA256, value: '84265ab9d374f9cfd53028fc78b6b27941f9f27e5c7fb61aeba9aa33016fe8bc'}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          volumeMounts:
+            - {name: config, mountPath: /config}
+            - {name: settings, mountPath: /scripts, readOnly: true}
         - name: configure-local-library
           image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
           command: [python3, /scripts/configure_jellyfin.py]
           env:
             - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
+            - {name: JELLYFIN_OIDC_HOSTNAME, value: {{ private_cloud.media.hostname | to_json }}}
+            - {name: JELLYFIN_OIDC_ISSUER, value: {{ ('https://' ~ private_cloud.keycloak.hostname ~ '/realms/private-cloud') | to_json }}}
+            - {name: JELLYFIN_OIDC_CLIENT_ID, value: jellyfin}
+            - name: JELLYFIN_OIDC_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: jellyfin-credentials, key: JELLYFIN_OIDC_CLIENT_SECRET}}
           resources:
             requests: {cpu: 10m, memory: 32Mi}
             limits: {memory: 64Mi}
@@ -49,6 +74,21 @@ spec:
             - {name: JELLYFIN_CACHE_DIR, value: /config/cache}
           ports:
             - {name: http, containerPort: 8096, protocol: TCP}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
           resources:
             requests: {cpu: 250m, memory: 1Gi, gpu.intel.com/i915: 1}
             limits: {memory: 4Gi, gpu.intel.com/i915: 1}

@@ -6,6 +6,7 @@
       - private_cloud.opencloud.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - private_cloud.opencloud.hostname | length > 0
       - private_cloud.onlyoffice.hostname | length > 0
+      - private_cloud.keycloak.hostname | length > 0
       - private_cloud_secrets.opencloud.admin_password | length > 0
     fail_msg: OpenCloud configuration is invalid.
   no_log: true
@@ -124,6 +125,30 @@
     state: present
     definition: "{{ lookup('template', 'secret.yml.j2') | from_yaml }}"
   when: not opencloud_secret_present | bool
+  no_log: true
+
+- name: Inspect the OnlyOffice WOPI secret
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ opencloud_kubeconfig }}"
+    api_version: v1
+    kind: Secret
+    name: onlyoffice-credentials
+    namespace: "{{ opencloud_namespace }}"
+  register: opencloud_wopi_secret
+  changed_when: false
+  no_log: true
+
+- name: Require the OnlyOffice WOPI secret
+  ansible.builtin.assert:
+    that:
+      - opencloud_wopi_secret.resources | length == 1
+      - opencloud_wopi_secret.resources[0].data.JWT_SECRET is defined
+    fail_msg: The OnlyOffice WOPI secret is required for the OpenCloud collaboration service.
+  no_log: true
+
+- name: Record the OnlyOffice WOPI secret checksum
+  ansible.builtin.set_fact:
+    opencloud_wopi_secret_checksum: "{{ opencloud_wopi_secret.resources[0].data.JWT_SECRET | hash('sha256') }}"
   no_log: true
 
 - name: Render OpenCloud manifests from Jinja templates

@@ -2,7 +2,7 @@
 immich_namespace: private-cloud
 immich_service_name: immich
 immich_machine_learning_service_name: immich-machine-learning
-immich_valkey_service_name: immich-valkey
+immich_valkey_service_name: valkey-immich
 immich_database_name: immich
 immich_database_username: immich
 immich_postgres_service: postgres

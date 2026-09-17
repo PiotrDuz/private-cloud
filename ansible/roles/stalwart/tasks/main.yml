@@ -209,7 +209,7 @@
 - name: Calculate the Stalwart configuration revision
   ansible.builtin.set_fact:
     stalwart_configuration_revision: >-
-      {{ (lookup('template', 'plan.ndjson.j2') ~ lookup('template', 'runtime-secret.yml.j2')) | hash('sha256') }}
+      {{ (lookup('template', 'plan.ndjson.j2') ~ lookup('template', 'runtime-secret.yml.j2') ~ stalwart_image) | hash('sha256') }}
   no_log: true
 
 - name: Render Stalwart manifests from Jinja templates

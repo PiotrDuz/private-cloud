@@ -70,6 +70,7 @@ spec:
             - {name: dns-udp, containerPort: 53, protocol: UDP}
             - {name: dns-tcp, containerPort: 53, protocol: TCP}
           readinessProbe: {tcpSocket: {port: dns-tcp}, periodSeconds: 5}
+          livenessProbe: {tcpSocket: {port: dns-tcp}, initialDelaySeconds: 10, periodSeconds: 10}
           resources:
             requests: {cpu: 20m, memory: 32Mi}
             limits: {memory: 128Mi}
@@ -199,6 +200,7 @@ spec:
           ports:
             - {name: http, containerPort: {{ app.port }}, protocol: TCP}
           readinessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 10, periodSeconds: 10}
+          livenessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 30, periodSeconds: 20}
           resources:
             requests: {cpu: 100m, memory: 256Mi}
             limits: {memory: 2Gi}
@@ -234,6 +236,14 @@ spec:
           resources:
             requests: {cpu: 20m, memory: 32Mi}
             limits: {memory: 256Mi}
+          readinessProbe:
+            exec: {command: [ip, link, show, tun0]}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec: {command: [ip, link, show, tun0]}
+            initialDelaySeconds: 20
+            periodSeconds: 30
           volumeMounts:
             - {name: tun, mountPath: /dev/net/tun}
       volumes:

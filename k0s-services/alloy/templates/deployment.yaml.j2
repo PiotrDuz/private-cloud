@@ -41,6 +41,11 @@ spec:
           readinessProbe:
             httpGet: {path: /-/ready, port: http}
             periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /-/healthy, port: http}
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 6
           volumeMounts:
             - {name: pod-logs, mountPath: /var/log/pods, readOnly: true}
             - {name: journal, mountPath: /var/log/journal, readOnly: true}

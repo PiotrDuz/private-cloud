@@ -11,7 +11,7 @@ def alert_definitions(enabled):
     for level in ("warn", "error", "critical"):
         definitions.append(alert_definition(
             "private_cloud_" + level,
-            level_filter(level),
+            severity_filter(level),
             ">=",
             1,
             1,
@@ -65,15 +65,15 @@ def alert_definition(name, filters, operator, threshold, frequency, description,
             "silence": 5,
         },
         "destinations": ["private-cloud-email"],
-        "row_template": "[{level}] {namespace}/{service}: {message}",
+        "row_template": "[{severity}] {namespace}/{service}: {message}",
         "description": description,
         "enabled": enabled,
         "tz_offset": 0,
     }
 
 
-def level_filter(level):
-    return conditions(("level", "=", level), ("service", "!=", "openobserve"))
+def severity_filter(level):
+    return conditions(("severity", "=", level), ("service", "!=", "openobserve"))
 
 
 def conditions(*entries):

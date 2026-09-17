@@ -14,6 +14,10 @@ The Grist service is managed by `ansible/roles/grist`.
 - A ClusterIP service exposes TCP `8484` only inside the cluster.
 - Traefik publishes the configured hostname through HTTPS.
 - The Ingress preserves WebSocket connections.
+- Traefik authenticates Grist through the edge ForwardAuth helper and Keycloak.
+- Traefik strips client identity headers before authentication.
+- Grist trusts `X-Forwarded-User` for the single team site.
+- The logout path clears the helper cookie and returns to `/signed-out`.
 - Use the boot key for initial administrator setup.
 
 ## Manifest review

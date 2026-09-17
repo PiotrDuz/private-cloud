@@ -132,6 +132,8 @@
     - cloudflare-secret.yml.j2
     - ddns-secret.yml.j2
     - amneziawg-secret.yml.j2
+    - forward-auth-secret.yml.j2
+  when: item != 'forward-auth-secret.yml.j2' or private_cloud.stages.grist | bool
   no_log: true
 
 - name: Apply networking workloads

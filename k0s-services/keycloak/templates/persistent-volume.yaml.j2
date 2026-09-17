@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ keycloak_pv_name }}
+  labels:
+    app.kubernetes.io/name: {{ keycloak_service_name }}
+spec:
+  capacity:
+    storage: {{ keycloak_pv_capacity }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: {{ keycloak_namespace }}
+    name: {{ keycloak_pvc_name }}
+  local:
+    path: {{ keycloak_dataset_mountpoint | to_json }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ keycloak_node_name | to_json }}

@@ -1,0 +1,120 @@
+{% if private_cloud.stages.grist | bool %}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: forward-auth
+  namespace: edge
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forward-auth
+  namespace: edge
+  labels:
+    app.kubernetes.io/name: forward-auth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: forward-auth
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: forward-auth
+    spec:
+      serviceAccountName: forward-auth
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: forward-auth
+          image: {{ networking_forward_auth_image }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          env:
+            - {name: DEFAULT_PROVIDER, value: oidc}
+            - {name: PROVIDERS_OIDC_ISSUER_URL, value: {{ ("https://" ~ private_cloud.keycloak.hostname ~ "/realms/private-cloud") | to_json }}}
+            - {name: PROVIDERS_OIDC_CLIENT_ID, value: grist-forward-auth}
+            - {name: URL_PATH, value: /_oauth}
+            - {name: WHITELIST, value: {{ private_cloud.grist.allowed_emails | join(',') | to_json }}}
+            - {name: LOGOUT_REDIRECT, value: {{ ("https://" ~ private_cloud.grist.hostname ~ "/signed-out") | to_json }}}
+            - {name: LOG_LEVEL, value: info}
+            - {name: LOG_FORMAT, value: json}
+            - name: PROVIDERS_OIDC_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: forward-auth, key: oidc-client-secret}}
+            - name: SECRET
+              valueFrom: {secretKeyRef: {name: forward-auth, key: cookie-secret}}
+          ports:
+            - {name: http, containerPort: 4181, protocol: TCP}
+          resources:
+            requests: {cpu: 25m, memory: 32Mi, ephemeral-storage: 32Mi}
+            limits: {memory: 64Mi, ephemeral-storage: 128Mi}
+          readinessProbe: {tcpSocket: {port: http}, periodSeconds: 10, timeoutSeconds: 3, failureThreshold: 6}
+          livenessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 20, periodSeconds: 30, timeoutSeconds: 3, failureThreshold: 5}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: forward-auth
+  namespace: edge
+  labels:
+    app.kubernetes.io/name: forward-auth
+spec:
+  selector:
+    app.kubernetes.io/name: forward-auth
+  ports:
+    - {name: http, port: 4181, targetPort: http, protocol: TCP}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: forward-auth
+  namespace: edge
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: forward-auth}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports:
+        - {protocol: TCP, port: 4181}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - ipBlock: {cidr: {{ private_cloud.networking.traefik_internal_ip }}/32}
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: forward-auth-traefik-egress
+  namespace: edge
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: traefik}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: forward-auth}
+      ports:
+        - {protocol: TCP, port: 4181}
+{% endif %}

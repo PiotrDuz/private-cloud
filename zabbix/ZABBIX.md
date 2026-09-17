@@ -5,7 +5,7 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 ## Installation
 
 - Enable `private_cloud.stages.zabbix_agent` in the public configuration.
-- Set the monitored hostname and active server under `private_cloud.zabbix`.
+- Set the monitored hostname under `private_cloud.networking.zabbix_hostname` and the active server through the constants in `ansible/service_catalog.yml`.
 - Run `sudo python3 ansible/install.py` from the repository root.
 - The agent listens on localhost and uses unencrypted local transport.
 
@@ -21,9 +21,24 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - `zabbix-zfs-template.yaml` defines ZFS items, discovery, and alerts.
 - `zabbix-memory-ecc-template.yaml` defines ECC items, discovery, and alerts.
 
+## SMART dependency
+
+- ZFS and ECC triggers are bundled in this repository.
+- SMART disk-health triggers come from the stock Zabbix template only.
+- The Zabbix server stage requires `SMART by Zabbix agent 2 active` or its legacy name `SMART by Zabbix agent active 2`.
+- The stock template supplies the disk failing, self-test, attribute threshold, and temperature triggers.
+- Required Zabbix server version is 7.4; the pinned server and web images are 7.4.12.
+- A missing SMART template fails the managed template assert during the Zabbix server stage.
+
+## Version skew
+
+- The host installs Zabbix Agent 2 from the 7.0 repository.
+- The Zabbix server and web frontend run 7.4.12.
+- The 7.4 server accepts the 7.0 agent; the agent supplies the ZFS, ECC, and SMART keys.
+
 ## Managed keys
 
-- `zfs.metrics` reports pool health, errors, capacity, and leaf quotas.
+- `zfs.metrics` reports pool health, errors, capacity, leaf quotas, and quota headroom.
 - `zfs.snapshots` reports snapshot counts, retained bytes, and age.
 - `memory.ecc.metrics` reports corrected and uncorrected ECC counters.
 - The native SMART plugin reports disk discovery and health.

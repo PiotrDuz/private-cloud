@@ -3,7 +3,7 @@ import copy
 import uuid
 
 
-PREFIXES = ("zfs.dataset.used", "zfs.dataset.utilization", "zfs.snapshot.retained", "zfs.snapshot.retained_percent", "zfs.snapshot.oldest_age")
+PREFIXES = ("zfs.dataset.used", "zfs.dataset.quota", "zfs.dataset.headroom", "zfs.dataset.utilization", "zfs.snapshot.retained", "zfs.snapshot.retained_percent", "zfs.snapshot.oldest_age")
 
 
 def expand_datasets(document, datasets):

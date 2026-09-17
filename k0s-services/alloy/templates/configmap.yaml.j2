@@ -97,19 +97,19 @@ data:
       rule {
         source_labels = ["__journal_priority"]
         regex = "[0-2]"
-        target_label = "level"
+        target_label = "severity"
         replacement = "critical"
       }
       rule {
         source_labels = ["__journal_priority"]
         regex = "3"
-        target_label = "level"
+        target_label = "severity"
         replacement = "error"
       }
       rule {
         source_labels = ["__journal_priority"]
         regex = "4"
-        target_label = "level"
+        target_label = "severity"
         replacement = "warn"
       }
     }
@@ -180,39 +180,39 @@ data:
       stage.labels { values = {detected_level = "severity"} }
       stage.match {
         selector = `{detected_level=~"warn|warning|wrn"}`
-        stage.static_labels { values = {level = "warn"} }
+        stage.static_labels { values = {severity = "warn"} }
       }
       stage.match {
         selector = `{detected_level=~"err|error"}`
-        stage.static_labels { values = {level = "error"} }
+        stage.static_labels { values = {severity = "error"} }
       }
       stage.match {
         selector = `{detected_level=~"fatal|ftl|panic|critical"}`
-        stage.static_labels { values = {level = "critical"} }
+        stage.static_labels { values = {severity = "critical"} }
       }
       stage.match {
         selector = `{job="containers"} |~ "(?i)^(?:\\[[^\\]]+\\]\\s*)?\\[?(?:warning|warn|wrn)\\b|^W[0-9]{4}|^[0-9T:.+Z /-]+(?:\\[[0-9]+\\] )?WARNING:"`
-        stage.static_labels { values = {level = "warn"} }
+        stage.static_labels { values = {severity = "warn"} }
       }
       stage.match {
         selector = `{job="containers"} |~ "(?i)^(?:\\[[^\\]]+\\]\\s*)?\\[?(?:error|err)\\b|^E[0-9]{4}|^[0-9T:.+Z /-]+(?:\\[[0-9]+\\] )?ERROR:"`
-        stage.static_labels { values = {level = "error"} }
+        stage.static_labels { values = {severity = "error"} }
       }
       stage.match {
         selector = `{job="containers"} |~ "(?i)^(?:\\[[^\\]]+\\]\\s*)?\\[?(?:fatal|ftl|panic|critical)\\b|^F[0-9]{4}|^[0-9T:.+Z /-]+(?:\\[[0-9]+\\] )?(?:FATAL|PANIC):"`
-        stage.static_labels { values = {level = "critical"} }
+        stage.static_labels { values = {severity = "critical"} }
       }
       stage.match {
-        selector = `{service=~"redis-affine|immich-valkey"} |~ "^[0-9]+:[A-Z] .+ # "`
-        stage.static_labels { values = {level = "warn"} }
+        selector = `{service=~"redis-affine|valkey-immich"} |~ "^[0-9]+:[A-Z] .+ # "`
+        stage.static_labels { values = {severity = "warn"} }
       }
       stage.match {
         selector = `{service="qbittorrent"} |~ "\\(W\\)"`
-        stage.static_labels { values = {level = "warn"} }
+        stage.static_labels { values = {severity = "warn"} }
       }
       stage.match {
         selector = `{service="qbittorrent"} |~ "\\(C\\)"`
-        stage.static_labels { values = {level = "critical"} }
+        stage.static_labels { values = {severity = "critical"} }
       }
       stage.regex {
         expression = `"DownstreamStatus"\s*:\s*(?P<http_failure>5[0-9]{2})`
@@ -220,15 +220,15 @@ data:
       stage.labels { values = {http_failure = "http_failure"} }
       stage.match {
         selector = `{service="traefik",http_failure=~"5[0-9]{2}"}`
-        stage.static_labels { values = {level = "error"} }
+        stage.static_labels { values = {severity = "error"} }
       }
       stage.match {
         selector = `{service="zabbix"} |~ "(?i)(cannot send|failed to send|cannot connect|connection.*failed|database is down)"`
-        stage.static_labels { values = {level = "error"} }
+        stage.static_labels { values = {severity = "error"} }
       }
       stage.match {
-        selector = `{level=""}`
-        stage.static_labels { values = {level = "unknown"} }
+        selector = `{severity=""}`
+        stage.static_labels { values = {severity = "unknown"} }
       }
       stage.replace {
         expression = `(?i)(?:authorization|proxy-authorization|cookie|set-cookie)["\s]*[:=]\s*("[^"]*"|[^,\r\n]+)`
@@ -242,7 +242,7 @@ data:
         expression = `(?i)(?:https?|postgres(?:ql)?|smtp)://([^/@\s]+:[^/@\s]+)@`
         replace = "[REDACTED]"
       }
-      stage.label_keep { values = ["namespace", "service", "container", "node", "job", "level"] }
+      stage.label_keep { values = ["namespace", "service", "container", "node", "job", "severity"] }
     }
     local.file "ingest_username" {
       filename = "/etc/alloy/credentials/username"
