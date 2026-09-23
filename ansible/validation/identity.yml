@@ -1,0 +1,22 @@
+---
+- name: Check the installed Keycloak realm and OIDC clients
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/validation/check_identity.py"
+    stdin: >-
+      {{ {
+        'address': private_cloud.networking.traefik_internal_ip,
+        'hostname': private_cloud.keycloak.hostname,
+        'clients': [
+          {'stage': 'opencloud', 'id': 'opencloud', 'redirect': 'https://' ~ private_cloud.opencloud.hostname ~ '/oidc-callback.html'},
+          {'stage': 'stalwart', 'id': 'stalwart', 'redirect': 'https://' ~ private_cloud.stalwart.hostname ~ '/account/oauth/callback'},
+          {'stage': 'stalwart', 'id': 'stalwart-webui', 'redirect': 'https://' ~ private_cloud.stalwart.hostname ~ '/account/oauth/callback'},
+          {'stage': 'grist', 'id': 'grist-forward-auth', 'redirect': 'https://' ~ private_cloud.grist.hostname ~ '/_oauth'},
+          {'stage': 'affine', 'id': 'affine', 'redirect': 'https://' ~ private_cloud.affine.hostname ~ '/oauth/callback'},
+          {'stage': 'immich', 'id': 'immich', 'redirect': 'https://' ~ private_cloud.immich.hostname ~ '/auth/login'},
+          {'stage': 'media', 'id': 'jellyfin', 'redirect': 'https://' ~ private_cloud.media.hostname ~ '/sso/OIDC/Callback/keycloak'}
+        ] | selectattr('stage', 'in', private_cloud.stages | dict2items | selectattr('value', 'equalto', true) | map(attribute='key') | list) | list
+      } | to_json }}
+  changed_when: false
+  when: private_cloud.stages.keycloak | bool

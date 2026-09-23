@@ -40,7 +40,6 @@ sudo python3 ansible/install.py
 - Zabbix host settings are in `ansible/service_catalog.yml`.
 - The logging stage deploys Alloy and OpenObserve in `observability`.
 - The notifications stage enables OpenObserve SMTP and Zabbix email actions.
-- The notifications stage sends a test alert and verifies delivery at the Stalwart inbox.
 - Keycloak is the shared OIDC provider for the enabled user-facing services.
 - The edge forward-auth helper authenticates Grist through Keycloak.
 - The media stage keeps the ARR stack and shared media library on `no-backup` datasets.
@@ -54,6 +53,7 @@ sudo python3 ansible/install.py
 - Update changes selected public or secret values.
 - Reapply converges the existing configuration.
 - Rotate replaces selected encrypted values.
+- Validate runs the separate live checks after operator setup.
 - Ansible runs all enabled stages in dependency order.
 - The k0s stage creates the workload and infrastructure namespaces.
 
@@ -61,6 +61,7 @@ sudo python3 ansible/install.py
 
 - Reboot the host under supervision after the first successful installation.
 - Reapply the configuration after reboot to verify native ZFS mounts and k0s ordering.
+- Select `validate` in the installer to check the installed system and alert delivery.
 - Do not use the installer for unattended operating-system or OpenZFS upgrades.
 
 ## Operations

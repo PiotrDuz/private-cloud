@@ -1,0 +1,76 @@
+---
+- name: Check each enabled workload rollout
+  ansible.builtin.command:
+    argv:
+      - k0s
+      - kubectl
+      - rollout
+      - status
+      - "{{ item.kind | default('deployment') }}/{{ item.name }}"
+      - -n
+      - "{{ item.namespace }}"
+      - --timeout=90s
+  loop:
+    - {stage: networking, namespace: edge, name: traefik}
+    - {stage: networking, namespace: network-access, name: amneziawg}
+    - {stage: grist, namespace: edge, name: forward-auth}
+    - {stage: intel_gpu, namespace: kube-system, name: intel-gpu-plugin, kind: daemonset}
+    - {stage: postgres, namespace: private-cloud, name: postgres}
+    - {stage: meilisearch, namespace: private-cloud, name: meilisearch}
+    - {stage: keycloak, namespace: private-cloud, name: keycloak}
+    - {stage: media, namespace: media, name: media-vpn}
+    - {stage: media, namespace: media, name: sonarr}
+    - {stage: media, namespace: media, name: radarr}
+    - {stage: media, namespace: media, name: prowlarr}
+    - {stage: media, namespace: media, name: qbittorrent}
+    - {stage: media, namespace: media, name: jellyfin}
+    - {stage: stalwart, namespace: private-cloud, name: stalwart, kind: statefulset}
+    - {stage: tika, namespace: private-cloud, name: tika}
+    - {stage: onlyoffice, namespace: private-cloud, name: onlyoffice}
+    - {stage: opencloud, namespace: private-cloud, name: opencloud}
+    - {stage: grist, namespace: private-cloud, name: grist}
+    - {stage: manticore, namespace: private-cloud, name: manticore}
+    - {stage: redis_affine, namespace: private-cloud, name: redis-affine}
+    - {stage: affine, namespace: private-cloud, name: affine}
+    - {stage: immich, namespace: private-cloud, name: immich}
+    - {stage: immich, namespace: private-cloud, name: immich-machine-learning}
+    - {stage: immich, namespace: private-cloud, name: valkey-immich}
+    - {stage: zabbix_server, namespace: private-cloud, name: zabbix-server}
+    - {stage: zabbix_server, namespace: private-cloud, name: zabbix-web}
+    - {stage: logging, namespace: observability, name: openobserve}
+    - {stage: logging, namespace: observability, name: alloy}
+  loop_control:
+    label: "{{ item.namespace }}/{{ item.name }}"
+  changed_when: false
+  when: private_cloud.stages[item.stage] | bool
+
+- name: Read each ARR application process UID
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, media, "deployment/{{ item }}", -c, "{{ item }}", --, id, -u]
+  loop: [sonarr, radarr, prowlarr, qbittorrent]
+  register: validation_arr_uids
+  changed_when: false
+  when: private_cloud.stages.media | bool
+
+- name: Require rootless ARR application containers
+  ansible.builtin.assert:
+    that: item.stdout | trim == '1000'
+    fail_msg: "{{ item.item }} is not running as UID 1000."
+  loop: "{{ validation_arr_uids.results | default([]) }}"
+  when: private_cloud.stages.media | bool
+
+- name: Read the qBittorrent tunnel binding
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, media, deployment/qbittorrent, -c, qbittorrent, --, cat, /config/qBittorrent/qBittorrent.conf]
+  register: validation_qbittorrent_configuration
+  changed_when: false
+  no_log: true
+  when: private_cloud.stages.media | bool
+
+- name: Require qBittorrent bound to tun0
+  ansible.builtin.assert:
+    that:
+      - "'Session\\Interface=tun0' in validation_qbittorrent_configuration.stdout"
+      - "'Session\\InterfaceName=tun0' in validation_qbittorrent_configuration.stdout"
+    fail_msg: qBittorrent has lost its tun0 interface binding.
+  when: private_cloud.stages.media | bool

@@ -78,6 +78,35 @@ def message_received(config, account, session, marker):
     return False
 
 
+def matching_message_count(config, marker):
+    """Count messages whose subject contains a unique validation marker."""
+    count = 0
+    for account in config["accounts"]:
+        try:
+            session = session_document(config, account)
+            if session is None:
+                continue
+            account_id = next(iter(session.get("primaryAccounts", {}).values()), None)
+            if account_id is None:
+                account_id = next(iter(session.get("accounts", {})), None)
+            if account_id is None:
+                continue
+            path = urllib.parse.urlsplit(session.get("apiUrl", "")).path or "/jmap"
+            payload = {
+                "using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"],
+                "methodCalls": [["Email/query", {"accountId": account_id, "filter": {"subject": marker}, "limit": 20}, "query"]],
+            }
+            status, _, body = request_json(config, account, "POST", path, payload)
+            if status != 200:
+                continue
+            for name, result, _ in json.loads(body).get("methodResponses", []):
+                if name == "Email/query":
+                    count = max(count, len(result.get("ids", [])))
+        except (OSError, http.client.HTTPException, ValueError):
+            continue
+    return count
+
+
 def request_json(config, account, method, path, payload=None):
     token = base64.b64encode((account + ":" + config["password"]).encode()).decode()
     headers = {

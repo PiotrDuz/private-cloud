@@ -141,32 +141,6 @@
   register: logging_endpoints
   changed_when: false
 
-- name: Verify end-to-end host log ingestion
-  ansible.builtin.uri:
-    url: 'http://{{ logging_endpoints.results[0].resources[0].spec.clusterIP }}:5080/api/default/_search'
-    method: POST
-    url_username: "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain }}"
-    url_password: "{{ private_cloud_secrets.logging.admin_password }}"
-    force_basic_auth: true
-    body_format: json
-    body:
-      query:
-        sql: 'SELECT COUNT(*) AS count FROM "logs" WHERE service = ''private-cloud-log-heartbeat.service'''
-        start_time: "{{ ((now(utc=true).timestamp() | int) - 300) * 1000000 }}"
-        end_time: "{{ (now(utc=true).timestamp() | int) * 1000000 }}"
-        from: 0
-        size: 1
-    return_content: true
-  register: logging_ingestion
-  until:
-    - logging_ingestion.status | default(0) == 200
-    - logging_ingestion.json.hits | default([]) | length > 0
-    - logging_ingestion.json.hits[0].count | int > 0
-  retries: 30
-  delay: 10
-  changed_when: false
-  no_log: true
-
 - name: Provision OpenObserve log alerts
   ansible.builtin.command:
     argv:
@@ -182,32 +156,4 @@
       } | to_json }}
   register: logging_openobserve_provision
   changed_when: (logging_openobserve_provision.stdout | from_json).changed
-  no_log: true
-
-- name: Verify alert delivery at the destination inbox
-  ansible.builtin.command:
-    argv:
-      - python3
-      - "{{ playbook_dir }}/../logging/verify_alert_delivery.py"
-    stdin: >-
-      {{ {
-        'address': private_cloud.networking.traefik_internal_ip,
-        'hostname': private_cloud.stalwart.hostname,
-        'port': 443,
-        'relay_host': private_cloud.stalwart.relay_host,
-        'relay_port': private_cloud.stalwart.relay_port,
-        'relay_implicit_tls': private_cloud.stalwart.relay_implicit_tls,
-        'relay_username': private_cloud.stalwart.relay_username,
-        'relay_password': private_cloud_secrets.stalwart.relay_password,
-        'sender': private_cloud.notifications.from_address,
-        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
-        'accounts': [
-          private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
-          private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
-        ],
-        'password': private_cloud_secrets.stalwart.mailbox_password
-      } | to_json }}
-  register: logging_alert_delivery
-  changed_when: false
-  when: private_cloud.stages.notifications | bool
   no_log: true

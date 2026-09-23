@@ -135,8 +135,22 @@ spec:
 {% endif %}
     spec:
       automountServiceAccountToken: false
-{% if app.name == 'qbittorrent' %}
       initContainers:
+        - name: prepare-runtime
+          image: {{ media_images[app.name] }}
+          command: [/bin/sh, -ceu, 'chown 1000:1000 /run']
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL], add: [CHOWN]}
+            seccompProfile: {type: RuntimeDefault}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: runtime, mountPath: /run}
+{% if app.name == 'qbittorrent' %}
         - name: configure-logging
           image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
           command: [python3, /scripts/configure.py]
@@ -190,8 +204,6 @@ spec:
         - name: {{ app.name }}
           image: {{ media_images[app.name] }}
           env:
-            - {name: PUID, value: '1000'}
-            - {name: PGID, value: '1000'}
             - {name: TZ, value: {{ private_cloud.media.timezone | to_json }}}
 {% if app.name == 'qbittorrent' %}
             - {name: WEBUI_PORT, value: '8080'}
@@ -205,10 +217,14 @@ spec:
             requests: {cpu: 100m, memory: 256Mi}
             limits: {memory: 2Gi}
           securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
             allowPrivilegeEscalation: false
-            capabilities: {drop: [NET_ADMIN, NET_RAW, SYS_ADMIN, SYS_MODULE, SYS_PTRACE]}
+            capabilities: {drop: [ALL]}
             seccompProfile: {type: RuntimeDefault}
           volumeMounts:
+            - {name: runtime, mountPath: /run}
             - {name: config, mountPath: /config}
 {% if app.name in ['sonarr', 'radarr', 'qbittorrent'] %}
             - {name: library, mountPath: /media}
@@ -247,6 +263,7 @@ spec:
           volumeMounts:
             - {name: tun, mountPath: /dev/net/tun}
       volumes:
+        - {name: runtime, emptyDir: {}}
         - {name: config, persistentVolumeClaim: {claimName: {{ app.name }}-data}}
         - {name: tun, hostPath: {path: /dev/net/tun, type: CharDevice}}
 {% if app.name == 'qbittorrent' %}

@@ -1,0 +1,48 @@
+---
+- name: Read the k0s node state
+  ansible.builtin.command:
+    argv: [k0s, kubectl, get, nodes, -o, json]
+  register: validation_nodes
+  changed_when: false
+  when: private_cloud.stages.k0s | bool
+
+- name: Require one ready cluster node
+  ansible.builtin.assert:
+    that:
+      - (validation_nodes.stdout | from_json)['items'] | length == 1
+      - >-
+        ((validation_nodes.stdout | from_json)['items'][0].status.conditions |
+         selectattr('type', 'equalto', 'Ready') | map(attribute='status') | list) == ['True']
+    fail_msg: The single k0s node is not ready.
+  when: private_cloud.stages.k0s | bool
+
+- name: Read managed persistent volume claims
+  ansible.builtin.command:
+    argv: [k0s, kubectl, get, pvc, --all-namespaces, -o, json]
+  register: validation_claims
+  changed_when: false
+  when: private_cloud.stages.k0s | bool
+
+- name: Require each enabled service claim to exist
+  ansible.builtin.assert:
+    that: >-
+      ((validation_claims.stdout | from_json)['items'] |
+       selectattr('metadata.namespace', 'equalto', ('media' if item.name in ['jellyfin', 'sonarr', 'radarr', 'prowlarr', 'qbittorrent', 'media-library'] else ('edge' if item.name == 'traefik' else ('observability' if item.name in ['openobserve', 'alloy'] else 'private-cloud')))) |
+       selectattr('metadata.name', 'equalto', ('zabbix-server-data' if item.name == 'zabbix' else item.name ~ '-data')) |
+       list | length) == 1
+    fail_msg: "The enabled {{ item.name }} service has no persistent volume claim."
+  loop: "{{ private_cloud_dataset_catalog | rejectattr('name', 'in', ['config', 'images', 'ephemeral']) | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - private_cloud.stages.k0s | bool
+    - private_cloud.stages[item.stage] | bool
+
+- name: Require all installed persistent volume claims bound
+  ansible.builtin.assert:
+    that: item.status.phase == 'Bound'
+    fail_msg: "PVC {{ item.metadata.namespace }}/{{ item.metadata.name }} is not bound."
+  loop: "{{ (validation_claims.stdout | default('{\"items\": []}') | from_json)['items'] | selectattr('metadata.namespace', 'in', ['private-cloud', 'media', 'edge', 'observability']) | list }}"
+  loop_control:
+    label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
+  when: private_cloud.stages.k0s | bool

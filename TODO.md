@@ -1,39 +1,31 @@
 # Outstanding work
 
-[PLAN.md](PLAN.md) defines the target state; unchecked items here remain to be implemented in the repository. Operator-only work is tracked in [docs/SETUP.md](docs/SETUP.md).
+[PLAN.md](PLAN.md) defines the target state; this file tracks repository automation that remains. Operator tasks are in [docs/SETUP.md](docs/SETUP.md).
 
 Backup automation, snapshot retention, and recovery planning are deferred.
 
-## Startup and storage verification automation
+## Runtime validation gaps
 
-- [ ] Automate post-reboot verification of ZFS unlock, mount, and k0s startup ordering.
+- [ ] Verify that ZFS unlock and k0s startup succeed after an actual reboot.
+- [ ] Automate full OIDC sign-in and logout flows with test users for each application.
+- [ ] Automate Jellyfin SSO-OIDC Quick Connect and role-mapping checks.
+- [ ] Automate Keycloak realm recreation and post-recreation checks.
+- [ ] Validate split DNS from LAN and VPN clients.
+- [ ] Validate ARR API connections and library-folder access.
+- [ ] Validate Jellyfin library scans, playback, and metadata downloads.
+- [ ] Validate certificate issuance and renewal, not only current trust.
+- [ ] Validate forwarding-domain MX and mail authentication DNS records.
+- [ ] Validate host firewall reachability from WAN and local networks.
 
-## Identity verification automation
+## Observability validation gaps
 
-- [ ] Automate end-to-end OIDC login verification for every Keycloak-backed service.
-- [ ] Automate Jellyfin SSO-OIDC plugin login, Quick Connect, and role-mapping validation.
-- [ ] Automate the Keycloak realm recreation procedure and its post-recreation client checks.
-- [ ] Automate split-DNS resolution verification for LAN and VPN clients.
-
-## Service verification automation
-
-- [ ] Automate ARR connection, API, and library-folder verification after deployment.
-- [ ] Automate Jellyfin library scan, playback, and metadata download verification after deployment.
-- [ ] Automate Stalwart JMAP and basic-auth verification.
-- [ ] Automate Traefik and Stalwart certificate issuance and renewal verification.
-- [ ] Automate Cloudflare public A record creation and forwarding-domain MX reconciliation.
-- [ ] Automate SPF, DKIM, and DMARC publication and DNS verification.
-- [ ] Automate host-side firewall and route checks from the deployment acceptance matrix.
-
-## Logging and notification acceptance automation
-
-- [ ] Automate the timestamped-log presence check for every enabled service and host source in OpenObserve.
-- [ ] Automate reporting of live unclassified log formats that need severity parsing.
-- [ ] Automate collector-restart and bounded OpenObserve outage recovery checks.
-- [ ] Automate source rotation and expired OpenObserve data deletion checks.
-- [ ] Automate synthetic log warning, log error, and Kubernetes Warning notification checks.
-- [ ] Automate Zabbix Warning-or-higher problem and recovery email checks.
-- [ ] Automate OpenObserve missing-heartbeat and Zabbix Alloy health alert checks.
-- [ ] Automate Zabbix Agent and ZFS, ECC, and SMART collector failure ingestion checks.
-- [ ] Automate OpenObserve query and SMTP failure visibility checks.
-- [ ] Automate media VPN and Jellyfin isolation checks for logging access.
+- [ ] Check timestamped log ingestion for every enabled service and host source.
+- [ ] Report live unclassified log formats that need severity parsing.
+- [ ] Exercise collector restart and bounded OpenObserve outage recovery.
+- [ ] Verify source rotation and expired OpenObserve data deletion.
+- [ ] Trigger each managed warning, error, critical, and Kubernetes Warning rule.
+- [ ] Verify Zabbix hourly reminder delivery while a problem stays open.
+- [ ] Exercise OpenObserve missing-heartbeat and Zabbix Alloy health alerts.
+- [ ] Verify collector failure logs reach OpenObserve for ZFS, ECC, and SMART.
+- [ ] Verify OpenObserve query and SMTP failures appear in logs and alerts.
+- [ ] Validate media VPN and Jellyfin isolation from logging access.

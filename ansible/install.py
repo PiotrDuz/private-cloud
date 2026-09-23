@@ -30,6 +30,7 @@ from install_helpers import (
     TEMP_PUBLIC_FILE,
     TEMP_RUNTIME_FILE,
     TEMP_SECRET_FILE,
+    VALIDATION_PLAYBOOK,
     VAULT_PASSWORD_FILE,
     InstallerError,
     atomic_write,
@@ -87,6 +88,20 @@ def run_installation() -> dict[str, Any]:
             existing_public = stored_public
             validate_public_configuration(existing_public)
         mode = choose_mode(existing_public is not None)
+        if mode == "validate":
+            if existing_public is None:
+                raise InstallerError("An existing public configuration is required for validation")
+            require_commands(["ansible-playbook", "ansible-vault"])
+            if not SECRETS_CONFIGURATION.is_file():
+                raise InstallerError("The encrypted secrets configuration is missing")
+            validate_vault_ciphertext(SECRETS_CONFIGURATION)
+            password = prompt_secret("Ansible Vault password", confirm=False)
+            write_password_file(password)
+            decrypt_secrets(SECRETS_CONFIGURATION, TEMP_SECRET_FILE, VAULT_PASSWORD_FILE)
+            secrets_configuration = load_yaml(TEMP_SECRET_FILE)
+            validate_secrets_configuration(secrets_configuration, existing_public["private_cloud"]["stages"])
+            run_validation_playbook()
+            return {"status": "completed", "mode": "validate", "playbook": str(VALIDATION_PLAYBOOK)}
         if mode == "create" and existing_public is not None:
             raise InstallerError("A public configuration already exists; choose update, reapply, or rotate")
         if mode == "create" and pool_exists():
@@ -564,6 +579,16 @@ def run_playbook() -> None:
         "--extra-vars", f"@{TEMP_RUNTIME_FILE}",
         "--vault-password-file", str(VAULT_PASSWORD_FILE),
     ], environment={"ANSIBLE_CONFIG": str(ANSIBLE_CONFIG)}, stage="ansible-playbook")
+
+
+def run_validation_playbook() -> None:
+    run_command([
+        "ansible-playbook",
+        "-i", str(INVENTORY),
+        str(VALIDATION_PLAYBOOK),
+        "--extra-vars", f"@{PUBLIC_CONFIGURATION}",
+        "--extra-vars", f"@{TEMP_SECRET_FILE}",
+    ], environment={"ANSIBLE_CONFIG": str(ANSIBLE_CONFIG)}, stage="validation")
 
 
 def _copy_mapping(value: dict[str, Any]) -> dict[str, Any]:

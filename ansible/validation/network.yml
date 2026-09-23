@@ -1,0 +1,45 @@
+---
+- name: Require the host firewall service active
+  ansible.builtin.command: systemctl is-active private-cloud-firewall.service
+  register: validation_firewall_service
+  changed_when: false
+  failed_when: validation_firewall_service.stdout | trim != 'active'
+  when: private_cloud.stages.networking | bool
+
+- name: Read the active host firewall
+  ansible.builtin.command:
+    argv: [nft, list, table, inet, private_cloud]
+  register: validation_firewall_rules
+  changed_when: false
+  when: private_cloud.stages.networking | bool
+
+- name: Require host-directed ICMP in the firewall
+  ansible.builtin.assert:
+    that:
+      - validation_firewall_rules.stdout is search('fib daddr type local.*icmp.*accept')
+    fail_msg: The active firewall is missing the host-directed ICMP pass-through.
+  when: private_cloud.stages.networking | bool
+
+- name: Validate public DNS and trusted HTTPS service routes
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_edge.py"]
+    stdin: >-
+      {{ {
+        'address': private_cloud.networking.traefik_internal_ip,
+        'sites': [
+          {'stage': 'keycloak', 'host': private_cloud.keycloak.hostname, 'path': '/realms/private-cloud/.well-known/openid-configuration', 'issuer': 'https://' ~ private_cloud.keycloak.hostname ~ '/realms/private-cloud'},
+          {'stage': 'media', 'host': private_cloud.media.hostname},
+          {'stage': 'onlyoffice', 'host': private_cloud.onlyoffice.hostname},
+          {'stage': 'opencloud', 'host': private_cloud.opencloud.hostname},
+          {'stage': 'grist', 'host': private_cloud.grist.hostname},
+          {'stage': 'affine', 'host': private_cloud.affine.hostname},
+          {'stage': 'immich', 'host': private_cloud.immich.hostname},
+          {'stage': 'stalwart', 'host': private_cloud.stalwart.hostname, 'path': '/.well-known/jmap'},
+          {'stage': 'zabbix_server', 'host': private_cloud.networking.zabbix_hostname},
+          {'stage': 'logging', 'host': private_cloud.logging.hostname}
+        ] | selectattr('stage', 'in', private_cloud.stages | dict2items | selectattr('value', 'equalto', true) | map(attribute='key') | list) | list,
+        'smtp_host': private_cloud.stalwart.hostname if private_cloud.stages.stalwart else none
+      } | to_json }}
+  register: validation_edge_routes
+  changed_when: false
+  when: private_cloud.stages.networking | bool

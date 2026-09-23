@@ -1,0 +1,197 @@
+---
+- name: Validate OpenObserve host log ingestion
+  when: private_cloud.stages.logging | bool
+  block:
+    - name: Resolve OpenObserve service
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ private_cloud_kubeconfig }}"
+        api_version: v1
+        kind: Service
+        name: openobserve
+        namespace: observability
+      register: validation_openobserve_service
+      changed_when: false
+
+    - name: Wait for the host logging heartbeat to arrive in OpenObserve
+      ansible.builtin.uri:
+        url: 'http://{{ validation_openobserve_service.resources[0].spec.clusterIP }}:5080/api/default/_search'
+        method: POST
+        url_username: "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain }}"
+        url_password: "{{ private_cloud_secrets.logging.admin_password }}"
+        force_basic_auth: true
+        body_format: json
+        body:
+          query:
+            sql: 'SELECT COUNT(*) AS count FROM "logs" WHERE service = ''private-cloud-log-heartbeat.service'''
+            start_time: "{{ ((now(utc=true).timestamp() | int) - 300) * 1000000 }}"
+            end_time: "{{ (now(utc=true).timestamp() | int) * 1000000 }}"
+            from: 0
+            size: 1
+        return_content: true
+      register: validation_log_heartbeat
+      until:
+        - validation_log_heartbeat.status | default(0) == 200
+        - validation_log_heartbeat.json.hits | default([]) | length > 0
+        - validation_log_heartbeat.json.hits[0].count | int > 0
+      retries: 30
+      delay: 10
+      changed_when: false
+      no_log: true
+
+- name: Validate configured OpenObserve email alert delivery
+  when:
+    - private_cloud.stages.logging | bool
+    - private_cloud.stages.notifications | bool
+  block:
+    - name: Exercise a temporary OpenObserve alert and verify inbox delivery
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../logging/validate_openobserve_alert.py"
+        stdin: >-
+          {{ {
+            'endpoint': 'http://' ~ validation_openobserve_service.resources[0].spec.clusterIP ~ ':5080',
+            'username': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+            'password': private_cloud_secrets.logging.admin_password,
+            'mail': {
+              'address': private_cloud.networking.traefik_internal_ip,
+              'hostname': private_cloud.stalwart.hostname,
+              'port': 443,
+              'accounts': [
+                private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
+                private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
+              ],
+              'password': private_cloud_secrets.stalwart.mailbox_password
+            }
+          } | to_json }}
+      register: validation_openobserve_alert
+      changed_when: false
+      no_log: true
+
+    - name: Verify direct SMTP relay and Stalwart inbox delivery
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../logging/verify_alert_delivery.py"
+        stdin: >-
+          {{ {
+            'address': private_cloud.networking.traefik_internal_ip,
+            'hostname': private_cloud.stalwart.hostname,
+            'port': 443,
+            'relay_host': private_cloud.stalwart.relay_host,
+            'relay_port': private_cloud.stalwart.relay_port,
+            'relay_implicit_tls': private_cloud.stalwart.relay_implicit_tls,
+            'relay_username': private_cloud.stalwart.relay_username,
+            'relay_password': private_cloud_secrets.stalwart.relay_password,
+            'sender': private_cloud.notifications.from_address,
+            'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+            'accounts': [
+              private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
+              private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
+            ],
+            'password': private_cloud_secrets.stalwart.mailbox_password
+          } | to_json }}
+      register: validation_direct_mail_delivery
+      changed_when: false
+      no_log: true
+
+- name: Validate Zabbix Agent collectors and item keys
+  when: private_cloud.stages.zabbix_agent | bool
+  block:
+    - name: Run ZFS metrics collector as the Zabbix user
+      ansible.builtin.command:
+        argv: [runuser, -u, zabbix, --, /usr/local/libexec/zabbix/zfs-collector.py, --inventory, /etc/zabbix/private-cloud-datasets.json, metrics]
+      register: validation_zabbix_zfs_metrics
+      changed_when: false
+
+    - name: Run ZFS snapshot collector as the Zabbix user
+      ansible.builtin.command:
+        argv: [runuser, -u, zabbix, --, /usr/local/libexec/zabbix/zfs-collector.py, --inventory, /etc/zabbix/private-cloud-datasets.json, snapshots]
+      register: validation_zabbix_zfs_snapshots
+      changed_when: false
+
+    - name: Validate ZFS collector output
+      ansible.builtin.assert:
+        that:
+          - (validation_zabbix_zfs_metrics.stdout | from_json).error_count | int == 0
+          - (validation_zabbix_zfs_snapshots.stdout | from_json).error_count | int == 0
+        fail_msg: ZFS collector output is invalid or reports errors.
+
+    - name: Run memory ECC collector as the Zabbix user
+      ansible.builtin.command:
+        argv: [runuser, -u, zabbix, --, /usr/local/libexec/zabbix/memory-ecc-collector.py]
+      register: validation_zabbix_ecc_metrics
+      changed_when: false
+
+    - name: Validate memory ECC collector output
+      ansible.builtin.assert:
+        that: (validation_zabbix_ecc_metrics.stdout | from_json).error_count | int == 0
+        fail_msg: Memory ECC collector output is invalid or reports errors.
+
+    - name: Check registered Zabbix item keys
+      ansible.builtin.command:
+        argv: [zabbix_agent2, -t, "{{ item }}", -c, /etc/zabbix/zabbix_agent2.conf]
+      loop:
+        - zfs.metrics
+        - zfs.snapshots
+        - memory.ecc.metrics
+      register: validation_zabbix_agent_keys
+      changed_when: false
+      failed_when: validation_zabbix_agent_keys.rc != 0 or 'ZBX_NOTSUPPORTED' in validation_zabbix_agent_keys.stdout
+
+    - name: Verify the SMART wrapper command form
+      ansible.builtin.command:
+        argv: [runuser, -u, zabbix, --, sudo, -n, /usr/local/libexec/zabbix/smartctl-wrapper, -j, -V]
+      changed_when: false
+
+    - name: Check the registered SMART discovery key
+      ansible.builtin.command:
+        argv: [zabbix_agent2, -t, smart.disk.discovery, -c, /etc/zabbix/zabbix_agent2.conf]
+      register: validation_zabbix_smart_discovery
+      changed_when: false
+      failed_when: validation_zabbix_smart_discovery.rc != 0 or 'ZBX_NOTSUPPORTED' in validation_zabbix_smart_discovery.stdout
+
+- name: Validate Zabbix problem and recovery notifications
+  when:
+    - private_cloud.stages.notifications | bool
+    - private_cloud.stages.zabbix_server | bool
+    - private_cloud.stages.zabbix_agent | bool
+  block:
+    - name: Resolve Zabbix web API service
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ private_cloud_kubeconfig }}"
+        api_version: v1
+        kind: Service
+        name: zabbix-web
+        namespace: private-cloud
+      register: validation_zabbix_web_service
+      changed_when: false
+
+    - name: Trigger a temporary Zabbix problem and recovery
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../zabbix/validate_alert_delivery.py"
+        stdin: >-
+          {{ {
+            'url': 'http://' ~ validation_zabbix_web_service.resources[0].spec.clusterIP ~ '/api_jsonrpc.php',
+            'username': private_cloud.zabbix.admin_username,
+            'password': private_cloud_secrets.zabbix.admin_password,
+            'host': private_cloud_zabbix_hostname,
+            'sender_address': '127.0.0.1',
+            'sender_port': 31051,
+            'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+            'mail': {
+              'address': private_cloud.networking.traefik_internal_ip,
+              'hostname': private_cloud.stalwart.hostname,
+              'port': 443,
+              'accounts': [
+                private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
+                private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
+              ],
+              'password': private_cloud_secrets.stalwart.mailbox_password
+            }
+          } | to_json }}
+      register: validation_zabbix_alert_delivery
+      changed_when: false
+      no_log: true

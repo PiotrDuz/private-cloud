@@ -1,0 +1,67 @@
+---
+- name: Read pool health
+  ansible.builtin.command: zpool list -H -o health tank
+  register: validation_pool_health
+  changed_when: false
+  when: private_cloud.stages.zfs | bool
+
+- name: Require a healthy pool
+  ansible.builtin.assert:
+    that: validation_pool_health.stdout | trim == 'ONLINE'
+    fail_msg: The tank pool is not online.
+  when: private_cloud.stages.zfs | bool
+
+- name: Read the encrypted root state
+  ansible.builtin.command:
+    argv: [zfs, get, -H, -o, value, "{{ item }}", tank/secure]
+  loop: [keystatus, mounted, quota]
+  register: validation_secure_properties
+  changed_when: false
+  when: private_cloud.stages.zfs | bool
+
+- name: Require an unlocked, mounted, unbounded encrypted root
+  ansible.builtin.assert:
+    that:
+      - validation_secure_properties.results[0].stdout | trim == 'available'
+      - validation_secure_properties.results[1].stdout | trim == 'yes'
+      - validation_secure_properties.results[2].stdout | trim == 'none'
+    fail_msg: The encrypted root is locked, unmounted, or quota-limited.
+  when: private_cloud.stages.zfs | bool
+
+- name: Read managed dataset state and quotas
+  ansible.builtin.command:
+    argv: [zfs, get, -H, -o, value, "{{ item[1] }}", "{{ item[0].dataset }}"]
+  loop: "{{ private_cloud_dataset_catalog | product(['mounted', 'quota']) | list }}"
+  register: validation_dataset_properties
+  changed_when: false
+  when:
+    - private_cloud.stages.zfs | bool
+    - private_cloud.stages[item[0].stage] | bool
+
+- name: Require mounted and quota-controlled managed datasets
+  ansible.builtin.assert:
+    that:
+      - item.stdout | trim == 'yes' if item.item[1] == 'mounted' else item.stdout | trim not in ['none', '0', '-']
+    fail_msg: "Dataset {{ item.item[0].dataset }} has an invalid {{ item.item[1] }} value."
+  loop: "{{ validation_dataset_properties.results | default([]) }}"
+  when: not (item.skipped | default(false))
+
+- name: Require the native encrypted mount dependencies
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/storage_checks.py", encrypted-mounts, --dataset, tank/secure]
+  changed_when: false
+  when: private_cloud.stages.zfs | bool
+
+- name: Read k0s service ordering
+  ansible.builtin.command: systemctl show -p Requires -p After k0scontroller.service
+  register: validation_k0s_ordering
+  changed_when: false
+  when: private_cloud.stages.k0s | bool
+
+- name: Require k0s to follow encrypted storage
+  ansible.builtin.assert:
+    that:
+      - "'zfs-mount.service' in validation_k0s_ordering.stdout"
+      - "'zfs-load-key@tank-secure.service' in validation_k0s_ordering.stdout"
+    fail_msg: k0s lacks the encrypted storage startup ordering.
+  when: private_cloud.stages.k0s | bool

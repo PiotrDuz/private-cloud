@@ -1,0 +1,44 @@
+---
+- name: Validate the installed private cloud
+  hosts: all
+  gather_facts: true
+  any_errors_fatal: true
+  vars_files:
+    - service_catalog.yml
+  vars:
+    private_cloud_kubeconfig: /run/private-cloud/kubeconfig
+  tasks:
+    - name: Require root execution
+      ansible.builtin.assert:
+        that: ansible_facts.effective_user_id | int == 0
+        fail_msg: Validation must run with effective UID 0.
+
+    - name: Run installed-system checks with transient cluster credentials
+      block:
+        - name: Generate a transient k0s kubeconfig
+          ansible.builtin.include_tasks: tasks/kubeconfig.yml
+          when: private_cloud.stages.k0s | bool
+
+        - name: Validate storage
+          ansible.builtin.include_tasks: validation/storage.yml
+
+        - name: Validate the cluster
+          ansible.builtin.include_tasks: validation/cluster.yml
+
+        - name: Validate services
+          ansible.builtin.include_tasks: validation/services.yml
+
+        - name: Validate identity integrations
+          ansible.builtin.include_tasks: validation/identity.yml
+
+        - name: Validate networking
+          ansible.builtin.include_tasks: validation/network.yml
+
+        - name: Validate observability and alerts
+          ansible.builtin.include_tasks: validation/observability.yml
+      always:
+        - name: Remove transient cluster credentials
+          ansible.builtin.file:
+            path: "{{ private_cloud_kubeconfig }}"
+            state: absent
+          no_log: true
