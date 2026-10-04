@@ -69,6 +69,18 @@ Keycloak is the shared OIDC provider for the enabled user-facing services.
 - Rotatable groups also cover enabled service database passwords, mail and relay credentials, Cloudflare tokens, and VPN credentials.
 - PostgreSQL and Zabbix administrator passwords, the ZFS encryption passphrase, and the OpenObserve administrator password are not rotatable.
 
+## Account deletion
+
+Account deletion is manual in each application; OIDC does not synchronize account or data deletion.
+
+- Disable the user in OpenCloud and each application where they have an account.
+- Revoke their sessions, API keys, and refresh tokens through each application's supported controls.
+- Delete their accounts and user-owned data in each application.
+- Remove owned documents, workspaces, attachments, and media explicitly when account deletion leaves them behind.
+- Preserve resources owned by other users while removing the deleted user's memberships.
+- Confirm asynchronous data deletion completes before closing the task.
+- Complete deletion in OpenCloud after downstream cleanup.
+
 ## Certificates and mail
 
 Traefik renews HTTPS certificates automatically; Stalwart renews its SMTP STARTTLS certificate independently through Cloudflare DNS-01.

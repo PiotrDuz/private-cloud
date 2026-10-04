@@ -1,15 +1,33 @@
 # Outstanding work
 
-[PLAN.md](PLAN.md) defines the target state; this file tracks repository automation that remains. Operator tasks are in [docs/SETUP.md](docs/SETUP.md).
+[PLAN.md](PLAN.md) defines the target state; this file tracks repository automation that remains. Initial operator configuration is in [docs/SETUP.md](docs/SETUP.md); ongoing maintenance is in [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 Backup automation, snapshot retention, and recovery planning are deferred.
+
+## Authentication implementation
+
+- [ ] Replace the existing Keycloak installer stage, configuration, secrets, manifests, and dependencies with OpenCloud's built-in identity services.
+- [ ] Register OpenCloud, Grist helper, AFFiNE, and Immich clients without separate login allowlists.
+- [ ] Update OIDC network policies and issuer routing to OpenCloud.
+- [ ] Replace Stalwart OIDC configuration with native mailbox authentication.
+- [ ] Remove Jellyfin SSO installation and configure native password login.
+- [ ] Update setup documentation and monitoring inventory for the new authentication target.
+- [ ] Configure native account deletion and data removal in each application.
+- [ ] Document application-specific account deletion and credential revocation in the operations runbook.
 
 ## Runtime validation gaps
 
 - [ ] Verify that ZFS unlock and k0s startup succeed after an actual reboot.
-- [ ] Automate full OIDC sign-in and logout flows with test users for each application.
-- [ ] Automate Jellyfin SSO-OIDC Quick Connect and role-mapping checks.
-- [ ] Automate Keycloak realm recreation and post-recreation checks.
+- [ ] Validate OpenCloud, Grist, AFFiNE, and Immich sign-in with the built-in provider.
+- [ ] Validate provider claims, confidential clients, callbacks, and supported logout flows.
+- [ ] Validate email-based sign-in with OpenCloud's unverified email claims.
+- [ ] Validate manual disabling, deletion, and re-enabling in each application.
+- [ ] Verify account deletion removes user-owned data while disabling preserves it.
+- [ ] Verify shared user-owned resources are deleted and other users' resources remain intact.
+- [ ] Verify revoked browser sessions, mobile sessions, API keys, refresh tokens, and WebSocket access.
+- [ ] Verify ordinary logout leaves the OpenCloud account enabled.
+- [ ] Validate OpenCloud identity configuration and data recovery together.
+- [ ] Validate Jellyfin password login and native Quick Connect.
 - [ ] Validate split DNS from LAN and VPN clients.
 - [ ] Validate ARR API connections and library-folder access.
 - [ ] Validate Jellyfin library scans, playback, and metadata downloads.
