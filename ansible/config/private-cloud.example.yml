@@ -1,4 +1,4 @@
-schema_version: 8
+schema_version: 9
 private_cloud:
   stages:
     zfs: true
@@ -8,7 +8,6 @@ private_cloud:
     intel_gpu: true
     postgres: true
     meilisearch: true
-    keycloak: true
     stalwart: true
     tika: true
     bleve: true
@@ -38,7 +37,6 @@ private_cloud:
     public_ip_url: https://api.ipify.org
     managed_records:
       - affine.example.com
-      - auth.example.com
       - cloud.example.com
       - grist.example.com
       - jellyfin.example.com
@@ -86,11 +84,6 @@ private_cloud:
   meilisearch:
     storage_size: 20G
     max_ram: 1Gi
-  keycloak:
-    storage_size: 20G
-    max_ram: 2Gi
-    hostname: auth.example.com
-    admin_username: Admin
   tika:
     storage_size: 5G
     max_ram: 1Gi
@@ -108,8 +101,6 @@ private_cloud:
     storage_size: 50G
     max_ram: 2Gi
     default_email: admin@example.com
-    allowed_emails:
-      - admin@example.com
     hostname: grist.example.com
   manticore:
     storage_size: 50G

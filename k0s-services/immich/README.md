@@ -22,19 +22,19 @@ The Immich service is managed by `ansible/roles/immich`.
 - Traefik publishes the configured hostname through HTTPS.
 - The Ingress preserves WebSocket connections.
 
-## Keycloak OIDC
+## OpenCloud OIDC
 
-- Immich uses native OIDC with the Keycloak issuer `https://<keycloak hostname>/realms/private-cloud`.
+- Immich uses native OIDC with the OpenCloud issuer `https://<opencloud hostname>`.
 - The confidential `immich` client allows the `https://<immich hostname>/auth/login` and `https://<immich hostname>/user-settings` redirects.
 - The client also allows the `app.immich:///oauth-callback` mobile redirect.
-- The client Backchannel logout URL is `https://<immich hostname>/api/oauth/backchannel-logout`.
+- ID token validation uses `PS256` to match the built-in provider.
+- Provider logout uses the endpoint advertised by discovery when available.
 - Store the client secret as `immich.oidc_client_secret` in the encrypted configuration.
 - An init container renders the client secret into `/config/immich-config.json` from the `IMMICH_OAUTH_*` environment.
 - The server reads the rendered configuration through `IMMICH_CONFIG_FILE`.
 - System settings are managed through the configuration file.
 - The web UI configuration editor is disabled while the configuration file is mounted.
-- Automatic OAuth registration is disabled so only approved users receive accounts.
-- Create the Immich user with the Keycloak email before the first login.
+- Automatic OAuth registration creates accounts for enabled OpenCloud users.
 - Grant administrator rights explicitly in Immich.
-- Do not add an `immich_role` claim to the Keycloak client.
-- Auto-launch sends users to Keycloak; use `/auth/login?autoLaunch=0` for the local form.
+- Keep administrator grants within Immich.
+- Auto-launch sends users to OpenCloud; use `/auth/login?autoLaunch=0` for the local form.

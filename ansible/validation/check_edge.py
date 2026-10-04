@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check installed edge routes, trusted TLS, and the realm discovery document."""
+"""Check installed edge routes, trusted TLS, and the identity provider discovery document."""
 
 import json
 import socket

@@ -21,24 +21,18 @@ The Stalwart service is managed by `ansible/roles/stalwart`.
 - The external inbox receives Internet mail and forwards it to the Stalwart forwarding domain.
 - Stalwart filtering controls which inbound forwarded messages are accepted.
 
-## OIDC authentication
+## Authentication
 
-- The Keycloak realm `private-cloud` backs the Stalwart OIDC directory.
-- The issuer is `https://<keycloak.hostname>/realms/private-cloud`.
-- The directory requires the `stalwart` audience and the `openid` and `email` scopes.
-- The `preferred_username` claim maps to `<username>@<stalwart.domain>`.
-- The `Authentication` singleton selects the Keycloak directory.
-- Pre-created mailboxes and aliases keep their password credentials.
-- Stalwart routes local password logins to the selected directory.
-- Clients without OAuthbearer support use Stalwart app passwords.
+- Stalwart uses the internal directory with native mailbox and administrator passwords.
+- The `Authentication` singleton leaves `directoryId` null.
+- Manage mailboxes, aliases, quotas, permissions, and app passwords in Stalwart.
 
 ## Mailbox lifecycle
 
 - Stalwart 0.16 has no account-level enabled flag.
 - Suspend, resume, and delete are operator actions through `stalwart-cli`.
 - Run the commands against `https://<stalwart.hostname>`.
-- Authenticate with an administrator Keycloak token through `STALWART_TOKEN`.
-- Alternatively use an administrator app password as the Basic password.
+- Authenticate with native administrator credentials through `STALWART_USER` and `STALWART_PASSWORD`.
 - List the account id with `stalwart-cli query Account --where name=<username>`.
 - Suspend an account with `stalwart-cli update Account <id> --field 'permissions={"@type":"Merge","disabledPermissions":{"authenticate":true,"authenticateWithAlias":true}}'`.
 - Resume an account with `stalwart-cli update Account <id> --field 'permissions={"@type":"Inherit"}'`.

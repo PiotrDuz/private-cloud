@@ -75,14 +75,6 @@
           when: private_cloud.stages.meilisearch | bool
           tags: [meilisearch]
 
-        - name: Deploy Keycloak
-          ansible.builtin.include_role:
-            name: keycloak
-            apply:
-              tags: [keycloak]
-          when: private_cloud.stages.keycloak | bool
-          tags: [keycloak]
-
         - name: Deploy the isolated media stack
           ansible.builtin.include_role:
             name: media

@@ -15,7 +15,7 @@
       - immich_database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
       - immich_database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
       - private_cloud.immich.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$')
-      - private_cloud.keycloak.hostname | length > 0
+      - private_cloud.opencloud.hostname | length > 0
       - private_cloud_secrets.immich.database_password | length >= 16
       - private_cloud_secrets.immich.oidc_client_secret | length >= 16
     fail_msg: Immich configuration is invalid.

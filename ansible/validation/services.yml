@@ -17,7 +17,6 @@
     - {stage: intel_gpu, namespace: kube-system, name: intel-gpu-plugin, kind: daemonset}
     - {stage: postgres, namespace: private-cloud, name: postgres}
     - {stage: meilisearch, namespace: private-cloud, name: meilisearch}
-    - {stage: keycloak, namespace: private-cloud, name: keycloak}
     - {stage: media, namespace: media, name: media-vpn}
     - {stage: media, namespace: media, name: sonarr}
     - {stage: media, namespace: media, name: radarr}

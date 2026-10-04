@@ -55,19 +55,21 @@ Use `kubectl logs --previous` with the affected pod and container after a crash.
 - Check the ephemeral kubelet quota because CRI logs use `/tank/secure/k0s/kubelet/logs`.
 - Check container rotation, host journal limits, qBittorrent and OnlyOffice rotation, and FFmpeg pruning separately.
 
-## Keycloak and OIDC
+## OpenCloud and OIDC
 
-Keycloak is the shared OIDC provider for the enabled user-facing services.
+OpenCloud's built-in provider and directory supply shared login for Grist, AFFiNE, and Immich.
 
-- The `private-cloud` realm is imported at first start from the `keycloak-realm` Secret.
-- The realm definition is immutable through the installer; a changed definition fails the play loudly.
-- Recreate the realm to change a client secret or client configuration.
-- Recreating the realm ends existing sessions and requires re-entering client secrets in the encrypted configuration.
-- Check the issuer discovery document at `https://<keycloak-hostname>/realms/private-cloud/.well-known/openid-configuration` after changes.
-- The Keycloak administrator password and the OIDC client secrets are not rotatable through the installer.
-- Rotate the Keycloak database password with the `keycloak_database` rotation group.
-- Rotatable groups also cover enabled service database passwords, mail and relay credentials, Cloudflare tokens, and VPN credentials.
-- PostgreSQL and Zabbix administrator passwords, the ZFS encryption passphrase, and the OpenObserve administrator password are not rotatable.
+- Manage accounts and groups in the OpenCloud admin area.
+- Use unique administrator-controlled email identities for downstream accounts.
+- Check discovery at `https://<opencloud-hostname>/.well-known/openid-configuration` after changes.
+- Reapply to update enabled client registrations and callback hostnames.
+- Keep directory data, signing keys, and generated configuration together during recovery.
+- Restore the public configuration and Vault ciphertext from the same recovery point.
+- The initial OpenCloud administrator password and OIDC client secrets are not rotatable through the installer.
+- Rotatable groups cover enabled service database passwords, mail credentials, Cloudflare tokens, and VPN credentials.
+- PostgreSQL, Zabbix, and OpenObserve administrator passwords and the ZFS passphrase are not rotatable.
+
+OpenCloud does not attest email verification. AFFiNE's [supported claim mapping](https://github.com/toeverything/AFFiNE/blob/v0.27.3/packages/backend/server/src/plugins/oauth/providers/oidc.ts) for `claim_email_verified` names an absent claim so its supported OIDC mapping accepts administrator-controlled email identities; administrators must keep these addresses unique and prevent reassignment while downstream accounts exist.
 
 ## Account deletion
 
@@ -80,6 +82,25 @@ Account deletion is manual in each application; OIDC does not synchronize accoun
 - Preserve resources owned by other users while removing the deleted user's memberships.
 - Confirm asynchronous data deletion completes before closing the task.
 - Complete deletion in OpenCloud after downstream cleanup.
+
+### Application cleanup
+
+| Application | Disable while preserving data | Delete account and revoke credentials |
+| --- | --- | --- |
+| OpenCloud | Disable the account in the admin area. | Remove owned spaces and files, shares, app passwords, and sessions before deleting the user. |
+| Grist | Disable OpenCloud login and remove site access. | Delete owned documents and API keys, remove memberships, and delete the Grist account after resolving ownership. |
+| AFFiNE | Disable OpenCloud login and remove workspace access. | Delete owned workspaces and attachments, revoke sessions and tokens, and delete the AFFiNE account. |
+| Immich | Disable OpenCloud login and revoke active sessions. | Revoke API keys and devices, delete the user in Administration, and confirm the queued library deletion completes. |
+| Stalwart | Deny authentication permissions while retaining mailbox data. | Revoke app passwords and API keys, delete the account and aliases, and confirm mail and blob cleanup completes. |
+| Jellyfin | Disable the user in the dashboard. | Revoke devices, sessions, and applicable API keys, then delete the user while preserving the shared media library. |
+| ARR, Zabbix, OpenObserve | Disable or remove access through native controls. | Revoke native credentials and tokens and remove personal resources through each service's controls. |
+| AmneziaWG | Remove peer access from the public configuration. | Remove the peer and reapply to revoke its key. |
+
+- Remove shared resources owned by the deleted user after identifying their owner.
+- Preserve resources owned by other users and remove only the departing user's access.
+- Record native permissions before temporarily suspending a Stalwart mailbox.
+- Confirm browser, mobile, API, refresh-token, and WebSocket access is revoked.
+- Validate each application's cleanup behavior on the deployed version.
 
 ## Certificates and mail
 

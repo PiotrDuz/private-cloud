@@ -6,7 +6,6 @@
       - private_cloud.opencloud.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - private_cloud.opencloud.hostname | length > 0
       - private_cloud.onlyoffice.hostname | length > 0
-      - private_cloud.keycloak.hostname | length > 0
       - private_cloud_secrets.opencloud.admin_password | length > 0
     fail_msg: OpenCloud configuration is invalid.
   no_log: true
@@ -125,6 +124,18 @@
     state: present
     definition: "{{ lookup('template', 'secret.yml.j2') | from_yaml }}"
   when: not opencloud_secret_present | bool
+  no_log: true
+
+- name: Apply OpenCloud identity client configuration
+  kubernetes.core.k8s:
+    kubeconfig: "{{ opencloud_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'identity-secret.yml.j2') | from_yaml }}"
+  no_log: true
+
+- name: Record the OpenCloud identity configuration checksum
+  ansible.builtin.set_fact:
+    opencloud_identity_checksum: "{{ lookup('template', 'idp.yaml.j2') | hash('sha256') }}"
   no_log: true
 
 - name: Inspect the OnlyOffice WOPI secret

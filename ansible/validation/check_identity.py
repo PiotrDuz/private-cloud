@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify enabled Keycloak clients accept their configured login callbacks."""
+"""Verify enabled OpenCloud clients accept their configured login callbacks."""
 
 import json
 import sys
@@ -10,6 +10,15 @@ from http_helpers import https_get
 
 def main():
     config = json.load(sys.stdin)
+    status, body = https_get(config["address"], config["hostname"], "/.well-known/openid-configuration")
+    if status != 200:
+        raise RuntimeError(f"OpenCloud discovery returned HTTP {status}")
+    discovery = json.loads(body)
+    issuer = "https://" + config["hostname"]
+    endpoint = urllib.parse.urlsplit(discovery["authorization_endpoint"])
+    if discovery["issuer"] != issuer or endpoint.scheme != "https" or endpoint.netloc != config["hostname"]:
+        raise RuntimeError("OpenCloud discovery does not match the configured HTTPS issuer")
+    config["authorization_path"] = endpoint.path
     accepted = []
     for client in config["clients"]:
         query = urllib.parse.urlencode({
@@ -24,10 +33,10 @@ def main():
         })
         status, _ = https_get(
             config["address"], config["hostname"],
-            "/realms/private-cloud/protocol/openid-connect/auth?" + query,
+            config["authorization_path"] + "?" + query,
         )
         if status not in (200, 302, 303):
-            raise RuntimeError(f"Keycloak rejected the {client['id']} login callback with HTTP {status}")
+            raise RuntimeError(f"OpenCloud rejected the {client['id']} login callback with HTTP {status}")
         accepted.append(client["id"])
     print(json.dumps({"accepted_clients": accepted}, separators=(",", ":")))
 

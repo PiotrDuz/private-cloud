@@ -12,7 +12,7 @@ The cluster uses default-deny pod networking, a restricted host firewall, Traefi
 
 | Namespace / zone | Responsibility | Boundary |
 | --- | --- | --- |
-| `private-cloud` | Existing applications, Keycloak, and dependencies. | Explicit application flows only. |
+| `private-cloud` | Applications, OpenCloud identity, and dependencies. | Explicit application flows only. |
 | `media` | Jellyfin, Sonarr, Radarr, Prowlarr, and qBittorrent. | Jellyfin accepts only Traefik ingress and exits directly for metadata; guarded apps exit through OpenVPN. |
 | `edge` | Traefik HTTPS and SMTP entry plus the Grist ForwardAuth helper. | Only approved application listeners are reachable. |
 | `network-access` | AmneziaWG server and peer forwarding. | Per-peer LAN permissions and public Internet egress. |
@@ -54,22 +54,23 @@ Traefik binds host TCP `443` and TCP `25` from a pod in `edge`.
 
 Public DNS resolves enabled application names to the home WAN address. Split DNS resolves the same names to `networking.traefik_internal_ip` for LAN and AmneziaWG clients. OpenCloud and OnlyOffice callbacks use that internal HTTPS address.
 
-Keycloak uses the configured hostname as its issuer. LAN clients and pods must resolve that hostname to the Traefik address so the issuer matches for browsers, services, and backchannel calls.
+OpenCloud uses its configured HTTPS URL as the issuer. LAN clients and pods must resolve that hostname to the Traefik address so the issuer matches for browsers and services.
 
 OpenObserve is published through its configured exact HTTPS hostname. Alloy has no public route. When notifications are enabled, OpenObserve and Zabbix may reach only the SMTP relay IP addresses resolved during the last apply; reapply after a relay address change.
 
-## Keycloak and Grist ForwardAuth
+## OpenCloud and Grist ForwardAuth
 
-Keycloak runs in `private-cloud` and publishes the realm issuer `https://<keycloak-hostname>/realms/private-cloud` through Traefik. `private-cloud` applications reach the issuer through the Traefik internal address on TCP `443`, and Keycloak reaches the Traefik internal address for backchannel logout.
+OpenCloud runs its built-in provider in `private-cloud` and publishes `https://<opencloud-hostname>` through Traefik. Applications and the Grist helper reach the issuer through the Traefik internal address on TCP `443`.
 
 The stateless `forward-auth` helper in `edge` performs Grist's OIDC login and uses the confidential client `grist-forward-auth`.
 
 - Traefik applies the `strip-identity-headers@file` and `forward-auth@file` middlewares to the Grist router.
 - The helper serves OIDC callbacks and logins on `/_oauth`.
-- Grist receives the verified email as `X-Forwarded-User`.
+- Grist receives the authenticated email as `X-Forwarded-User`.
+- The helper has no email or domain login allowlist.
 - Grist starts login at `/auth/login` and uses `/_oauth/logout` as its logout path.
 - Logout clears the helper cookie and returns to `/signed-out`.
-- The helper admits only the configured Grist `allowed_emails`.
+- Every enabled OpenCloud user can authenticate without a separate login allowlist.
 
 ## Inbound mail and Stalwart TLS
 
@@ -115,9 +116,9 @@ The arr dashboards, qBittorrent UI, peer port, discovery protocols, and UPnP are
 
 ## Jellyfin
 
-Jellyfin accepts only Traefik connections on TCP `8096`. It resolves names through cluster DNS and reaches Keycloak, metadata, and artwork providers on TCP `443`.
+Jellyfin accepts only Traefik connections on TCP `8096`. It resolves names through cluster DNS and reaches metadata and artwork providers on TCP `443`.
 
-Jellyfin uses the local read-only media library and one shared `gpu.intel.com/i915` allocation. Metadata and image download stay enabled; subtitle and remote-media integrations remain disabled, and only the pinned SSO-OIDC plugin authenticates users through Keycloak.
+Jellyfin uses the local read-only media library and one shared `gpu.intel.com/i915` allocation. Metadata and image download stay enabled; subtitle and remote-media integrations remain disabled, and users sign in with native passwords and supported clients use native Quick Connect.
 
 ## AmneziaWG
 
@@ -153,9 +154,8 @@ Everything omitted is denied. Each entry permits connection initiation in the st
 | Local networks | Host | TCP `22`, `6443`, and `31051`. |
 | LAN / AmneziaWG client | Traefik | TCP `443`. |
 | Traefik | Approved web backends / Jellyfin | Declared backend ports only. |
-| Jellyfin | Keycloak, metadata, and artwork providers | TCP `443` after cluster DNS. |
-| OIDC-enabled applications / ForwardAuth helper | Keycloak issuer | TCP `443` to the Traefik internal address. |
-| Keycloak | Traefik internal address | TCP `443` for backchannel logout. |
+| Jellyfin | metadata and artwork providers | TCP `443` after cluster DNS. |
+| OIDC-enabled applications / ForwardAuth helper | OpenCloud issuer | TCP `443` to the Traefik internal address. |
 | Immich machine learning | Model download endpoints | TCP `443` to public addresses. |
 | Traefik | Stalwart | TCP `25` with Proxy Protocol v2. |
 | Guarded media pod | Media VPN gateway | Proxy and DNS ports only. |
@@ -170,7 +170,7 @@ Everything omitted is denied. Each entry permits connection initiation in the st
 
 ## Storage
 
-Traefik, Jellyfin, Keycloak, and each enabled application have separate quota-controlled datasets under `tank/secure/backup/k0s/services` and dedicated `10Ti` PVs. Sonarr, Radarr, Prowlarr, qBittorrent, and the shared media library use `tank/secure/no-backup/k0s/services`. Jellyfin mounts the library read-only; import and download workloads receive only their required write mounts.
+Traefik, Jellyfin, and each enabled application have separate quota-controlled datasets under `tank/secure/backup/k0s/services` and dedicated `10Ti` PVs. Sonarr, Radarr, Prowlarr, qBittorrent, and the shared media library use `tank/secure/no-backup/k0s/services`. Jellyfin mounts the library read-only; import and download workloads receive only their required write mounts.
 
 ## Deployment acceptance
 
@@ -180,8 +180,8 @@ Repository implementation is not evidence of live enforcement. Before exposure:
 - Verify all other host and former NodePort paths fail from WAN and LAN.
 - Verify SSH, Kubernetes API, and Zabbix work only from configured local networks.
 - Test every hostname from WAN, LAN, and AmneziaWG.
-- Verify split DNS resolves the Keycloak hostname to the Traefik address for LAN and pod clients.
-- Verify each enabled service completes a Keycloak OIDC login.
+- Verify split DNS resolves the OpenCloud hostname to the Traefik address for LAN and pod clients.
+- Verify OpenCloud, Grist, AFFiNE, and Immich complete an OpenCloud OIDC login.
 - Verify Grist login, OIDC callback, and logout through the ForwardAuth helper.
 - Validate Traefik and Stalwart certificate issuance and renewal paths.
 - Send a message to the external inbox and confirm its SMTP forward reaches Stalwart.

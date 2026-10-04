@@ -1,0 +1,43 @@
+clients:
+  - id: web
+    name: OpenCloud Web
+    trusted: true
+    secret: ""
+    redirect_uris:
+      - {{ ('https://' ~ private_cloud.opencloud.hostname ~ '/') | to_json }}
+      - {{ ('https://' ~ private_cloud.opencloud.hostname ~ '/oidc-callback.html') | to_json }}
+      - {{ ('https://' ~ private_cloud.opencloud.hostname ~ '/oidc-silent-redirect.html') | to_json }}
+    post_logout_redirect_uris:
+      - {{ ('https://' ~ private_cloud.opencloud.hostname ~ '/') | to_json }}
+    origins: [{{ ('https://' ~ private_cloud.opencloud.hostname) | to_json }}]
+    application_type: ""
+{% for client_id, name, redirects in [
+  ('OpenCloudDesktop', 'OpenCloud Desktop', ['http://127.0.0.1', 'http://localhost']),
+  ('OpenCloudAndroid', 'OpenCloud Android', ['oc://android.opencloud.eu']),
+  ('OpenCloudIOS', 'OpenCloud iOS', ['oc://ios.opencloud.eu'])
+] %}
+  - id: {{ client_id }}
+    name: {{ name }}
+    trusted: false
+    secret: ""
+    redirect_uris: {{ redirects | to_json }}
+    post_logout_redirect_uris: {{ (redirects if client_id != 'OpenCloudDesktop' else []) | to_json }}
+    origins: []
+    application_type: native
+{% endfor %}
+{% for stage, client_id, name, callbacks in [
+  ('grist', 'grist-forward-auth', 'Grist', ['https://' ~ private_cloud.grist.hostname ~ '/_oauth']),
+  ('affine', 'affine', 'AFFiNE', ['https://' ~ private_cloud.affine.hostname ~ '/oauth/callback']),
+  ('immich', 'immich', 'Immich', ['https://' ~ private_cloud.immich.hostname ~ '/auth/login', 'https://' ~ private_cloud.immich.hostname ~ '/user-settings', 'app.immich:///oauth-callback'])
+] %}
+{% if private_cloud.stages[stage] | bool %}
+  - id: {{ client_id }}
+    name: {{ name }}
+    trusted: true
+    secret: {{ private_cloud_secrets[stage].oidc_client_secret | to_json }}
+    redirect_uris: {{ callbacks | to_json }}
+    post_logout_redirect_uris: []
+    origins: [{{ ('https://' ~ private_cloud[stage].hostname) | to_json }}]
+    application_type: ""
+{% endif %}
+{% endfor %}

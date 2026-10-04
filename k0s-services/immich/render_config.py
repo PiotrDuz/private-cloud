@@ -18,6 +18,8 @@ def oauth_configuration():
         'issuerUrl': os.environ['IMMICH_OAUTH_ISSUER_URL'],
         'clientId': os.environ['IMMICH_OAUTH_CLIENT_ID'],
         'clientSecret': os.environ['IMMICH_OAUTH_CLIENT_SECRET'],
+        'signingAlgorithm': 'PS256',
+        'profileSigningAlgorithm': 'none',
         'scope': os.environ.get('IMMICH_OAUTH_SCOPE', 'openid email profile'),
         'autoRegister': boolean('IMMICH_OAUTH_AUTO_REGISTER'),
         'autoLaunch': boolean('IMMICH_OAUTH_AUTO_LAUNCH'),

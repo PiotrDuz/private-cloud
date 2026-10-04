@@ -11,7 +11,7 @@ This runbook lists work that cannot be automated in this repository. Repository 
 - [ ] Ask the ISP to publish the reverse-DNS PTR record for the public mail address.
 - [ ] Forward WAN TCP 25 and TCP 443, plus the configured AmneziaWG UDP port, to the host.
 - [ ] Configure LAN and VPN split DNS for the configured service hostnames.
-- [ ] Resolve the Keycloak hostname to the Traefik address for LAN clients and pods.
+- [ ] Resolve the OpenCloud hostname to the Traefik address for LAN clients and pods.
 - [ ] Keep public mail hostname records DNS-only so SMTP reaches the host directly.
 - [ ] Confirm the configured public A records appear in Cloudflare after the DDNS stage runs.
 
@@ -41,25 +41,29 @@ This runbook lists work that cannot be automated in this repository. Repository 
 
 ## Identity
 
-- [ ] Sign in to the Keycloak administration console at `https://<keycloak-hostname>/admin/private-cloud/console/` with the configured administrator.
-- [ ] Create user accounts and assign the roles each application expects.
-- [ ] Keep a local password administrator in each OIDC-enabled application as a break-glass account.
-- [ ] Recreate the realm through the installer when a client secret or client configuration changes.
+- [ ] Sign in to OpenCloud with the initialized administrator account.
+- [ ] Manage users, passwords, account status, and groups through the OpenCloud admin area.
+- [ ] Assign each user a unique administrator-controlled email address.
+- [ ] Keep local administrator access in downstream applications.
+- [ ] Assign application permissions and administrator grants within each application.
+- [ ] Confirm newly enabled users can sign into Grist, AFFiNE, and Immich.
 
 ### AFFiNE OIDC
 
 - [ ] In the AFFiNE administration panel, add a generic OAuth2/OIDC provider.
-- [ ] Set the issuer URL to `https://<keycloak-hostname>/realms/private-cloud`.
+- [ ] Set the issuer URL to `https://<opencloud-hostname>`.
 - [ ] Set the client id to `affine` and the secret to `private_cloud_secrets.affine.oidc_client_secret`.
 - [ ] Allow the redirect URI `https://<affine-hostname>/oauth/callback`.
+- [ ] Set claims to `sub`, `email`, and `name` with scope `openid profile email`.
+- [ ] Set `claim_email_verified` to `opencloud_admin_controlled_email` in the OIDC provider arguments.
+- [ ] Enable `oauth.providers.oidc.allowPrivateNetwork` for the configured OpenCloud issuer.
 - [ ] Note the ten-seat limit for the self-hosted AFFiNE workspace.
 
-### Jellyfin OIDC
+### Jellyfin native login
 
-- [ ] Confirm the confidential client `jellyfin` allows `https://<jellyfin-hostname>/sso/OIDC/Callback/keycloak`.
-- [ ] Create and assign the realm roles `jellyfin-admins` and `jellyfin-users`.
-- [ ] Run **Test Connection** in the plugin admin page to verify and pin the Keycloak discovery endpoints.
-- [ ] Authorize native clients through `https://<jellyfin-hostname>/sso/OIDC/QuickConnect/keycloak`.
+- [ ] Complete Jellyfin's initial setup with a native administrator password.
+- [ ] Create users and grant their library access in Jellyfin.
+- [ ] Authorize supported native clients through Jellyfin Quick Connect.
 
 ## Network and DNS
 
@@ -85,6 +89,6 @@ Run the installed-system validation from the repository root after deployment an
 sudo python3 ansible/install.py
 ```
 
-Choose `validate` at the mode prompt and enter the Ansible Vault password. Validation requires the existing public configuration and encrypted secrets file, and it checks enabled stages. It checks ZFS health, mounts, quotas and k0s startup ordering; cluster node and volume readiness; workload rollouts; ARR user IDs and qBittorrent's tunnel binding; Keycloak callback acceptance; DNS lookups, trusted HTTPS routes and SMTP STARTTLS; the active host firewall; Zabbix collectors; log heartbeat ingestion; and synthetic OpenObserve and Zabbix email delivery.
+Choose `validate` at the mode prompt and enter the Ansible Vault password. Validation requires the existing public configuration and encrypted secrets file, and it checks enabled stages. It checks ZFS health, mounts, quotas and k0s startup ordering; cluster node and volume readiness; workload rollouts; ARR user IDs and qBittorrent's tunnel binding; OpenCloud callback acceptance; DNS lookups, trusted HTTPS routes and SMTP STARTTLS; the active host firewall; Zabbix collectors; log heartbeat ingestion; and synthetic OpenObserve and Zabbix email delivery.
 
-The validation action does not create Cloudflare credentials, configure the router, publish mail MX or TXT records, configure ISP mail routing, create user accounts, or set application UI options. The DDNS stage updates the configured public A records. Test WAN reachability, split DNS from LAN and VPN clients, real user sign-ins, Jellyfin role mapping, VPN isolation, and media playback manually using the acceptance checklist above.
+The validation action does not create Cloudflare credentials, configure the router, publish mail MX or TXT records, configure ISP mail routing, create user accounts, or set application UI options. The DDNS stage updates the configured public A records. Test WAN reachability, split DNS from LAN and VPN clients, real user sign-ins, Jellyfin password login, VPN isolation, and media playback manually using the acceptance checklist above.

@@ -3,7 +3,7 @@
 The Grist service is managed by `ansible/roles/grist`.
 
 - Configure `private_cloud.grist` in the public configuration.
-- Store the database password, session secret, and boot key in the encrypted configuration.
+- Store the database password, session secret, boot key, and helper OIDC credentials in the encrypted configuration.
 - Run `sudo python3 ansible/install.py` from the repository root.
 - The service dataset is `tank/secure/backup/k0s/services/grist`.
 - The dataset uses the configured quota.
@@ -14,7 +14,7 @@ The Grist service is managed by `ansible/roles/grist`.
 - A ClusterIP service exposes TCP `8484` only inside the cluster.
 - Traefik publishes the configured hostname through HTTPS.
 - The Ingress preserves WebSocket connections.
-- Traefik authenticates Grist through the edge ForwardAuth helper and Keycloak.
+- Traefik authenticates Grist through the edge ForwardAuth helper and OpenCloud.
 - Traefik strips client identity headers before authentication.
 - Grist trusts `X-Forwarded-User` for the single team site.
 - The logout path clears the helper cookie and returns to `/signed-out`.

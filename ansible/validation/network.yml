@@ -27,10 +27,9 @@
       {{ {
         'address': private_cloud.networking.traefik_internal_ip,
         'sites': [
-          {'stage': 'keycloak', 'host': private_cloud.keycloak.hostname, 'path': '/realms/private-cloud/.well-known/openid-configuration', 'issuer': 'https://' ~ private_cloud.keycloak.hostname ~ '/realms/private-cloud'},
           {'stage': 'media', 'host': private_cloud.media.hostname},
           {'stage': 'onlyoffice', 'host': private_cloud.onlyoffice.hostname},
-          {'stage': 'opencloud', 'host': private_cloud.opencloud.hostname},
+          {'stage': 'opencloud', 'host': private_cloud.opencloud.hostname, 'path': '/.well-known/openid-configuration', 'issuer': 'https://' ~ private_cloud.opencloud.hostname},
           {'stage': 'grist', 'host': private_cloud.grist.hostname},
           {'stage': 'affine', 'host': private_cloud.affine.hostname},
           {'stage': 'immich', 'host': private_cloud.immich.hostname},

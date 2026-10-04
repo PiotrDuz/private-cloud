@@ -22,8 +22,8 @@ sudo python3 ansible/install.py
 
 - `ansible/config/private-cloud.yml` stores non-secret desired state.
 - `ansible/config/private-cloud.secrets.yml` stores Ansible Vault ciphertext.
-- `ansible/config/private-cloud.example.yml` documents the configuration contract at public schema version 8 and secrets schema version 4.
-- Public hostnames are configured per service, including the Keycloak hostname `auth.example.com`.
+- `ansible/config/private-cloud.example.yml` documents the configuration contract at public schema version 9 and secrets schema version 5.
+- Public hostnames are configured per service, including the OpenCloud hostname `cloud.example.com`.
 - The Cloudflare managed records cover every published hostname.
 - The Vault password is never stored by the installer.
 - The `CREATE tank` authorization is requested only before new pool creation.
@@ -40,10 +40,10 @@ sudo python3 ansible/install.py
 - Zabbix host settings are in `ansible/service_catalog.yml`.
 - The logging stage deploys Alloy and OpenObserve in `observability`.
 - The notifications stage enables OpenObserve SMTP and Zabbix email actions.
-- Keycloak is the shared OIDC provider for the enabled user-facing services.
-- The edge forward-auth helper authenticates Grist through Keycloak.
+- OpenCloud provides shared OIDC login for Grist, AFFiNE, and Immich.
+- The edge forward-auth helper authenticates Grist through OpenCloud.
 - The media stage keeps the ARR stack and shared media library on `no-backup` datasets.
-- Keycloak, Redis for AFFiNE, Intel GPU support, and Immich are independent installer stages.
+- Redis for AFFiNE, Intel GPU support, and Immich are independent installer stages.
 - Immich uses the shared PostgreSQL service with pgvector and VectorChord.
 - The project is greenfield and has no configuration migrations or compatibility paths.
 
@@ -72,4 +72,4 @@ sudo python3 ansible/install.py
 
 Kubernetes workloads keep CPU requests without CPU limits; remove the former Immich `max_cpu`, `machine_learning_max_cpu`, and `valkey_max_cpu` settings from public configuration.
 
-The media stage requires `private_cloud_secrets.media.qbittorrent_password` in Vault for automatic ARR connections. The Keycloak stage requires its database and administrator passwords; OIDC client secrets for Grist, AFFiNE, Immich, and Jellyfin are not rotatable through the installer.
+The media stage requires `private_cloud_secrets.media.qbittorrent_password` in Vault for automatic ARR connections. OIDC client secrets for Grist, AFFiNE, and Immich are not rotatable through the installer.

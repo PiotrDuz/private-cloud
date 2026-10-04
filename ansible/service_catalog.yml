@@ -18,7 +18,6 @@ private_cloud_dataset_catalog:
   - {name: media-library, stage: media, dataset: tank/secure/no-backup/k0s/services/media-library, color: 66BB6A}
   - {name: postgres, stage: postgres, dataset: tank/secure/backup/k0s/services/postgres, color: AB47BC}
   - {name: meilisearch, stage: meilisearch, dataset: tank/secure/backup/k0s/services/meilisearch, color: 26A69A}
-  - {name: keycloak, stage: keycloak, dataset: tank/secure/backup/k0s/services/keycloak, color: 00695C}
   - {name: tika, stage: tika, dataset: tank/secure/backup/k0s/services/tika, color: 8D6E63}
   - {name: bleve, stage: bleve, dataset: tank/secure/backup/k0s/services/bleve, color: 26C6DA}
   - {name: onlyoffice, stage: onlyoffice, dataset: tank/secure/backup/k0s/services/onlyoffice, color: D4E157}
@@ -33,21 +32,20 @@ private_cloud_dataset_catalog:
 private_cloud_stage_dependencies:
   k0s: [zfs]
   networking: [k0s]
-  media: [networking, intel_gpu, keycloak]
+  media: [networking, intel_gpu]
   intel_gpu: [k0s]
   postgres: [k0s]
   meilisearch: [k0s]
-  keycloak: [networking, postgres]
-  stalwart: [networking, postgres, meilisearch, keycloak]
+  stalwart: [networking, postgres, meilisearch]
   tika: [k0s]
   bleve: [k0s]
   onlyoffice: [networking]
-  opencloud: [tika, bleve, onlyoffice, keycloak]
-  grist: [networking, postgres, keycloak]
+  opencloud: [tika, bleve, onlyoffice, networking]
+  grist: [networking, postgres, opencloud]
   manticore: [k0s]
   redis_affine: [k0s]
-  affine: [networking, postgres, manticore, redis_affine, keycloak]
-  immich: [networking, postgres, keycloak]
+  affine: [networking, postgres, manticore, redis_affine, opencloud]
+  immich: [networking, postgres, opencloud]
   zabbix_server: [networking, postgres]
   logging: [networking]
   notifications: [logging, stalwart, zabbix_server, zabbix_agent]

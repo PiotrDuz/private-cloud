@@ -6,14 +6,14 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 
 ## Authentication implementation
 
-- [ ] Replace the existing Keycloak installer stage, configuration, secrets, manifests, and dependencies with OpenCloud's built-in identity services.
-- [ ] Register OpenCloud, Grist helper, AFFiNE, and Immich clients without separate login allowlists.
-- [ ] Update OIDC network policies and issuer routing to OpenCloud.
-- [ ] Replace Stalwart OIDC configuration with native mailbox authentication.
-- [ ] Remove Jellyfin SSO installation and configure native password login.
-- [ ] Update setup documentation and monitoring inventory for the new authentication target.
-- [ ] Configure native account deletion and data removal in each application.
-- [ ] Document application-specific account deletion and credential revocation in the operations runbook.
+- [x] Replace the identity installer configuration with OpenCloud's built-in services.
+- [x] Register OpenCloud, Grist helper, AFFiNE, and Immich clients without separate login allowlists.
+- [x] Update OIDC network policies and issuer routing to OpenCloud.
+- [x] Replace Stalwart OIDC configuration with native mailbox authentication.
+- [x] Remove Jellyfin SSO installation and configure native password login.
+- [x] Update setup documentation and monitoring inventory for the new authentication target.
+- [x] Define manual native account deletion and data removal in the operations runbook.
+- [x] Document application-specific account deletion and credential revocation in the operations runbook.
 
 ## Runtime validation gaps
 

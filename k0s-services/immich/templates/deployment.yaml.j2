@@ -17,7 +17,7 @@ spec:
       labels:
         app.kubernetes.io/name: immich
       annotations:
-        checksum/oauth-config: {{ (private_cloud.keycloak.hostname ~ private_cloud_secrets.immich.oidc_client_secret) | hash('sha256') }}
+        checksum/oauth-config: {{ (private_cloud.opencloud.hostname ~ private_cloud_secrets.immich.oidc_client_secret) | hash('sha256') }}
     spec:
       serviceAccountName: immich
       automountServiceAccountToken: false
@@ -35,12 +35,12 @@ spec:
           env:
             - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
             - {name: IMMICH_OAUTH_ENABLED, value: 'true'}
-            - {name: IMMICH_OAUTH_ISSUER_URL, value: {{ ('https://' ~ private_cloud.keycloak.hostname ~ '/realms/private-cloud') | to_json }}}
+            - {name: IMMICH_OAUTH_ISSUER_URL, value: {{ ('https://' ~ private_cloud.opencloud.hostname) | to_json }}}
             - {name: IMMICH_OAUTH_CLIENT_ID, value: immich}
             - name: IMMICH_OAUTH_CLIENT_SECRET
               valueFrom: {secretKeyRef: {name: immich-credentials, key: IMMICH_OAUTH_CLIENT_SECRET}}
             - {name: IMMICH_OAUTH_SCOPE, value: 'openid email profile'}
-            - {name: IMMICH_OAUTH_AUTO_REGISTER, value: 'false'}
+            - {name: IMMICH_OAUTH_AUTO_REGISTER, value: 'true'}
             - {name: IMMICH_OAUTH_AUTO_LAUNCH, value: 'true'}
             - {name: IMMICH_OAUTH_MOBILE_OVERRIDE_ENABLED, value: 'false'}
             - {name: IMMICH_OAUTH_MOBILE_REDIRECT_URI, value: 'app.immich:///oauth-callback'}

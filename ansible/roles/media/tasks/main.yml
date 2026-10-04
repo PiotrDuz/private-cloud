@@ -121,14 +121,6 @@
     definition: "{{ lookup('template', 'qbittorrent-secret.yml.j2') | from_yaml }}"
   no_log: true
 
-- name: Apply Jellyfin credentials
-  kubernetes.core.k8s:
-    kubeconfig: "{{ media_kubeconfig }}"
-    state: present
-    definition: "{{ lookup('template', 'jellyfin-secret.yml.j2') | from_yaml }}"
-  when: private_cloud.stages.media | bool
-  no_log: true
-
 - name: Render arr stack manifests
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
   vars:

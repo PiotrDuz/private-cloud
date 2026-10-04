@@ -83,14 +83,14 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: keycloak-issuer-egress
+  name: opencloud-issuer-egress
   namespace: private-cloud
 spec:
   podSelector:
     matchExpressions:
       - key: app.kubernetes.io/name
         operator: In
-        values: [affine, affine-database-preparation, grist, immich, opencloud, stalwart]
+        values: [affine, affine-database-preparation, grist, immich, opencloud]
   policyTypes: [Egress]
   egress:
     - to:

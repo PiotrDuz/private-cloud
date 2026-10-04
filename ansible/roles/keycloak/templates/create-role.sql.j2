@@ -1,1 +1,0 @@
-CREATE ROLE "{{ keycloak_database_username }}" LOGIN PASSWORD '{{ private_cloud_secrets.keycloak.database_password | replace("'", "''") }}';

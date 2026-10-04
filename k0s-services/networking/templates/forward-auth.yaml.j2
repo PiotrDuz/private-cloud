@@ -42,10 +42,9 @@ spec:
             capabilities: {drop: [ALL]}
           env:
             - {name: DEFAULT_PROVIDER, value: oidc}
-            - {name: PROVIDERS_OIDC_ISSUER_URL, value: {{ ("https://" ~ private_cloud.keycloak.hostname ~ "/realms/private-cloud") | to_json }}}
+            - {name: PROVIDERS_OIDC_ISSUER_URL, value: {{ ("https://" ~ private_cloud.opencloud.hostname) | to_json }}}
             - {name: PROVIDERS_OIDC_CLIENT_ID, value: grist-forward-auth}
             - {name: URL_PATH, value: /_oauth}
-            - {name: WHITELIST, value: {{ private_cloud.grist.allowed_emails | join(',') | to_json }}}
             - {name: LOGOUT_REDIRECT, value: {{ ("https://" ~ private_cloud.grist.hostname ~ "/signed-out") | to_json }}}
             - {name: LOG_LEVEL, value: info}
             - {name: LOG_FORMAT, value: json}
