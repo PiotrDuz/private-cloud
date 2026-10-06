@@ -2,7 +2,7 @@
 - name: Require the supported public schema version
   ansible.builtin.assert:
     that:
-      - schema_version == 10
+      - schema_version == 11
     fail_msg: Public configuration schema version is unsupported
 
 - name: Require supported Debian-family target
@@ -31,7 +31,7 @@
       - (private_cloud.stages.keys() | list | sort) == ['affine', 'bleve', 'grist', 'immich', 'intel_gpu', 'k0s', 'logging', 'manticore', 'media', 'meilisearch', 'networking', 'notifications', 'onlyoffice', 'opencloud', 'postgres', 'redis_affine', 'stalwart', 'tika', 'zabbix_agent', 'zabbix_server', 'zfs']
       - (private_cloud.storage.keys() | list | sort) == ['arc_max', 'disks']
       - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'host_reserve_ram', 'images_quota']
-      - (private_cloud.networking.keys() | list | sort) == ['acme_directory_url', 'acme_email', 'amneziawg', 'cloudflare_api_url', 'cloudflare_zone_id', 'cluster_dns_ip', 'local_network_cidrs', 'managed_records', 'pod_cidr', 'public_ip_url', 'service_cidr', 'storage_size', 'traefik_internal_ip', 'zabbix_hostname']
+      - (private_cloud.networking.keys() | list | sort) == ['acme_email', 'amneziawg', 'cloudflare_zone_id', 'cluster_dns_ip', 'local_network_cidrs', 'managed_records', 'pod_cidr', 'public_ip_url', 'service_cidr', 'storage_size', 'traefik_internal_ip', 'zabbix_hostname']
       - (private_cloud.networking.amneziawg.keys() | list | sort) == ['address', 'hostname', 'listen_port', 'peers', 'tunnel_cidr']
       - (private_cloud.media.keys() | list | sort) == ['hostname', 'max_ram', 'openvpn', 'quality_profiles', 'storage_size', 'timezone']
       - (private_cloud.media.quality_profiles.keys() | list | sort) == ['radarr', 'sonarr']
@@ -158,8 +158,6 @@
       - private_cloud.networking.acme_email is match('^[^@ ]+@[^@ ]+\.[^@ ]+$')
       - private_cloud.networking.cloudflare_zone_id is match('^[0-9a-fA-F]{32}$')
       - private_cloud.networking.public_ip_url is match('^https://')
-      - private_cloud.networking.acme_directory_url is match('^https://')
-      - private_cloud.networking.cloudflare_api_url is match('^https://')
       - private_cloud.networking.managed_records | length > 0
       - private_cloud.networking.local_network_cidrs | length > 0
       - private_cloud.networking.amneziawg.peers | length > 0
@@ -233,7 +231,7 @@
     that:
       - private_cloud.onlyoffice.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.onlyoffice.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
-      - (private_cloud.onlyoffice.max_ram | private_cloud_ram_bytes | int) >= 2147483648
+      - (private_cloud.onlyoffice.max_ram | private_cloud_ram_bytes | int) >= 4294967296
       - private_cloud.onlyoffice.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
     fail_msg: OnlyOffice configuration is invalid
 
@@ -275,7 +273,7 @@
     that:
       - private_cloud.affine.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.affine.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
-      - (private_cloud.affine.max_ram | private_cloud_ram_bytes | int) >= 1073741824
+      - (private_cloud.affine.max_ram | private_cloud_ram_bytes | int) >= 2147483648
       - private_cloud.affine.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
     fail_msg: AFFiNE configuration is invalid
 
@@ -286,7 +284,7 @@
       - private_cloud.immich.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - private_cloud.immich.machine_learning_max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - private_cloud.immich.valkey_max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
-      - (private_cloud.immich.max_ram | private_cloud_ram_bytes | int) >= 1073741824
+      - (private_cloud.immich.max_ram | private_cloud_ram_bytes | int) >= 2147483648
       - (private_cloud.immich.machine_learning_max_ram | private_cloud_ram_bytes | int) >= 1073741824
       - (private_cloud.immich.valkey_max_ram | private_cloud_ram_bytes | int) >= 134217728
       - private_cloud.immich.machine_learning_accelerator in ['cpu', 'openvino']
@@ -830,42 +828,62 @@
   when: item.rc == 0 and item.stdout | trim != '-'
 
 
+- name: List enabled container memory requests with their limits
+  ansible.builtin.set_fact:
+    preflight_memory_requests: >-
+      {{ [
+        ['networking', 'traefik', '256Mi', 1], ['networking', 'amneziawg', '128Mi', 1],
+        ['networking', 'ddns', '64Mi', 1], ['grist', 'forward_auth', '64Mi', 1],
+        ['postgres', 'postgres', private_cloud.postgres.max_ram, 1],
+        ['meilisearch', 'meilisearch', private_cloud.meilisearch.max_ram, 1],
+        ['tika', 'tika', private_cloud.tika.max_ram, 1],
+        ['onlyoffice', 'onlyoffice', private_cloud.onlyoffice.max_ram, 1],
+        ['opencloud', 'opencloud', private_cloud.opencloud.max_ram, 1],
+        ['grist', 'grist', private_cloud.grist.max_ram, 1],
+        ['manticore', 'manticore', private_cloud.manticore.max_ram, 1],
+        ['redis_affine', 'redis_affine', private_cloud.redis_affine.max_ram, 1],
+        ['affine', 'affine', private_cloud.affine.max_ram, 1],
+        ['immich', 'immich', private_cloud.immich.max_ram, 1],
+        ['immich', 'immich_machine_learning', private_cloud.immich.machine_learning_max_ram, 1],
+        ['immich', 'valkey_immich', private_cloud.immich.valkey_max_ram, 1],
+        ['stalwart', 'stalwart', private_cloud.stalwart.max_ram, 1],
+        ['zabbix_server', 'zabbix_server', '1Gi', 1], ['zabbix_server', 'zabbix_web', '512Mi', 1],
+        ['logging', 'openobserve', private_cloud.logging.openobserve_max_ram, 1],
+        ['logging', 'alloy', private_cloud.logging.alloy_max_ram, 1],
+        ['media', 'jellyfin', private_cloud.media.max_ram.jellyfin, 1],
+        ['media', 'sonarr', private_cloud.media.max_ram.sonarr, 1],
+        ['media', 'radarr', private_cloud.media.max_ram.radarr, 1],
+        ['media', 'prowlarr', private_cloud.media.max_ram.prowlarr, 1],
+        ['media', 'qbittorrent', private_cloud.media.max_ram.qbittorrent, 1],
+        ['media', 'openvpn', private_cloud.media.max_ram.openvpn, 1],
+        ['media', 'dns', private_cloud.media.max_ram.dns, 1],
+        ['media', 'vpn_route', private_cloud.media.max_ram.vpn_route, 4],
+        ['media', 'file_logs', private_cloud.media.max_ram.file_logs, 1]
+      ] | selectattr('0', 'in', private_cloud.stages | dict2items | selectattr('value', 'equalto', true) | map(attribute='key') | list) | list }}
+
 - name: Calculate enabled workload memory commitments
   ansible.builtin.set_fact:
     preflight_host_reserve_bytes: "{{ private_cloud.k0s.host_reserve_ram | private_cloud_ram_bytes }}"
     preflight_transient_peak_bytes: >-
       {{ [
-        (private_cloud.stages.affine | ternary(2147483648, 0)),
-        (private_cloud.stages.postgres | ternary(536870912, 0)),
-        (private_cloud.stages.stalwart | ternary(536870912, 0)),
-        (private_cloud.stages.opencloud | ternary(536870912, 0))
+        (private_cloud.stages.affine | ternary(private_cloud_memory_requests.affine_preparation | private_cloud_ram_bytes, 0)),
+        (private_cloud.stages.stalwart | ternary(167772160, 0)),
+        (private_cloud.stages.opencloud | ternary(134217728, 0))
       ] | max }}
     preflight_workload_memory_bytes: >-
-      {{
-        (private_cloud.stages.postgres | ternary(private_cloud.postgres.max_ram | private_cloud_ram_bytes, 0)) +
-        (private_cloud.stages.meilisearch | ternary(private_cloud.meilisearch.max_ram | private_cloud_ram_bytes, 0)) +
-        (private_cloud.stages.tika | ternary(private_cloud.tika.max_ram | private_cloud_ram_bytes, 0)) +
-        (private_cloud.stages.onlyoffice | ternary(private_cloud.onlyoffice.max_ram | private_cloud_ram_bytes, 0)) +
-        (private_cloud.stages.opencloud | ternary(private_cloud.opencloud.max_ram | private_cloud_ram_bytes, 0)) +
-        (private_cloud.stages.grist | ternary(private_cloud.grist.max_ram | private_cloud_ram_bytes, 0)) +
-        (private_cloud.stages.manticore | ternary(private_cloud.manticore.max_ram | private_cloud_ram_bytes, 0)) +
-        (private_cloud.stages.redis_affine | ternary(private_cloud.redis_affine.max_ram | private_cloud_ram_bytes, 0)) +
-        (private_cloud.stages.affine | ternary(private_cloud.affine.max_ram | private_cloud_ram_bytes, 0)) +
-        (private_cloud.stages.immich | ternary((private_cloud.immich.max_ram | private_cloud_ram_bytes) + (private_cloud.immich.machine_learning_max_ram | private_cloud_ram_bytes) + (private_cloud.immich.valkey_max_ram | private_cloud_ram_bytes), 0)) +
-        (private_cloud.stages.networking | ternary(939524096, 0)) +
-        (private_cloud.stages.media | ternary((private_cloud.media.max_ram.values() | map("private_cloud_ram_bytes") | sum) + 3 * (private_cloud.media.max_ram.vpn_route | private_cloud_ram_bytes), 0)) +
-        (private_cloud.stages.stalwart | ternary(private_cloud.stalwart.max_ram | private_cloud_ram_bytes, 0)) +
-        (private_cloud.stages.zabbix_server | ternary(1610612736, 0)) +
-        (private_cloud.stages.logging | ternary((private_cloud.logging.openobserve_max_ram | private_cloud_ram_bytes) + (private_cloud.logging.alloy_max_ram | private_cloud_ram_bytes), 0))
-      }}
+      {%- set total = namespace(value=0) -%}
+      {%- for stage, key, limit, count in preflight_memory_requests -%}
+      {%- set total.value = total.value + (private_cloud_memory_requests[key] | private_cloud_memory_request(limit) | private_cloud_ram_bytes) * count -%}
+      {%- endfor -%}
+      {{ total.value }}
 
 - name: Require memory for workloads and host reserve
   ansible.builtin.assert:
     that:
       - (ansible_facts.memtotal_mb | int * 1048576) >= (preflight_host_reserve_bytes | int + preflight_workload_memory_bytes | int + preflight_transient_peak_bytes | int)
     fail_msg: >-
-      Host RAM cannot cover enabled workload limits, the largest enabled transient Job or
-      init-container limit, and the configured reserve for the operating system, k0s, and ZFS ARC.
+      Host RAM cannot cover enabled workload memory requests, the largest enabled transient Job
+      request, and the configured reserve for the operating system, k0s, and ZFS ARC.
 
 - name: Calculate PostgreSQL derived memory value
   ansible.builtin.set_fact:

@@ -139,12 +139,13 @@ This file is the source of truth for the desired system state and its major deci
     * Use the configured relay hostname, port, username, and implicit TLS or STARTTLS mode
     * Reject invalid relay certificates
     * Supply the relay password through the Stalwart runtime Secret
-    * Use the same relay settings for Zabbix and OpenObserve notification delivery
     * Use the configured notification sender address for alert emails
     * Address alerts to `<stalwart.mailbox_username>@<stalwart.forwarding_domain>`
-    * Route alert delivery through the forwarding-domain MX and Traefik TCP 25 to Stalwart
+    * Send OpenObserve and Zabbix alerts directly to Stalwart's internal SMTP listener on TCP 2525
+    * Use plain SMTP without authentication for internal alerts
     * Deliver the forwarding alias into `<stalwart.mailbox_username>@<stalwart.domain>`
-    * Restrict notification SMTP egress to the relay IPv4 addresses resolved when policies are applied
+    * Restrict internal alert SMTP ingress and egress to OpenObserve, Zabbix, and Stalwart pods
+    * Reject anonymous external relaying on the internal SMTP listener
 - Support JMAP access, SMTP forwarding, filtering, outbound relay, and automatic certificate renewal
 - Use native stdout/stderr logging for collection by Alloy
 
@@ -320,7 +321,7 @@ This file is the source of truth for the desired system state and its major deci
 - Keep online metadata and image download enabled while disabling subtitle, unrelated plugin, and remote-media integrations
 - Use native console logging without a logging sidecar
 - Keep separate FFmpeg diagnostic logs on the Jellyfin dataset
-- Prune closed FFmpeg diagnostics after seven days or above 1GiB while preserving active files
+- Let Jellyfin's Clean Log Directory task delete FFmpeg diagnostics after three days
 
 ## Security
 
@@ -450,7 +451,7 @@ This file is the source of truth for the desired system state and its major deci
 - Link active Linux, SMART, ZFS, and ECC templates to `private-cloud-zabbix`, the Zabbix host name from the service catalog
 - Maintain the Dataset capacity dashboard from the enabled dataset catalog
 - Alert on stale collectors, old snapshots, overdue scrubs, and unavailable ECC telemetry
-- Email Warning, Average, High, and Disaster problems through the configured relay when notifications are enabled
+- Email Warning, Average, High, and Disaster problems directly to Stalwart when notifications are enabled
 - Use native stdout/stderr for Zabbix containers
 - Send Zabbix problem, recovery, and hourly reminder emails to the local Stalwart mailbox
 - Retry Zabbix email delivery up to ten times at one-minute intervals

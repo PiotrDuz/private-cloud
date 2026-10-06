@@ -65,10 +65,9 @@ spec:
 {% if private_cloud.stages.notifications %}
   egress:
     - to:
-{% for address in logging_smtp_addresses %}
-        - ipBlock: {cidr: {{ address }}/32}
-{% endfor %}
-      ports: [{protocol: TCP, port: {{ private_cloud.stalwart.relay_port }}}]
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: private-cloud}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: stalwart, app.kubernetes.io/component: server}}
+      ports: [{protocol: TCP, port: {{ private_cloud_alert_smtp_port }}}]
 {% else %}
   egress: []
 {% endif %}
@@ -85,10 +84,8 @@ spec:
 {% if private_cloud.stages.notifications %}
   egress:
     - to:
-{% for address in logging_smtp_addresses %}
-        - ipBlock: {cidr: {{ address }}/32}
-{% endfor %}
-      ports: [{protocol: TCP, port: {{ private_cloud.stalwart.relay_port }}}]
+        - podSelector: {matchLabels: {app.kubernetes.io/name: stalwart, app.kubernetes.io/component: server}}
+      ports: [{protocol: TCP, port: {{ private_cloud_alert_smtp_port }}}]
 {% else %}
   egress: []
 {% endif %}

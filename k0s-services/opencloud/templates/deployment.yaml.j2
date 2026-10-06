@@ -117,7 +117,7 @@ spec:
           ports:
             - {name: http, containerPort: 9200, protocol: TCP}
           resources:
-            requests: {cpu: 500m, memory: {{ private_cloud.opencloud.max_ram | to_json }}, ephemeral-storage: 512Mi}
+            requests: {cpu: 500m, memory: {{ private_cloud_memory_requests.opencloud | private_cloud_memory_request(private_cloud.opencloud.max_ram) }}, ephemeral-storage: 512Mi}
             limits: {memory: {{ private_cloud.opencloud.max_ram | to_json }}, ephemeral-storage: 4Gi}
           startupProbe:
             httpGet: {path: /health, port: http}

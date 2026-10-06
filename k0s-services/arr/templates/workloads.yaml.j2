@@ -68,7 +68,7 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 6
           resources:
-            requests: {cpu: 100m, memory: {{ ((['128Mi' | private_cloud_ram_bytes, private_cloud.media.max_ram.openvpn | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi}
+            requests: {cpu: 100m, memory: {{ private_cloud_memory_requests.openvpn | private_cloud_memory_request(private_cloud.media.max_ram.openvpn) }}}
             limits: {memory: {{ private_cloud.media.max_ram.openvpn }}}
           securityContext:
             allowPrivilegeEscalation: false
@@ -86,7 +86,7 @@ spec:
           readinessProbe: {tcpSocket: {port: dns-tcp}, periodSeconds: 5}
           livenessProbe: {tcpSocket: {port: dns-tcp}, initialDelaySeconds: 10, periodSeconds: 10}
           resources:
-            requests: {cpu: 20m, memory: {{ ((['32Mi' | private_cloud_ram_bytes, private_cloud.media.max_ram.dns | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi}
+            requests: {cpu: 20m, memory: {{ private_cloud_memory_requests.dns | private_cloud_memory_request(private_cloud.media.max_ram.dns) }}}
             limits: {memory: {{ private_cloud.media.max_ram.dns }}}
           securityContext:
             runAsNonRoot: true
@@ -143,7 +143,7 @@ spec:
         private-cloud.example/openvpn-guarded: 'true'
 {% if app.name == 'qbittorrent' %}
       annotations:
-        checksum/logging-settings: {{ (lookup('file', playbook_dir ~ '/../logging/configure_qbittorrent.py') ~ lookup('file', playbook_dir ~ '/../logging/qbittorrent_helpers.py')) | hash('sha256') }}
+        checksum/logging-settings: {{ (lookup('file', role_path ~ '/files/configure_qbittorrent.py') ~ lookup('file', role_path ~ '/files/qbittorrent_helpers.py')) | hash('sha256') }}
         checksum/qbittorrent-credentials: {{ private_cloud_secrets.media.qbittorrent_password | hash('sha256') }}
         checksum/file-logs: {{ lookup('file', playbook_dir ~ '/../k0s-services/arr/files/file-logs.conf') | hash('sha256') }}
 {% endif %}
@@ -193,7 +193,7 @@ spec:
           env:
             - {name: LOG_PATH, value: /logs/qbittorrent.log}
           resources:
-            requests: {cpu: 10m, memory: {{ ((['32Mi' | private_cloud_ram_bytes, private_cloud.media.max_ram.file_logs | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi}
+            requests: {cpu: 10m, memory: {{ private_cloud_memory_requests.file_logs | private_cloud_memory_request(private_cloud.media.max_ram.file_logs) }}}
             limits: {memory: {{ private_cloud.media.max_ram.file_logs }}}
           securityContext:
             runAsNonRoot: true
@@ -228,7 +228,7 @@ spec:
           readinessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 10, periodSeconds: 10}
           livenessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 30, periodSeconds: 20}
           resources:
-            requests: {cpu: 100m, memory: {{ ((['256Mi' | private_cloud_ram_bytes, private_cloud.media.max_ram[app.name] | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi}
+            requests: {cpu: 100m, memory: {{ private_cloud_memory_requests[app.name] | private_cloud_memory_request(private_cloud.media.max_ram[app.name]) }}}
             limits: {memory: {{ private_cloud.media.max_ram[app.name] }}}
           securityContext:
             runAsNonRoot: true
@@ -277,7 +277,7 @@ spec:
             capabilities: {drop: [ALL], add: [NET_ADMIN]}
             seccompProfile: {type: RuntimeDefault}
           resources:
-            requests: {cpu: 20m, memory: {{ ((['32Mi' | private_cloud_ram_bytes, private_cloud.media.max_ram.vpn_route | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi}
+            requests: {cpu: 20m, memory: {{ private_cloud_memory_requests.vpn_route | private_cloud_memory_request(private_cloud.media.max_ram.vpn_route) }}}
             limits: {memory: {{ private_cloud.media.max_ram.vpn_route }}}
           readinessProbe:
             exec:

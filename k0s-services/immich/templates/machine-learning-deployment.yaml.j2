@@ -55,7 +55,7 @@ spec:
           resources:
             requests:
               cpu: 250m
-              memory: {{ private_cloud.immich.machine_learning_max_ram | to_json }}
+              memory: {{ private_cloud_memory_requests.immich_machine_learning | private_cloud_memory_request(private_cloud.immich.machine_learning_max_ram) }}
               ephemeral-storage: 1Gi
 {% if private_cloud.immich.machine_learning_accelerator == 'openvino' %}
               gpu.intel.com/i915: 1

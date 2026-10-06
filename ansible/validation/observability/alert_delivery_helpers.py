@@ -4,10 +4,14 @@ import http.client
 import json
 import smtplib
 import socket
-import ssl
+import sys
 import time
 import urllib.parse
 from email.message import EmailMessage
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from public_tls import public_context
 
 
 SMTP_TIMEOUT = 20
@@ -22,14 +26,15 @@ def send_test_message(config, marker):
     message["To"] = config["recipient"]
     message["Subject"] = marker
     message.set_content("Private cloud alert delivery verification " + marker + "\n")
-    if config["relay_implicit_tls"]:
-        client = smtplib.SMTP_SSL(config["relay_host"], config["relay_port"], timeout=SMTP_TIMEOUT)
-    else:
-        client = smtplib.SMTP(config["relay_host"], config["relay_port"], timeout=SMTP_TIMEOUT)
-    with client:
-        if not config["relay_implicit_tls"]:
-            client.starttls(context=ssl.create_default_context())
-        client.login(config["relay_username"], config["relay_password"])
+    with smtplib.SMTP(config["smtp_host"], config["smtp_port"], timeout=SMTP_TIMEOUT) as client:
+        client.ehlo()
+        code, _ = client.mail(config["sender"])
+        if not 200 <= code < 300:
+            raise RuntimeError("Stalwart rejected the internal alert sender")
+        code, _ = client.rcpt("private-cloud-validation@external.invalid")
+        if code < 500:
+            raise RuntimeError("Stalwart's internal SMTP listener allowed anonymous external relaying")
+        client.rset()
         client.send_message(message)
 
 
@@ -185,7 +190,7 @@ def request_json(config, account, method, path, payload=None):
     if payload is not None:
         body = json.dumps(payload, separators=(",", ":")).encode()
         headers["Content-Type"] = "application/json"
-    context = ssl.create_default_context()
+    context = public_context()
     with socket.create_connection((config["address"], config["port"]), timeout=JMAP_TIMEOUT) as connection:
         with context.wrap_socket(connection, server_hostname=config["hostname"]) as secured:
             client = http.client.HTTPSConnection(config["hostname"], config["port"], timeout=JMAP_TIMEOUT)

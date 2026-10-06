@@ -2,6 +2,42 @@
 # Commit Zabbix host endpoint changes here.
 private_cloud_zabbix_hostname: private-cloud-zabbix
 private_cloud_zabbix_agent_server_active: 127.0.0.1:31051
+private_cloud_alert_smtp_host: stalwart.private-cloud.svc.cluster.local
+private_cloud_alert_smtp_port: 2525
+
+# Memory requests reserved per container; preflight budgets these and limits stay burstable.
+private_cloud_memory_requests:
+  traefik: 96Mi
+  amneziawg: 16Mi
+  ddns: 32Mi
+  forward_auth: 32Mi
+  postgres: 384Mi
+  meilisearch: 64Mi
+  tika: 256Mi
+  onlyoffice: 1Gi
+  opencloud: 256Mi
+  grist: 320Mi
+  manticore: 384Mi
+  redis_affine: 32Mi
+  affine: 256Mi
+  affine_preparation: 512Mi
+  immich: 768Mi
+  immich_machine_learning: 384Mi
+  valkey_immich: 32Mi
+  stalwart: 96Mi
+  zabbix_server: 160Mi
+  zabbix_web: 64Mi
+  openobserve: 256Mi
+  alloy: 384Mi
+  jellyfin: 320Mi
+  sonarr: 192Mi
+  radarr: 192Mi
+  prowlarr: 192Mi
+  qbittorrent: 64Mi
+  openvpn: 64Mi
+  dns: 32Mi
+  vpn_route: 16Mi
+  file_logs: 16Mi
 
 private_cloud_dataset_catalog:
   - {name: installer-config, stage: zfs, dataset: tank/secure/backup/private-cloud-config, color: 42A5F5}

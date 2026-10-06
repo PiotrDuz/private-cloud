@@ -37,8 +37,8 @@ spec:
               hostPort: {{ private_cloud.networking.amneziawg.listen_port }}
               protocol: UDP
           resources:
-            requests: {cpu: 50m, memory: 64Mi}
-            limits: {memory: 256Mi}
+            requests: {cpu: 50m, memory: {{ private_cloud_memory_requests.amneziawg }}}
+            limits: {memory: 128Mi}
           readinessProbe:
             exec:
               command: [awg, show, awg0]

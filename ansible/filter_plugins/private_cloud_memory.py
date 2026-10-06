@@ -9,4 +9,8 @@ from install_helpers import ram_to_bytes
 
 class FilterModule:
     def filters(self):
-        return {"private_cloud_ram_bytes": ram_to_bytes}
+        return {"private_cloud_ram_bytes": ram_to_bytes, "private_cloud_memory_request": memory_request}
+
+
+def memory_request(request, limit):
+    return f"{min(ram_to_bytes(request), ram_to_bytes(limit)) // 1048576}Mi"

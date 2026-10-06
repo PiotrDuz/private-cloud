@@ -106,7 +106,7 @@ def validate_logging_items(api, host_id, certificates):
 
 
 def validate_notifications(api, config, group_id):
-    relay = config["relay"]
+    smtp = config["smtp"]
     media_type = require_one(api("mediatype.get", {
         "output": "extend",
         "filter": {"name": ["Private cloud Stalwart inbox"]},
@@ -114,20 +114,17 @@ def validate_notifications(api, config, group_id):
     expected_media = {
         "type": "0",
         "status": "0",
-        "smtp_server": relay["host"],
-        "smtp_port": str(relay["port"]),
+        "smtp_server": smtp["host"],
+        "smtp_port": str(smtp["port"]),
         "smtp_helo": config["mail_hostname"],
         "smtp_email": config["from_address"],
-        "smtp_security": "2" if relay["implicit_tls"] else "1",
-        "smtp_verify_peer": "1",
-        "smtp_verify_host": "1",
-        "smtp_authentication": "1",
-        "username": relay["username"],
+        "smtp_security": "0",
+        "smtp_authentication": "0",
         "maxattempts": "10",
         "attempt_interval": "1m",
     }
     if any(str(media_type.get(key, "")) != value for key, value in expected_media.items()):
-        raise RuntimeError("The Zabbix SMTP media type does not match the configured relay")
+        raise RuntimeError("The Zabbix SMTP media type does not match the internal Stalwart service")
 
     user = require_one(api("user.get", {
         "output": ["userid", "username"],

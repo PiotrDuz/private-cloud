@@ -239,7 +239,7 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
             cloud["k0s"][key] = prompt_line(f"k0s {key}", cloud["k0s"][key])
     if "networking" in sections:
         networking = cloud["networking"]
-        for key in ("storage_size", "acme_email", "acme_directory_url", "cloudflare_api_url", "cloudflare_zone_id", "public_ip_url", "pod_cidr", "service_cidr", "cluster_dns_ip", "traefik_internal_ip", "zabbix_hostname"):
+        for key in ("storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "pod_cidr", "service_cidr", "cluster_dns_ip", "traefik_internal_ip", "zabbix_hostname"):
             networking[key] = prompt_line(f"Networking {key}", networking[key])
         networking["local_network_cidrs"] = prompt_line(
             "Local network CIDRs separated by spaces", " ".join(networking["local_network_cidrs"])

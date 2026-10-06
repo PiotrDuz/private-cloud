@@ -12,7 +12,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: jellyfin}
       annotations:
-        checksum/settings: {{ (lookup('file', playbook_dir ~ '/../media/configure_jellyfin.py') ~ lookup('file', playbook_dir ~ '/../media/jellyfin_helpers.py')) | hash('sha256') }}
+        checksum/settings: {{ (lookup('file', role_path ~ '/files/configure_jellyfin.py') ~ lookup('file', role_path ~ '/files/jellyfin_helpers.py')) | hash('sha256') }}
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -68,10 +68,10 @@ spec:
             failureThreshold: 5
           resources:
 {% if private_cloud.stages.intel_gpu | bool %}
-            requests: {cpu: 250m, memory: {{ ((['1Gi' | private_cloud_ram_bytes, private_cloud.media.max_ram.jellyfin | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi, gpu.intel.com/i915: 1}
+            requests: {cpu: 250m, memory: {{ private_cloud_memory_requests.jellyfin | private_cloud_memory_request(private_cloud.media.max_ram.jellyfin) }}, gpu.intel.com/i915: 1}
             limits: {memory: {{ private_cloud.media.max_ram.jellyfin }}, gpu.intel.com/i915: 1}
 {% else %}
-            requests: {cpu: 250m, memory: {{ ((['1Gi' | private_cloud_ram_bytes, private_cloud.media.max_ram.jellyfin | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi}
+            requests: {cpu: 250m, memory: {{ private_cloud_memory_requests.jellyfin | private_cloud_memory_request(private_cloud.media.max_ram.jellyfin) }}}
             limits: {memory: {{ private_cloud.media.max_ram.jellyfin }}}
 {% endif %}
           securityContext:

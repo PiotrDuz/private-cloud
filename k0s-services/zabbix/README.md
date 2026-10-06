@@ -19,6 +19,7 @@ The Zabbix server and web frontend are managed by `ansible/roles/zabbix_server`.
 - The host firewall limits NodePort `31051` to configured local networks.
 - The service catalog creates dataset warnings at 80% and high alerts at 90%.
 - Zabbix independently probes Alloy, HTTPS, and SMTP STARTTLS endpoints.
+- Alert emails go directly to Stalwart's internal service on TCP `2525` without SMTP credentials or TLS.
 - Zabbix reports Alloy health, metrics availability, retries, and dropped entries.
 - The health collector runs without sudo or OpenObserve administrator credentials.
 - Zabbix Agent uses system logging collected from the host journal by Alloy.

@@ -17,12 +17,9 @@
         'mail_hostname': private_cloud.stalwart.hostname,
         'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
         'from_address': private_cloud.notifications.from_address,
-        'relay': {
-          'host': private_cloud.stalwart.relay_host,
-          'port': private_cloud.stalwart.relay_port,
-          'implicit_tls': private_cloud.stalwart.relay_implicit_tls,
-          'username': private_cloud.stalwart.relay_username,
-          'password': (private_cloud_secrets.stalwart | default({})).get('relay_password', '')
+        'smtp': {
+          'host': private_cloud_alert_smtp_host,
+          'port': private_cloud_alert_smtp_port
         }
       } | to_json }}
   register: zabbix_observability_apply

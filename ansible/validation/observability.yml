@@ -1,5 +1,16 @@
 ---
-- name: Validate direct SMTP relay and Stalwart inbox delivery
+- name: Resolve the internal Stalwart SMTP service
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ private_cloud_kubeconfig }}"
+    api_version: v1
+    kind: Service
+    name: stalwart
+    namespace: private-cloud
+  register: validation_stalwart_smtp_service
+  changed_when: false
+  when: private_cloud.stages.notifications | bool
+
+- name: Validate internal SMTP and Stalwart inbox delivery
   ansible.builtin.command:
     argv: [python3, "{{ playbook_dir }}/validation/observability/verify_alert_delivery.py"]
     stdin: >-
@@ -7,11 +18,8 @@
         'address': private_cloud.networking.traefik_internal_ip,
         'hostname': private_cloud.stalwart.hostname,
         'port': 443,
-        'relay_host': private_cloud.stalwart.relay_host,
-        'relay_port': private_cloud.stalwart.relay_port,
-        'relay_implicit_tls': private_cloud.stalwart.relay_implicit_tls,
-        'relay_username': private_cloud.stalwart.relay_username,
-        'relay_password': private_cloud_secrets.stalwart.relay_password,
+        'smtp_host': validation_stalwart_smtp_service.resources[0].spec.clusterIP,
+        'smtp_port': private_cloud_alert_smtp_port,
         'sender': private_cloud.notifications.from_address,
         'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
         'accounts': [

@@ -5,6 +5,7 @@ This runbook lists work that cannot be automated in this repository. Repository 
 ## External prerequisites
 
 - [ ] Point the domain's authoritative DNS to Cloudflare before deployment.
+- [ ] Use a registered domain, a reachable OpenVPN provider endpoint, and a public SMTP relay; validation rejects private or reserved substitutes.
 - [ ] Create separate zone-scoped Cloudflare tokens for DDNS, Traefik ACME, and Stalwart ACME.
 - [ ] Reserve `private_cloud.networking.traefik_internal_ip` for the host on the router.
 - [ ] Provide a physical Intel iGPU or supported PCI passthrough before enabling Intel GPU workloads.
@@ -15,7 +16,6 @@ This runbook lists work that cannot be automated in this repository. Repository 
 - [ ] Configure LAN and VPN split DNS for the configured service hostnames.
 - [ ] Resolve the OpenCloud hostname to the Traefik address for LAN clients and pods.
 - [ ] Keep public mail hostname records DNS-only so SMTP reaches the host directly.
-- [ ] Confirm the configured public A records appear in Cloudflare after the DDNS stage runs.
 
 ## Mail DNS and forwarding
 
@@ -27,7 +27,6 @@ This runbook lists work that cannot be automated in this repository. Repository 
 - [ ] Confirm the forwarding alias delivers mail to `<mailbox_username>@<domain>`.
 - [ ] Send a message through the external inbox and confirm it reaches the Stalwart mailbox.
 - [ ] Verify outbound mail uses the configured inbox.eu relay and passes recipient-side authentication checks.
-- [ ] Confirm the outbound relay presents a certificate chaining to a public Mozilla-trusted CA, because OpenObserve uses compiled-in webpki roots.
 
 ## Monitoring
 
@@ -73,8 +72,7 @@ This runbook lists work that cannot be automated in this repository. Repository 
 - [ ] Test public access to configured HTTPS services, SMTP, and AmneziaWG from outside the LAN.
 - [ ] Test split DNS from LAN and VPN clients.
 - [ ] Confirm SSH, the Kubernetes API, and Zabbix are unavailable from WAN networks.
-- [ ] Confirm the forwarding-domain MX and mail hostname resolve to the expected destinations.
-- [ ] Confirm PTR, SPF, DKIM, and DMARC records resolve publicly.
+- [ ] Confirm the DKIM record resolves publicly.
 - [ ] Verify inbound SMTP preserves the sender address through Proxy Protocol.
 - [ ] Interrupt OpenVPN and confirm guarded media apps lose external access.
 - [ ] Confirm each AmneziaWG peer can reach only its approved LAN destinations.
@@ -82,42 +80,58 @@ This runbook lists work that cannot be automated in this repository. Repository 
 ## Deployment acceptance
 
 - [ ] Complete the deployment acceptance checklist in [NETWORKING.md](NETWORKING.md#deployment-acceptance).
-- [ ] Complete the repository's live validation after operator setup is finished.
+- [ ] Run the installer `validate` action after operator setup is finished.
 
 ## Live validation
 
-Run the installed-system validation from the repository root after deployment and operator setup:
+Validation runs only against the production services, public providers, and DNS configured for this host. It has no mocks, test CAs, endpoint overrides, or temporary policy openings.
 
 ```sh
 sudo python3 ansible/install.py
 ```
 
-Installation runs the configured live validation automatically after all enabled stages finish.
+Installation runs validation automatically after all enabled stages finish. Choose `validate` at the mode prompt to rerun it; it needs the stored public configuration, the encrypted secrets file, and the Vault password.
 
-Choose `validate` at the mode prompt and enter the Ansible Vault password. Validation requires the existing public configuration and encrypted secrets file, and it checks enabled stages. It checks ZFS health, mounts, quotas and k0s startup ordering; cluster node and volume readiness; workload rollouts; ARR user IDs and qBittorrent's tunnel binding; OpenCloud callback acceptance; DNS lookups, trusted HTTPS routes and SMTP STARTTLS; the active host firewall; Zabbix collectors; log heartbeat ingestion; and synthetic OpenObserve and Zabbix email delivery.
+Complete the external prerequisites above before the first installation, or the final validation fails on the missing external state.
 
-The validation action does not create Cloudflare credentials, configure the router, publish mail MX or TXT records, configure ISP mail routing, create user accounts, or set application UI options. The DDNS stage updates the configured public A records. Test WAN reachability, split DNS from LAN and VPN clients, real user sign-ins, Jellyfin password login, VPN isolation, and media playback manually using the acceptance checklist above.
+### Checked automatically
 
-## Ephemeral VM acceptance
+- ZFS health, encryption, mounts, quotas, and k0s startup ordering.
+- Cluster node, volume, and workload readiness.
+- Service protocols, authenticated APIs, and OpenCloud storage round trips.
+- HTTPS and SMTP STARTTLS certificates chain to Mozilla public roots and expire in more than 14 days.
+- Host split DNS resolves every checked hostname to `networking.traefik_internal_ip`.
+- Cloudflare `1.1.1.1` and Google `8.8.8.8` resolve each managed record to the address returned by `networking.public_ip_url`.
+- The forwarding-domain MX includes the Stalwart hostname.
+- The primary-domain MX points away from Stalwart.
+- The primary domain publishes SPF and DMARC records.
+- The public address PTR equals the Stalwart hostname.
+- Traefik, Stalwart, and DDNS use the production Let's Encrypt and Cloudflare endpoints.
+- Stalwart uses the external SMTP relay for non-local outbound mail.
+- Guarded media traffic exits through the VPN with an address different from the home WAN address.
+- The OpenVPN endpoint is a public IPv4 address.
+- OpenCloud discovery and every enabled client callback are accepted.
+- Internal SMTP validation, OpenObserve alerts, and Zabbix alerts reach the Stalwart mailbox.
+- The host trust store contains no local CAs.
+- `/etc/hosts` contains no service, relay, ACME, or Cloudflare overrides.
+- Cluster CoreDNS has no static host overrides.
+- Workloads have no `hostAliases`, CA environment overrides, or trust-store mounts.
+- Every NetworkPolicy in managed namespaces comes from the repository templates.
+- Managed namespaces contain no TLS Secrets and Traefik loads no injected certificates.
 
-Local mocks can exercise DNS routing, trusted HTTPS, ACME account registration and certificate signing, SMTP relay forwarding, and an OpenVPN tunnel using the configured test hostnames. They cannot establish domain ownership, ISP routing, external provider credentials, public mail reputation, or physical GPU access.
+### Not checked automatically
 
-For an already configured local trial, restore the mock processes and cluster fixtures after a guest reboot:
-
-```sh
-sudo python3 ansible/validation/mocks/live_test.py restore
-```
-
-The harness preserves its private credentials, CA, and VPN profile under `/var/lib/private-cloud-live-test`; it discards stale process IDs after a reboot. The saved mock profile must match the encrypted media configuration. Reapply can replace the mock workload mounts and Traefik certificate configuration, so restore these fixtures before validating the local trial.
-
-- [ ] Restore the production ACME directory and Cloudflare API URLs in global configuration.
-- [ ] Repeat DNS-01 issuance and renewal against an owned Cloudflare zone.
-- [ ] Confirm public DNS records from an independent resolver.
-- [ ] Confirm inbound forwarding and outbound delivery with the real mail providers.
-- [ ] Test NAT and firewall access from a separate WAN connection.
-- [ ] Replace the local VPN endpoint with the provider profile and credentials.
-- [ ] Test an AmneziaWG peer from a separate client.
-- [ ] Confirm Intel GPU inference and transcoding on accessible hardware.
+- [ ] Confirm the router forwards only TCP 25, TCP 443, and the AmneziaWG UDP port from a separate WAN connection.
+- [ ] Confirm SSH, the Kubernetes API, Zabbix, and former NodePorts are unreachable from WAN.
+- [ ] Confirm the ISP permits inbound and outbound TCP 25.
+- [ ] Confirm split DNS from LAN clients other than the host and from AmneziaWG clients.
+- [ ] Publish and verify the DKIM selector, because its name is provider-specific.
+- [ ] Confirm the external inbox forwards real messages to the forwarding address.
+- [ ] Confirm outbound mail passes SPF, DKIM, and DMARC at an external recipient.
+- [ ] Confirm the Cloudflare tokens are zone-scoped with only DNS edit permission.
+- [ ] Watch the first Let's Encrypt renewal for Traefik and Stalwart.
+- [ ] Interrupt OpenVPN and confirm guarded media apps lose Internet access.
+- [ ] Connect an AmneziaWG peer from a separate client and check its LAN allowlist.
+- [ ] Complete real browser and mobile sign-ins for every OIDC application.
+- [ ] Confirm Intel GPU inference and transcoding on the installed hardware.
 - [ ] Size memory and dataset quotas for actual documents, media, logs, and concurrency.
-
-See [the VMware acceptance record](LIVE_TEST.md) for measured results and remaining checks.

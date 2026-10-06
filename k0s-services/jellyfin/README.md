@@ -39,7 +39,7 @@ Library settings follow Jellyfin's [LibraryOptions](https://github.com/jellyfin/
 
 Jellyfin supports native console logging and receives no logging sidecar. The pinned image enables the Console sink in its [default logging configuration](https://github.com/jellyfin/jellyfin/blob/v10.11.4/Jellyfin.Server/Resources/Configuration/logging.json).
 
-Server logs are available from the main container. Separate FFmpeg diagnostic logs remain under `/config/log` on the Jellyfin dataset and are not forwarded to stdout. A host timer prunes closed FFmpeg `.log` and `.txt` files after seven days or when their combined size exceeds 1GiB; active files remain untouched.
+Server logs are available from the main container. Separate FFmpeg diagnostic logs remain under `/config/log` on the Jellyfin dataset and are not forwarded to stdout. Jellyfin's daily Clean Log Directory task deletes FFmpeg logs older than the configured three-day `LogFileRetentionDays`.
 
 ```bash
 sudo k0s kubectl logs -n media deployment/jellyfin -c jellyfin --follow

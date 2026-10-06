@@ -36,27 +36,34 @@
         == (private_cloud.stages.notifications | bool | ternary('true', 'false'))
     fail_msg: OpenObserve's published URL or SMTP enablement does not match the global configuration.
 
-- name: Validate OpenObserve's configured SMTP relay
+- name: Validate OpenObserve's internal SMTP delivery
   ansible.builtin.assert:
     that:
       - >-
         (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
          | selectattr('name', 'equalto', 'ZO_SMTP_HOST') | map(attribute='value') | first)
-        == private_cloud.stalwart.relay_host
+        == private_cloud_alert_smtp_host
       - >-
         (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
          | selectattr('name', 'equalto', 'ZO_SMTP_PORT') | map(attribute='value') | first)
-        == (private_cloud.stalwart.relay_port | string)
+        == (private_cloud_alert_smtp_port | string)
       - >-
         (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
          | selectattr('name', 'equalto', 'ZO_SMTP_USER_NAME') | map(attribute='value') | first)
-        == private_cloud.stalwart.relay_username
+        == ''
+      - >-
+        (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
+         | selectattr('name', 'equalto', 'ZO_SMTP_PASSWORD') | map(attribute='value') | first)
+        == ''
       - >-
         (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
          | selectattr('name', 'equalto', 'ZO_SMTP_FROM_EMAIL') | map(attribute='value') | first)
         == private_cloud.notifications.from_address
-      # LIVE-TEST TEMPORARY: encryption assert disabled for the plaintext OpenObserve SMTP fixture; restore before final validation.
-    fail_msg: OpenObserve's SMTP settings do not match the configured relay.
+      - >-
+        (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
+         | selectattr('name', 'equalto', 'ZO_SMTP_ENCRYPTION') | map(attribute='value') | first)
+        == ''
+    fail_msg: OpenObserve's SMTP settings do not match the internal Stalwart service.
   when: private_cloud.stages.notifications | bool
 
 - name: Read OpenObserve and Alloy endpoints for validation

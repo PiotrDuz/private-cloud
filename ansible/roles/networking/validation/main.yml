@@ -217,15 +217,15 @@
   register: networking_validation_ddns_config
   changed_when: false
 
-- name: Require Cloudflare DDNS to use globally configured endpoints
+- name: Require Cloudflare DDNS to use the production Cloudflare API
   ansible.builtin.assert:
     that:
       - networking_validation_ddns_config.resources | length == 1
       - ("ADDRESS_URL = " ~ (private_cloud.networking.public_ip_url | to_json)) in networking_validation_ddns_config.resources[0].data['update.py']
-      - ("API_ROOT = " ~ (private_cloud.networking.cloudflare_api_url | to_json)) in networking_validation_ddns_config.resources[0].data['update.py']
-    fail_msg: Cloudflare DDNS does not use the endpoints from global configuration.
+      - ('API_ROOT = "https://api.cloudflare.com/client/v4"') in networking_validation_ddns_config.resources[0].data['update.py']
+    fail_msg: Cloudflare DDNS does not use the production Cloudflare API.
 
-- name: Read the Traefik Cloudflare API endpoint
+- name: Read the Traefik deployment
   kubernetes.core.k8s_info:
     kubeconfig: "{{ networking_kubeconfig }}"
     api_version: apps/v1
@@ -235,9 +235,10 @@
   register: networking_validation_traefik
   changed_when: false
 
-- name: Require Traefik to use the configured Cloudflare endpoint
+- name: Require Traefik to use the production ACME and Cloudflare endpoints
   ansible.builtin.assert:
     that:
       - networking_validation_traefik.resources | length == 1
-      - (networking_validation_traefik.resources[0].spec.template.spec.containers | selectattr('name', 'equalto', 'traefik') | map(attribute='env') | first | selectattr('name', 'equalto', 'CLOUDFLARE_BASE_URL') | map(attribute='value') | first) == private_cloud.networking.cloudflare_api_url
-    fail_msg: Traefik ACME is not configured to use the globally configured Cloudflare endpoint.
+      - (networking_validation_traefik.resources[0].spec.template.spec.containers | selectattr('name', 'equalto', 'traefik') | map(attribute='args') | first | select('search', 'acme[.]caserver') | list) == []
+      - (networking_validation_traefik.resources[0].spec.template.spec.containers | selectattr('name', 'equalto', 'traefik') | map(attribute='env') | first | map(attribute='name') | select('search', '^CLOUDFLARE_BASE_URL$|^CF_API_URL$|^LEGO_CA') | list) == []
+    fail_msg: Traefik overrides the production Let's Encrypt or Cloudflare endpoint.

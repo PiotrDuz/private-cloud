@@ -14,6 +14,7 @@ OpenObserve is managed by `ansible/roles/logging` through the `logging` stage.
 - Queries time out after 60 seconds and return 1,000 rows by default.
 - The memory circuit breaker activates at 90%.
 - The notifications flag disables SMTP and all four managed alerts together.
+- Alert emails go directly to Stalwart's internal service on TCP `2525` without SMTP credentials or TLS.
 - Severity alerts exclude OpenObserve logs to prevent notification feedback loops.
 - Zabbix does not probe OpenObserve health, metrics, internal logs, or heartbeat searches.
 - OpenObserve reports missing host heartbeats through its own managed alert.

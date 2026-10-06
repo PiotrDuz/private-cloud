@@ -28,7 +28,7 @@
 
 - name: Configure ARR quality profiles, connections, and library folders
   ansible.builtin.command:
-    argv: [python3, "{{ playbook_dir }}/../media/configure_arr.py"]
+    argv: [python3, "{{ role_path }}/files/configure_arr.py"]
     stdin: >-
       {{ {
         'addresses': dict(media_arr_services.results | map(attribute='item') | zip(media_arr_services.results | map(attribute='resources') | map('first') | map(attribute='spec.clusterIP'))),

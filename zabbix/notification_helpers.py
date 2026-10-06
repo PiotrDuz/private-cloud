@@ -3,14 +3,12 @@ from api_helpers import same
 
 
 def configure_email(api, config):
-    relay = config["relay"]
+    smtp = config["smtp"]
     media = {
         "name": "Private cloud Stalwart inbox", "type": 0, "status": 0,
-        "smtp_server": relay["host"], "smtp_port": relay["port"],
+        "smtp_server": smtp["host"], "smtp_port": smtp["port"],
         "smtp_helo": config["mail_hostname"], "smtp_email": config["from_address"],
-        "smtp_security": 2 if relay["implicit_tls"] else 1,
-        "smtp_verify_peer": 1, "smtp_verify_host": 1, "smtp_authentication": 1,
-        "username": relay["username"], "passwd": relay["password"],
+        "smtp_security": 0, "smtp_authentication": 0,
         "maxattempts": 10, "attempt_interval": "1m", "message_format": 0,
     }
     media_id = api.ensure("mediatype", "mediatypeid", media, {"output": "extend", "filter": {"name": [media["name"]]}})

@@ -55,7 +55,7 @@ spec:
           ports:
             - {name: http, containerPort: 4181, protocol: TCP}
           resources:
-            requests: {cpu: 25m, memory: 32Mi, ephemeral-storage: 32Mi}
+            requests: {cpu: 25m, memory: {{ private_cloud_memory_requests.forward_auth }}, ephemeral-storage: 32Mi}
             limits: {memory: 64Mi, ephemeral-storage: 128Mi}
           readinessProbe: {tcpSocket: {port: http}, periodSeconds: 10, timeoutSeconds: 3, failureThreshold: 6}
           livenessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 20, periodSeconds: 30, timeoutSeconds: 3, failureThreshold: 5}

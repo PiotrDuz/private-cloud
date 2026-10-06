@@ -14,7 +14,7 @@
 
 - name: Copy Alloy and certificate health collector
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../logging/{{ item }}"
+    src: "{{ role_path }}/files/{{ item }}"
     dest: "/usr/local/libexec/zabbix/{{ item }}"
     owner: root
     group: root

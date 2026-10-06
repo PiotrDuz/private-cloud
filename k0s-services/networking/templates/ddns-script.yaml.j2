@@ -14,7 +14,7 @@ data:
     ZONE_ID = {{ private_cloud.networking.cloudflare_zone_id | to_json }}
     RECORDS = {{ private_cloud.networking.managed_records | to_json }}
     ADDRESS_URL = {{ private_cloud.networking.public_ip_url | to_json }}
-    API_ROOT = {{ private_cloud.networking.cloudflare_api_url | to_json }}
+    API_ROOT = "https://api.cloudflare.com/client/v4"
 
 
     def main():

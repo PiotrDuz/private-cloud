@@ -199,7 +199,27 @@
 
 - name: Verify Jellyfin can encode a short CPU video frame
   ansible.builtin.command:
-    argv: [k0s, kubectl, exec, -n, media, deployment/jellyfin, --, /usr/lib/jellyfin-ffmpeg/ffmpeg,
+    argv: [k0s, kubectl, exec, -n, media, deployment/jellyfin, -c, jellyfin, --, /usr/lib/jellyfin-ffmpeg/ffmpeg,
            -hide_banner, -loglevel, error, -f, lavfi, -i, 'color=c=black:s=32x32:r=1',
            -t, '1', -c:v, libx264, -f, 'null', '-']
   changed_when: false
+
+- name: Read the home WAN address from the host
+  ansible.builtin.uri:
+    url: "{{ private_cloud.networking.public_ip_url }}"
+    return_content: true
+  register: media_validation_host_address
+  changed_when: false
+
+- name: Read the guarded media exit address through the VPN
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, media, deployment/qbittorrent, -c, qbittorrent, --, curl, -fsS, --max-time, '30', "{{ private_cloud.networking.public_ip_url }}"]
+  register: media_validation_vpn_address
+  changed_when: false
+
+- name: Require guarded media traffic to exit through the VPN provider
+  ansible.builtin.assert:
+    that:
+      - media_validation_vpn_address.stdout | trim is match('^[0-9]{1,3}([.][0-9]{1,3}){3}$')
+      - media_validation_vpn_address.stdout | trim != media_validation_host_address.content | trim
+    fail_msg: Guarded media traffic does not exit through the VPN provider.

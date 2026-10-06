@@ -6,7 +6,7 @@ import time
 import uuid
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parents[3] / "logging"))
+sys.path.append(str(Path(__file__).resolve().parents[2] / "roles" / "logging" / "files"))
 from alert_delivery_helpers import remove_test_messages, wait_for_delivery
 from openobserve_helpers import OpenObserve, conditions
 

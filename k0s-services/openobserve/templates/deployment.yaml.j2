@@ -47,17 +47,17 @@ spec:
             - {name: ZO_ROOT_USER_PASSWORD, valueFrom: {secretKeyRef: {name: openobserve-ingest, key: admin-password}}}
             - {name: ZO_SMTP_ENABLED, value: {{ (private_cloud.stages.notifications | bool | lower) | to_json }}}
 {% if private_cloud.stages.notifications %}
-            - {name: ZO_SMTP_HOST, value: {{ private_cloud.stalwart.relay_host | to_json }}}
-            - {name: ZO_SMTP_PORT, value: {{ private_cloud.stalwart.relay_port | string | to_json }}}
-            - {name: ZO_SMTP_USER_NAME, value: {{ private_cloud.stalwart.relay_username | to_json }}}
-            - {name: ZO_SMTP_PASSWORD, valueFrom: {secretKeyRef: {name: openobserve-ingest, key: smtp-password}}}
+            - {name: ZO_SMTP_HOST, value: {{ private_cloud_alert_smtp_host | to_json }}}
+            - {name: ZO_SMTP_PORT, value: {{ private_cloud_alert_smtp_port | string | to_json }}}
+            - {name: ZO_SMTP_USER_NAME, value: ""}
+            - {name: ZO_SMTP_PASSWORD, value: ""}
             - {name: ZO_SMTP_FROM_EMAIL, value: {{ private_cloud.notifications.from_address | to_json }}}
             - {name: ZO_SMTP_REPLY_TO, value: {{ private_cloud.notifications.from_address | to_json }}}
-            - {name: ZO_SMTP_ENCRYPTION, value: {{ (private_cloud.stalwart.relay_implicit_tls | ternary('ssltls', 'starttls')) | to_json }}}
+            - {name: ZO_SMTP_ENCRYPTION, value: ""}
 {% endif %}
           ports: [{name: http, containerPort: 5080, protocol: TCP}]
           resources:
-            requests: {cpu: 250m, memory: 256Mi, ephemeral-storage: 256Mi}
+            requests: {cpu: 250m, memory: {{ private_cloud_memory_requests.openobserve | private_cloud_memory_request(private_cloud.logging.openobserve_max_ram) }}, ephemeral-storage: 256Mi}
             limits: {memory: {{ private_cloud.logging.openobserve_max_ram | to_json }}, ephemeral-storage: 1Gi}
           startupProbe:
             httpGet: {path: /healthz, port: http}

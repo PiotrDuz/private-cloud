@@ -21,7 +21,6 @@ Open Zabbix at `networking.zabbix_hostname` and review **Monitoring → Problems
 - Use ZFS quota utilization rather than advertised 10Ti PV capacity.
 - Watch PostgreSQL growth because applications share its dataset.
 - Check all enabled datasets because the capacity widget displays only the top seven.
-- Reapply the configuration after an SMTP relay IP change to refresh egress allowlists.
 
 ## Incidents and logs
 
@@ -123,7 +122,7 @@ Traefik renews HTTPS certificates automatically; Stalwart renews its SMTP STARTT
 
 When notifications are enabled, Zabbix sends Warning-or-higher problems, recoveries, and hourly reminders. OpenObserve evaluates recognized warning, error, and critical logs every minute and suppresses repeated notifications for sixty minutes, matching the hourly Zabbix reminders. A single matching log entry can trigger an alert.
 
-The notifications stage sends a test message through the configured SMTP relay and confirms its arrival in the Stalwart mailbox over JMAP before the play finishes.
+Alerts go directly to Stalwart's internal SMTP listener on TCP 2525 without TLS or authentication. Network policies permit OpenObserve and Zabbix to reach this listener, and anonymous external relaying remains disabled. Global validation sends a test message over this path and confirms its arrival in the Stalwart mailbox over JMAP.
 
 OpenObserve excludes its own logs from severity alerts, and Zabbix does not probe its application health or search API. OpenObserve outages and notification failures require direct inspection or independent monitoring.
 
@@ -131,7 +130,7 @@ OpenObserve excludes its own logs from severity alerts, and Zabbix does not prob
 | --- | --- |
 | Missing Zabbix email | Reports → Action log, trigger actions, SMTP media, recipient permissions, and severity selection. |
 | Missing OpenObserve email | Alert state, destination, silence period, SMTP settings, and OpenObserve logs. |
-| Email accepted but absent from inbox | External relay queue, forwarding-domain MX, Traefik SMTP, and Stalwart delivery or filtering logs. |
+| Email accepted but absent from inbox | Internal SMTP service, network policies, and Stalwart delivery or filtering logs. |
 | Repeated log alerts | OpenObserve query, affected service, and dependency logs. |
 
 - Verify warning and recovery delivery after changing rules, credentials, or routing.

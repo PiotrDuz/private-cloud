@@ -42,3 +42,20 @@
   register: validation_edge_routes
   changed_when: false
   when: private_cloud.stages.networking | bool
+
+- name: Validate public DNS and mail authentication records through public resolvers
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_public_dns.py"]
+    stdin: >-
+      {{ {
+        'public_ip_url': private_cloud.networking.public_ip_url,
+        'records': private_cloud.networking.managed_records,
+        'mail': {
+          'domain': private_cloud.stalwart.domain,
+          'forwarding_domain': private_cloud.stalwart.forwarding_domain,
+          'hostname': private_cloud.stalwart.hostname
+        } if private_cloud.stages.stalwart else none
+      } | to_json }}
+  register: validation_public_dns
+  changed_when: false
+  when: private_cloud.stages.networking | bool

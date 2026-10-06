@@ -22,9 +22,9 @@ sudo python3 ansible/install.py
 
 - `/tank/secure/backup/private-cloud-config/private-cloud.yml` stores non-secret desired state.
 - `/tank/secure/backup/private-cloud-config/private-cloud.secrets.yml` stores Ansible Vault ciphertext.
-- The installer stores both files on a root-only dataset with a 1G quota.
+- The installer stores both files on a root-only dataset with a 10MiB quota.
 - Initial installation stages configuration under `/run/private-cloud` until the dataset is mounted.
-- `ansible/config/private-cloud.example.yml` documents the configuration contract at public schema version 10 and secrets schema version 6.
+- `ansible/config/private-cloud.example.yml` documents the configuration contract at public schema version 11 and secrets schema version 6.
 - Public hostnames are configured per service, including the OpenCloud hostname `cloud.example.com`.
 - The Cloudflare managed records cover every published hostname.
 - The Vault password is never stored by the installer.
@@ -48,6 +48,7 @@ sudo python3 ansible/install.py
 - Redis for AFFiNE, Intel GPU support, and Immich are independent installer stages.
 - Immich uses the shared PostgreSQL service with pgvector and VectorChord.
 - The project is greenfield and has no configuration migrations or compatibility paths.
+- Let's Encrypt and Cloudflare API endpoints are fixed to production.
 
 ## Lifecycle
 
@@ -55,7 +56,7 @@ sudo python3 ansible/install.py
 - Update changes selected public or secret values.
 - Reapply converges the existing configuration.
 - Rotate replaces selected encrypted values.
-- Validate runs the separate live checks after operator setup.
+- Validate checks the production services and public providers after operator setup.
 - Ansible runs all enabled stages in dependency order.
 - Successful installation runs the installed-system validation automatically.
 - Disk discovery falls back to physical device paths when serial IDs are unavailable.
@@ -73,6 +74,8 @@ sudo python3 ansible/install.py
 - Use [the operations runbook](docs/OPERATIONS.md) for monitoring and incident investigation.
 - Treat backups, router/NAT configuration, external monitoring, and live acceptance as operator work tracked in [the operator setup runbook](docs/SETUP.md).
 - Read [the networking architecture and boundaries](docs/NETWORKING.md) for the implemented VPN, ingress, firewall, identity, and media isolation design.
+
+The memory preflight budgets the container requests in `ansible/service_catalog.yml`; configured `max_ram` values are burstable limits above that budget.
 
 Kubernetes workloads keep CPU requests without CPU limits; remove the former Immich `max_cpu`, `machine_learning_max_cpu`, and `valkey_max_cpu` settings from public configuration.
 

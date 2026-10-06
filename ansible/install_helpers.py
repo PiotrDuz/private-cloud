@@ -43,7 +43,7 @@ KUBECONFIG_FILE = RUNTIME_DIRECTORY / "kubeconfig"
 INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
 SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate", "validate")
-CURRENT_SCHEMA_VERSION = 10
+CURRENT_SCHEMA_VERSION = 11
 CURRENT_SECRETS_SCHEMA_VERSION = 6
 SECRET_SCHEMAS = {
     "storage": {"encryption_passphrase"},
@@ -272,7 +272,7 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if not RAM_PATTERN.fullmatch(str(k0s.get("host_reserve_ram", ""))) or ram_to_bytes(k0s["host_reserve_ram"]) < ram_to_bytes(storage["arc_max"]) + 1073741824:
         raise InstallerError("k0s.host_reserve_ram must cover ZFS ARC and at least 1Gi for host services")
     networking = cloud["networking"]
-    expected_networking = {"storage_size", "acme_email", "acme_directory_url", "cloudflare_api_url", "cloudflare_zone_id", "public_ip_url", "managed_records", "pod_cidr", "service_cidr", "cluster_dns_ip", "local_network_cidrs", "traefik_internal_ip", "zabbix_hostname", "amneziawg"}
+    expected_networking = {"storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "managed_records", "pod_cidr", "service_cidr", "cluster_dns_ip", "local_network_cidrs", "traefik_internal_ip", "zabbix_hostname", "amneziawg"}
     if not isinstance(networking, dict) or set(networking) != expected_networking:
         raise InstallerError("Networking configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(networking.get("storage_size", ""))):
@@ -285,10 +285,6 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Invalid networking.cloudflare_zone_id")
     if not re.fullmatch(r"https://[^\s/]+(?:/[^\s]*)?", str(networking.get("public_ip_url", ""))):
         raise InstallerError("Invalid networking.public_ip_url")
-    if not re.fullmatch(r"https://[^\s/]+(?:/[^\s]*)?", str(networking.get("acme_directory_url", ""))):
-        raise InstallerError("Invalid networking.acme_directory_url")
-    if not re.fullmatch(r"https://[^\s/]+(?:/[^\s]*)?", str(networking.get("cloudflare_api_url", ""))):
-        raise InstallerError("Invalid networking.cloudflare_api_url")
     managed_records = networking.get("managed_records")
     if not isinstance(managed_records, list) or not managed_records or len(managed_records) != len(set(managed_records)):
         raise InstallerError("Cloudflare managed records must be a non-empty unique list")
@@ -374,7 +370,7 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         endpoint_address = ipaddress.ip_address(openvpn["endpoint_ip"])
     except (TypeError, ValueError) as error:
         raise InstallerError("Invalid OpenVPN address") from error
-    if gateway_address not in service_network or endpoint_address.version != 4 or endpoint_address.is_loopback:
+    if gateway_address not in service_network or endpoint_address.version != 4 or not endpoint_address.is_global:
         raise InstallerError("The OpenVPN gateway must use the service CIDR and its endpoint must be a public IPv4 address")
     if type(openvpn.get("endpoint_port")) is not int or not 1 <= openvpn["endpoint_port"] <= 65535:
         raise InstallerError("Invalid OpenVPN endpoint port")
@@ -408,8 +404,8 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("OnlyOffice configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(onlyoffice.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(onlyoffice.get("max_ram", ""))):
         raise InstallerError("Invalid OnlyOffice size configuration")
-    if ram_to_bytes(onlyoffice["max_ram"]) < 2147483648:
-        raise InstallerError("OnlyOffice max_ram must be at least 2Gi")
+    if ram_to_bytes(onlyoffice["max_ram"]) < 4294967296:
+        raise InstallerError("OnlyOffice max_ram must be at least 4Gi")
     if not isinstance(onlyoffice.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(onlyoffice["hostname"]):
         raise InstallerError("Invalid onlyoffice.hostname")
     opencloud = cloud["opencloud"]
@@ -453,7 +449,7 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     for key in ("max_ram",):
         if not RAM_PATTERN.fullmatch(str(affine.get(key, ""))):
             raise InstallerError(f"Invalid affine.{key}")
-    if ram_to_bytes(affine["max_ram"]) < 1073741824:
+    if ram_to_bytes(affine["max_ram"]) < 2147483648:
         raise InstallerError("AFFiNE memory limit is too small")
     if not isinstance(affine.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(affine["hostname"]):
         raise InstallerError("Invalid affine.hostname")
@@ -466,7 +462,7 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     for key in ("max_ram", "machine_learning_max_ram", "valkey_max_ram"):
         if not RAM_PATTERN.fullmatch(str(immich.get(key, ""))):
             raise InstallerError(f"Invalid immich.{key}")
-    if ram_to_bytes(immich["max_ram"]) < 1073741824 or ram_to_bytes(immich["machine_learning_max_ram"]) < 1073741824 or ram_to_bytes(immich["valkey_max_ram"]) < 134217728:
+    if ram_to_bytes(immich["max_ram"]) < 2147483648 or ram_to_bytes(immich["machine_learning_max_ram"]) < 1073741824 or ram_to_bytes(immich["valkey_max_ram"]) < 134217728:
         raise InstallerError("Immich memory limits are too small")
     if immich.get("machine_learning_accelerator") not in {"cpu", "openvino"}:
         raise InstallerError("Invalid immich.machine_learning_accelerator")

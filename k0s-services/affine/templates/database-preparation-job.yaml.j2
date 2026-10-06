@@ -32,7 +32,7 @@ spec:
             - name: DATABASE_URL
               valueFrom: {secretKeyRef: {name: affine-credentials, key: DATABASE_URL}}
           resources:
-            requests: {cpu: 250m, memory: 512Mi, ephemeral-storage: 256Mi}
+            requests: {cpu: 250m, memory: {{ private_cloud_memory_requests.affine_preparation }}, ephemeral-storage: 256Mi}
             limits: {memory: 2Gi, ephemeral-storage: 2Gi}
           volumeMounts:
             - {name: data, mountPath: /root/.affine/storage, subPath: storage}

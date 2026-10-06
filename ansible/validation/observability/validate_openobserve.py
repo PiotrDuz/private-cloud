@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parents[3] / "logging"))
+sys.path.append(str(Path(__file__).resolve().parents[2] / "roles" / "logging" / "files"))
 from openobserve_helpers import OpenObserve, alert_definitions, contains, destination_definition, template_definition
 
 

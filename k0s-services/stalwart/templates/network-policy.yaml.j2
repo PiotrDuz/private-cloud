@@ -25,3 +25,16 @@ spec:
       ports:
         - {protocol: TCP, port: 8080}
         - {protocol: TCP, port: 25}
+{% if private_cloud.stages.notifications %}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: observability}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: openobserve}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: zabbix
+              app.kubernetes.io/component: server
+      ports:
+        - {protocol: TCP, port: {{ private_cloud_alert_smtp_port }}}
+{% endif %}

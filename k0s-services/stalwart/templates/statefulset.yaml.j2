@@ -80,8 +80,11 @@ spec:
           ports:
             - {name: management, containerPort: 8080, protocol: TCP}
             - {name: smtp, containerPort: 25, protocol: TCP}
+{% if private_cloud.stages.notifications %}
+            - {name: alert-smtp, containerPort: {{ private_cloud_alert_smtp_port }}, protocol: TCP}
+{% endif %}
           resources:
-            requests: {cpu: 250m, memory: {{ private_cloud.stalwart.max_ram | to_json }}, ephemeral-storage: 256Mi}
+            requests: {cpu: 250m, memory: {{ private_cloud_memory_requests.stalwart | private_cloud_memory_request(private_cloud.stalwart.max_ram) }}, ephemeral-storage: 256Mi}
             limits: {memory: {{ private_cloud.stalwart.max_ram | to_json }}, ephemeral-storage: 2Gi}
           startupProbe:
             httpGet: {path: /healthz/ready, port: management}

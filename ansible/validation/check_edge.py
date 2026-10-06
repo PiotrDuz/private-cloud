@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Check installed edge routes, trusted TLS, and the identity provider discovery document."""
+"""Check installed edge routes, publicly trusted unexpired TLS, and the identity provider discovery document."""
 
 import json
 import socket
 import sys
 import urllib.parse
 
-from http_helpers import https_get, smtp_tls
+from http_helpers import https_certificate_days, https_get, smtp_tls
+
+
+MINIMUM_CERTIFICATE_DAYS = 14
 
 
 def main():
@@ -15,7 +18,9 @@ def main():
     results = []
     for site in config["sites"]:
         host = site["host"]
-        socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+        resolved = sorted({entry[4][0] for entry in socket.getaddrinfo(host, 443, socket.AF_INET, socket.SOCK_STREAM)})
+        if resolved != [address]:
+            raise RuntimeError(f"Split DNS resolves {host} to {resolved} instead of {address}")
         status, payload = https_get(address, host, site.get("path", "/"))
         if status >= 400 and status not in (401, 403):
             raise RuntimeError(f"{host} returned HTTP {status}")
@@ -29,11 +34,19 @@ def main():
             jwks_status, jwks_payload = https_get(address, host, jwks_url.path)
             if jwks_status != 200 or not json.loads(jwks_payload).get("keys"):
                 raise RuntimeError(f"{host} did not serve OIDC signing keys")
-        results.append({"host": host, "status": status})
+        days = https_certificate_days(address, host)
+        require_fresh(host, days)
+        results.append({"host": host, "status": status, "certificate_days": days})
     if config.get("smtp_host"):
-        smtp_tls(address, config["smtp_host"])
-        results.append({"host": config["smtp_host"], "port": 25, "starttls": True})
+        days = smtp_tls(address, config["smtp_host"])
+        require_fresh(config["smtp_host"], days)
+        results.append({"host": config["smtp_host"], "port": 25, "starttls": True, "certificate_days": days})
     print(json.dumps({"checked": results}, separators=(",", ":")))
+
+
+def require_fresh(host, days):
+    if days < MINIMUM_CERTIFICATE_DAYS:
+        raise RuntimeError(f"{host} certificate expires in {days} days; certificate renewal is failing")
 
 
 if __name__ == "__main__":

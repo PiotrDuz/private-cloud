@@ -104,7 +104,7 @@ spec:
           ports:
             - {name: http, containerPort: 2283, protocol: TCP}
           resources:
-            requests: {cpu: 500m, memory: {{ private_cloud.immich.max_ram | to_json }}, ephemeral-storage: 512Mi}
+            requests: {cpu: 500m, memory: {{ private_cloud_memory_requests.immich | private_cloud_memory_request(private_cloud.immich.max_ram) }}, ephemeral-storage: 512Mi}
             limits: {memory: {{ private_cloud.immich.max_ram | to_json }}, ephemeral-storage: 4Gi}
           startupProbe:
             httpGet: {path: /api/server/ping, port: http}

@@ -6,7 +6,7 @@ import copy
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "media"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "roles" / "media" / "files"))
 
 from arr_helpers import Arr, _configure_quality_items, _quality_profile_state, read_api_key
 

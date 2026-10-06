@@ -12,3 +12,6 @@ spec:
   ports:
     - {name: management, port: 8080, targetPort: management, protocol: TCP}
     - {name: smtp, port: 25, targetPort: smtp, protocol: TCP}
+{% if private_cloud.stages.notifications %}
+    - {name: alert-smtp, port: {{ private_cloud_alert_smtp_port }}, targetPort: alert-smtp, protocol: TCP}
+{% endif %}

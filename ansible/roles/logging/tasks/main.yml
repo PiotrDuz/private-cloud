@@ -145,7 +145,7 @@
   ansible.builtin.command:
     argv:
       - python3
-      - "{{ playbook_dir }}/../logging/provision_openobserve.py"
+      - "{{ role_path }}/files/provision_openobserve.py"
     stdin: >-
       {{ {
         'endpoint': 'http://' ~ logging_endpoints.results[0].resources[0].spec.clusterIP ~ ':5080',

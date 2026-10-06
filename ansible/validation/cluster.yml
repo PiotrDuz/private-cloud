@@ -46,3 +46,20 @@
   loop_control:
     label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
   when: private_cloud.stages.k0s | bool
+
+- name: Reject trust, DNS, routing, and policy overrides outside repository management
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_production_integrity.py"]
+    stdin: >-
+      {{ {
+        'hostnames': (
+          private_cloud.networking.managed_records
+          + [private_cloud.networking.zabbix_hostname, private_cloud.networking.amneziawg.hostname]
+          + (['media', 'onlyoffice', 'opencloud', 'grist', 'affine', 'immich', 'stalwart', 'logging'] | map('extract', private_cloud) | map(attribute='hostname') | list)
+          + [private_cloud.stalwart.relay_host, private_cloud.networking.public_ip_url | urlsplit('hostname'),
+             'acme-v02.api.letsencrypt.org', 'api.cloudflare.com']
+        ) | unique
+      } | to_json }}
+  register: validation_production_integrity
+  changed_when: false
+  when: private_cloud.stages.k0s | bool

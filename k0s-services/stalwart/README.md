@@ -12,6 +12,8 @@ The Stalwart service is managed by `ansible/roles/stalwart`.
 - The forwarding-domain alias delivers to the primary mailbox.
 - Non-local mail uses the configured inbox.eu SMTP relay.
 - A ClusterIP service exposes HTTP/JMAP TCP `8080` and SMTP TCP `25`.
+- Notifications enable an internal SMTP listener on TCP `2525` for OpenObserve and Zabbix.
+- Internal alerts use plain SMTP without authentication and cannot relay to external recipients.
 - Traefik publishes JMAP, web access, and management through HTTPS TCP `443`.
 - Traefik proxies public SMTP TCP `25` with Proxy Protocol v2.
 - Stalwart terminates SMTP STARTTLS itself.

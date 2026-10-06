@@ -10,7 +10,7 @@ zfs_backup_dataset: tank/secure/backup
 zfs_no_backup_dataset: tank/secure/no-backup
 zfs_installer_config_dataset: tank/secure/backup/private-cloud-config
 zfs_installer_config_mountpoint: /tank/secure/backup/private-cloud-config
-zfs_installer_config_quota: 1G
+zfs_installer_config_quota: 10M
 zfs_zed_cache_directory: /etc/zfs/zfs-list.cache
 zfs_legacy_mount_service: /etc/systemd/system/zfs-unlock-mount.service
 zfs_legacy_mount_helper: /usr/local/sbin/zfs-unlock-mount

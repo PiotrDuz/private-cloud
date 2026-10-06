@@ -77,7 +77,7 @@ spec:
               containerPort: 5432
               protocol: TCP
           resources:
-            requests: {cpu: 500m, memory: {{ private_cloud.postgres.max_ram | to_json }}, ephemeral-storage: 512Mi}
+            requests: {cpu: 500m, memory: {{ private_cloud_memory_requests.postgres | private_cloud_memory_request(private_cloud.postgres.max_ram) }}, ephemeral-storage: 512Mi}
             limits: {memory: {{ private_cloud.postgres.max_ram | to_json }}, ephemeral-storage: 4Gi}
           startupProbe:
             exec:

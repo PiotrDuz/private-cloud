@@ -1,4 +1,4 @@
-schema_version: 10
+schema_version: 11
 private_cloud:
   stages:
     zfs: true
@@ -23,20 +23,18 @@ private_cloud:
     zabbix_server: true
     zabbix_agent: true
   storage:
-    arc_max: 4Gi
+    arc_max: 1536Mi
     disks:
       - /dev/disk/by-id/replace-with-first-disk
       - /dev/disk/by-id/replace-with-second-disk
   k0s:
-    host_reserve_ram: 8Gi
+    host_reserve_ram: 3584Mi
     config_quota: 1G
     images_quota: 10G
     ephemeral_quota: 10G
   networking:
     storage_size: 1G
     acme_email: admin@example.com
-    acme_directory_url: https://acme-v02.api.letsencrypt.org/directory
-    cloudflare_api_url: https://api.cloudflare.com/client/v4
     cloudflare_zone_id: '00000000000000000000000000000000'
     public_ip_url: https://api.ipify.org
     managed_records:
@@ -72,15 +70,15 @@ private_cloud:
               port: 443
   media:
     max_ram:
-      sonarr: 2Gi
-      radarr: 2Gi
-      prowlarr: 2Gi
-      qbittorrent: 2Gi
+      sonarr: 1Gi
+      radarr: 1Gi
+      prowlarr: 1Gi
+      qbittorrent: 1Gi
       jellyfin: 4Gi
-      openvpn: 512Mi
-      vpn_route: 256Mi
+      openvpn: 256Mi
+      vpn_route: 64Mi
       dns: 128Mi
-      file_logs: 128Mi
+      file_logs: 64Mi
     storage_size: 1T
     hostname: jellyfin.example.com
     timezone: Etc/UTC
@@ -109,7 +107,7 @@ private_cloud:
     hostname: onlyoffice.example.com
   opencloud:
     storage_size: 100G
-    max_ram: 4Gi
+    max_ram: 1Gi
     hostname: cloud.example.com
   grist:
     storage_size: 50G
@@ -120,22 +118,22 @@ private_cloud:
     storage_size: 50G
     max_ram: 1Gi
   redis_affine:
-    max_ram: 512Mi
+    max_ram: 256Mi
   affine:
     storage_size: 100G
-    max_ram: 4Gi
+    max_ram: 2Gi
     hostname: affine.example.com
   immich:
     storage_size: 100G
     hostname: photos.example.com
     timezone: Etc/UTC
-    max_ram: 4Gi
-    machine_learning_max_ram: 4Gi
+    max_ram: 2Gi
+    machine_learning_max_ram: 3Gi
     machine_learning_accelerator: openvino
-    valkey_max_ram: 512Mi
+    valkey_max_ram: 256Mi
   stalwart:
     storage_size: 100G
-    max_ram: 2Gi
+    max_ram: 1Gi
     domain: example.com
     forwarding_domain: inbound.example.com
     hostname: mail.example.com
@@ -154,7 +152,7 @@ private_cloud:
     openobserve_storage_size: 50G
     alloy_storage_size: 5G
     openobserve_max_ram: 2Gi
-    alloy_max_ram: 512Mi
+    alloy_max_ram: 1Gi
     retention_days: 14
   notifications:
     from_address: user@example.com

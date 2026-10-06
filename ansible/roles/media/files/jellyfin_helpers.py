@@ -6,6 +6,7 @@ def configure_server(path):
     root = read_xml(path, 'ServerConfiguration')
     set_value(root, 'EnableExternalContentInSuggestions', 'false')
     set_value(root, 'QuickConnectAvailable', 'true')
+    set_value(root, 'LogFileRetentionDays', '3')
     return write_xml(path, root)
 
 

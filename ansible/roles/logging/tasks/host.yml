@@ -42,7 +42,7 @@
 
 - name: Install logging heartbeat
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../logging/heartbeat.py"
+    src: "{{ role_path }}/files/heartbeat.py"
     dest: /usr/local/libexec/private-cloud/log-heartbeat.py
     owner: root
     group: root
@@ -92,15 +92,6 @@
     group: root
     mode: '0644'
 
-- name: Install diagnostic retention helpers
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../logging/{{ item }}"
-    dest: "/usr/local/libexec/private-cloud/{{ item }}"
-    owner: root
-    group: root
-    mode: '0644'
-  loop: [retain_diagnostics.py, log_retention_helpers.py]
-
 - name: Install application log rotation service
   ansible.builtin.copy:
     dest: /etc/systemd/system/private-cloud-logrotate.service
@@ -111,7 +102,6 @@
       [Service]
       Type=oneshot
       ExecStart=/usr/sbin/logrotate --state /var/lib/private-cloud/logrotate.status /etc/private-cloud-logs.conf
-      ExecStart=/usr/bin/python3 /usr/local/libexec/private-cloud/retain_diagnostics.py
     owner: root
     group: root
     mode: '0644'
@@ -138,16 +128,3 @@
     enabled: true
     state: started
   loop: [private-cloud-log-heartbeat.timer, private-cloud-logrotate.timer]
-
-- name: Resolve SMTP destinations for notification policies
-  ansible.builtin.command:
-    argv: >-
-      {{ ['python3', playbook_dir ~ '/../logging/resolve_smtp.py', private_cloud.stalwart.relay_host]
-         + private_cloud.networking.local_network_cidrs }}
-  register: logging_smtp_resolution
-  changed_when: false
-  when: private_cloud.stages.notifications | bool
-
-- name: Select SMTP destinations
-  ansible.builtin.set_fact:
-    logging_smtp_addresses: "{{ (logging_smtp_resolution.stdout | from_json) if private_cloud.stages.notifications else [] }}"

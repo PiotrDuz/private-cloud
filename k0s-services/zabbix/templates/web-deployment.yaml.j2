@@ -98,7 +98,7 @@ spec:
             - name: PHP_TZ
               value: Etc/UTC
           resources:
-            requests: {cpu: 100m, memory: 512Mi, ephemeral-storage: 128Mi}
+            requests: {cpu: 100m, memory: {{ private_cloud_memory_requests.zabbix_web }}, ephemeral-storage: 128Mi}
             limits: {memory: 512Mi, ephemeral-storage: 1Gi}
           startupProbe:
             httpGet: {path: /ping, port: http}

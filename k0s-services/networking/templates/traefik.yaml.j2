@@ -46,7 +46,6 @@ spec:
             - --providers.kubernetesingress.allowexternalnameservices=false
             - --providers.file.filename=/etc/traefik/dynamic/tcp.yaml
             - --providers.file.watch=true
-            - --certificatesresolvers.cloudflare.acme.caserver={{ private_cloud.networking.acme_directory_url }}
             - --certificatesresolvers.cloudflare.acme.email={{ private_cloud.networking.acme_email }}
             - --certificatesresolvers.cloudflare.acme.storage=/data/acme.json
             - --certificatesresolvers.cloudflare.acme.dnschallenge.provider=cloudflare
@@ -55,16 +54,14 @@ spec:
           env:
             - name: CF_DNS_API_TOKEN
               valueFrom: {secretKeyRef: {name: cloudflare-dns-api, key: api-token}}
-            - name: CLOUDFLARE_BASE_URL
-              value: {{ private_cloud.networking.cloudflare_api_url | to_json }}
           ports:
             - {name: https, containerPort: 8443, hostPort: 443, protocol: TCP}
             - {name: smtp, containerPort: 25, hostPort: 25, protocol: TCP}
           readinessProbe: {httpGet: {path: /ping, port: 8080}, periodSeconds: 5}
           livenessProbe: {httpGet: {path: /ping, port: 8080}, periodSeconds: 10}
           resources:
-            requests: {cpu: 100m, memory: 128Mi}
-            limits: {memory: 512Mi}
+            requests: {cpu: 100m, memory: {{ private_cloud_memory_requests.traefik }}}
+            limits: {memory: 256Mi}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
