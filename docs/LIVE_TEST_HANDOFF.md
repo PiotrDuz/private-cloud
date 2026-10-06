@@ -10,7 +10,7 @@ Success requires more than creating Kubernetes resources or observing Running po
 | --- | --- |
 | Supported installation path | Creation, reapplication, and validation run through `ansible/install.py`. |
 | Complete installation | Every enabled stage finishes and its functional checks pass. |
-| Storage safety | Only the selected two 40GiB data disks form the pool. |
+| Storage safety | Only the selected two 40GiB data disks form the pool. |   
 | Constrained resources | Services boot and perform their checked operations within the 20GiB guest budget. |
 | Persistent state | Encrypted datasets unlock and services recover after reboot. |
 | Separate verification | Reusable checks live in validation folders and run after installation. |
@@ -24,9 +24,9 @@ The repository's layout and configuration contracts remain requirements. Persist
 
 ## Snapshot status
 
-Snapshot: 2026-10-05 at approximately 19:45 UTC.
+Snapshot: 2026-10-05 at approximately 12:38 UTC.
 
-**The whole-system installation and installer validation pass.** The 19:01 reapply finished every enabled stage, and the 19:23 installer `validate` action passed with `failed=0`. The OpenObserve SMTP encryption assert is temporarily disabled for the plaintext mail fixture; guest reboot and a clean rebuild remain.
+**The whole-system installation is incomplete.** The 12:22:37 UTC reapply stopped at 12:29:25 UTC when AFFiNE reused its already failed database-preparation Job. All preceding enabled stages passed this reapply; Immich and observability have not yet been installed. No installer is running at this snapshot.
 
 ## Current execution state
 
@@ -67,18 +67,7 @@ This section and the progress ledger are updated as work proceeds; the evidence 
 | 14:35 | Reran with PostgreSQL at 512MiB. | PostgreSQL was OOM-killed when Immich connected; PostgreSQL returned to 1GiB and Stalwart moved to 256MiB. |
 | 14:50 | Reran to Immich. | Applying the ML Recreate strategy failed against the live RollingUpdate object; the old Deployment was deleted once for this trial. |
 | 15:06 | Reran to Immich. | Server and ML reached Ready and passed ping checks; CPU inference returned HTTP 500 because Hugging Face downloads wrote to an unwritable home cache. |
-| 15:12 | Set `HF_HOME` and `MPLCONFIGDIR` under the ML cache volume and restarted the reapply. | Immich passed, including CPU inference; OpenObserve crash-looped because v0.90.3 requires at least three retention days. |
-| 15:31 | Raised trial retention to 3 days and the installer minimum to 3. | OpenObserve and Alloy booted, heartbeat and alert configuration checks passed, and email delivery failed with `UnknownIssuer`. |
-| 15:50 | A Sonnet agent traced delivery. | OpenObserve's lettre build trusts only compiled-in webpki roots, so the mock CA cannot be injected; the fixture now accepts plaintext on port 2465 and patches OpenObserve to `ZO_SMTP_ENCRYPTION=none`. |
-| 16:20 | Temporarily disabled the OpenObserve encryption assert for the fixture. | Logging and alert delivery passed; restore the assert before the final run. |
-| 16:33 | Zabbix server and web deployed. | ZFS template import failed because generated UUIDs were version 5; a Sonnet agent switched them to deterministic UUIDv4 and proved idempotent import. |
-| 16:56 | Reran to Zabbix. | The PV compatibility assert read `nodeSelectorTerms[0]['values']`; it now reads `matchExpressions[0]['values']`. |
-| 18:15 | Zabbix server stage passed after a Sonnet agent fixed 7.4 API fields, calculated-item references, null scrub values, and alert-send retries. | Zabbix Agent 2 crash-looped because its config was written with literal `\n`; the role now builds it with a YAML block scalar. |
-| 18:44 | Reran. | OpenObserve delivery failed: agent errors and 7-day mock certificates produced enough mail to hit Stalwart's inbound `452 Rate limit exceeded`. |
-| 18:55 | Repaired the live agent config, raised OpenObserve rule silence to 60 minutes, and moved mock certificates to 90 days. | Agent active, Stalwart accepted RCPT again at 19:00, and the next reapply started at 19:01. |
-| 19:14 | Completed reapply. | Every enabled stage passed (`failed=0`); the automatic final validation failed because Ansible 2.20 rejects `tasks_from: ../validation/main.yml`. |
-| 19:20 | Added `tasks/validate.yml` entry points to every role and pointed `validate.yml` at them. | The installer `validate` action passed with `failed=0` and `skipped=0`. |
-| 19:42 | A Sonnet agent ran the complete media VPN kill-switch fixture twice. | Baseline, tun0-down blocking, server-outage blocking, and recovery passed (tun0 11–15s, server 31s); mock keepalive and the public-IP mock handshake were corrected. |
+| 15:12 | Set `HF_HOME` and `MPLCONFIGDIR` under the ML cache volume and restarted the reapply. | Pending. |
 
 This document records the live test and its handoff state. [PLAN.md](../PLAN.md) remains the target specification, and [TODO.md](../TODO.md) tracks broader outstanding repository work. Some unchecked TODO items now have partial or completed evidence from this run; they still require reconciliation with the final acceptance results.
 
