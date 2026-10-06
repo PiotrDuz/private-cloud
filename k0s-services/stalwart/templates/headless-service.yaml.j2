@@ -9,5 +9,6 @@ spec:
   clusterIP: None
   selector:
     app.kubernetes.io/name: stalwart
+    app.kubernetes.io/component: server
   ports:
     - {name: management, port: 8080, targetPort: management, protocol: TCP}

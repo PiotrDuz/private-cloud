@@ -1,0 +1,16 @@
+---
+- name: Verify Grist's internal health endpoint
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': grist_kubeconfig,
+        'namespace': grist_namespace,
+        'service': grist_service_name,
+        'remote_port': 8484,
+        'path': '/status',
+        'status_codes': [200],
+        'body_contains': 'is alive'
+      } | to_json }}
+  register: grist_validation_site
+  changed_when: false

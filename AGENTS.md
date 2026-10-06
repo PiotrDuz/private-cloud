@@ -18,7 +18,7 @@
 
 ## Configuration contract
 
-- Public state: `ansible/config/private-cloud.yml`; Vault ciphertext: `ansible/config/private-cloud.secrets.yml`; `ansible/config/private-cloud.example.yml` mirrors `validate_public_configuration`.
+- Public state and Vault ciphertext live in `/tank/secure/backup/private-cloud-config`; `ansible/config/private-cloud.example.yml` mirrors `validate_public_configuration`.
 - Keep plaintext secrets out of the repo; they live only in the Vault ciphertext file.
 - Bump every schema site together: `CURRENT_SCHEMA_VERSION` and `CURRENT_SECRETS_SCHEMA_VERSION` in `ansible/install_helpers.py`, the asserts in `ansible/roles/preflight/tasks/main.yml`, and the example file.
 - Adding a stage touches `ansible/install.py` prompts, `ansible/install_helpers.py`, preflight asserts, the example config, `ansible/service_catalog.yml`, and `ansible/site.yml`.

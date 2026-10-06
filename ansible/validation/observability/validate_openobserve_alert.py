@@ -4,8 +4,10 @@ import json
 import sys
 import time
 import uuid
+from pathlib import Path
 
-from alert_delivery_helpers import wait_for_delivery
+sys.path.append(str(Path(__file__).resolve().parents[3] / "logging"))
+from alert_delivery_helpers import remove_test_messages, wait_for_delivery
 from openobserve_helpers import OpenObserve, conditions
 
 
@@ -14,6 +16,7 @@ def main():
     client = OpenObserve(config["endpoint"], config["username"], config["password"])
     marker = "private_cloud_validation_" + uuid.uuid4().hex
     alert_id = None
+    delivery_account = None
     try:
         definition = {
             "name": marker,
@@ -53,16 +56,18 @@ def main():
             [{
                 "_timestamp": now * 1_000_000,
                 "service": marker,
-                "severity": "critical",
+                "severity": "info",
                 "namespace": "validation",
                 "message": marker,
             }],
         )
-        if not wait_for_delivery(config["mail"], marker):
+        delivery_account = wait_for_delivery(config["mail"], marker)
+        if not delivery_account:
             raise RuntimeError("OpenObserve alert did not reach the Stalwart inbox: " + marker)
         print(json.dumps({"delivered": True, "marker": marker}, separators=(",", ":")))
     finally:
         primary_exception = sys.exc_info()[1]
+        cleanup_errors = []
         try:
             if not alert_id:
                 alert_id = client.named_alerts().get(marker)
@@ -73,9 +78,16 @@ def main():
                     allowed=(200, 204, 404),
                 )
         except Exception as error:
+            cleanup_errors.append(error)
+        try:
+            remove_test_messages(config["mail"], marker, delivery_account)
+        except Exception as error:
+            cleanup_errors.append(error)
+        if cleanup_errors:
+            details = "; ".join(str(error) for error in cleanup_errors)
             if primary_exception:
-                raise RuntimeError("OpenObserve validation failed and its temporary alert could not be removed: " + str(primary_exception)) from error
-            raise
+                details = "OpenObserve validation failed (" + str(primary_exception) + ") and cleanup failed: " + details
+            raise RuntimeError(details) from cleanup_errors[0]
 
 
 def response_alert_id(response):

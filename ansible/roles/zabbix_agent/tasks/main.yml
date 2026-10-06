@@ -181,7 +181,14 @@
 
 - name: Build the desired Agent configuration
   ansible.builtin.set_fact:
-    zabbix_agent_desired_content: "{{ zabbix_agent_sanitized_content + '\\n\\nInclude=' + zabbix_agent_include + '\\n\\n# BEGIN PRIVATE-CLOUD ZABBIX SETTINGS\\n' + (lookup('template', 'managed-settings.j2') | trim) + '\\n# END PRIVATE-CLOUD ZABBIX SETTINGS\\n' }}"
+    zabbix_agent_desired_content: |
+      {{ zabbix_agent_sanitized_content }}
+
+      Include={{ zabbix_agent_include }}
+
+      # BEGIN PRIVATE-CLOUD ZABBIX SETTINGS
+      {{ lookup('template', 'managed-settings.j2') | trim }}
+      # END PRIVATE-CLOUD ZABBIX SETTINGS
 
 - name: Converge the Agent configuration only when needed
   ansible.builtin.copy:
@@ -202,3 +209,6 @@
 
 - name: Apply pending Agent configuration changes
   ansible.builtin.meta: flush_handlers
+
+- name: Validate the Zabbix Agent
+  ansible.builtin.import_tasks: ../validation/main.yml

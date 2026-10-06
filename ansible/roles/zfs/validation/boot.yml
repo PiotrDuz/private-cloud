@@ -1,0 +1,167 @@
+---
+- name: Read the current boot ID for the native-unit handshake
+  ansible.builtin.command: cat /proc/sys/kernel/random/boot_id
+  register: zfs_current_boot_id
+  changed_when: false
+
+- name: Ensure the boot handshake directory is root-only
+  ansible.builtin.file:
+    path: "{{ zfs_boot_id_record | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Check for the previous native-unit boot ID
+  ansible.builtin.stat:
+    path: "{{ zfs_boot_id_record }}"
+  register: zfs_boot_id_stat
+
+- name: Check for a verified native-unit boot ID
+  ansible.builtin.stat:
+    path: "{{ zfs_boot_verified_record }}"
+  register: zfs_boot_verified_stat
+
+- name: Read the previous native-unit boot ID
+  ansible.builtin.slurp:
+    src: "{{ zfs_boot_id_record }}"
+  register: zfs_previous_boot_id
+  when: zfs_boot_id_stat.stat.exists
+
+- name: Read the verified native-unit boot ID
+  ansible.builtin.slurp:
+    src: "{{ zfs_boot_verified_record }}"
+  register: zfs_previous_verified_boot_id
+  when: zfs_boot_verified_stat.stat.exists
+
+- name: Determine whether a supervised reboot requires verification
+  ansible.builtin.set_fact:
+    zfs_supervised_reboot_detected: >-
+      {{ zfs_boot_id_stat.stat.exists and
+         (zfs_previous_boot_id.content | default('') | b64decode | trim) != (zfs_current_boot_id.stdout | trim) and
+         (not zfs_boot_verified_stat.stat.exists or
+          (zfs_previous_verified_boot_id.content | default('') | b64decode | trim) != (zfs_current_boot_id.stdout | trim)) }}
+
+- name: Determine whether this boot was already verified
+  ansible.builtin.set_fact:
+    zfs_supervised_reboot_verified: >-
+      {{ zfs_boot_verified_stat.stat.exists and
+         (zfs_previous_verified_boot_id.content | default('') | b64decode | trim) == (zfs_current_boot_id.stdout | trim) }}
+
+- name: Verify pool is natively imported after a supervised reboot
+  ansible.builtin.command: zpool list -H -o name {{ zfs_pool_name }}
+  register: zfs_post_reboot_pool
+  changed_when: false
+  when: zfs_supervised_reboot_detected
+
+- name: Require the native pool import after a supervised reboot
+  ansible.builtin.assert:
+    that: zfs_post_reboot_pool.rc == 0 and zfs_pool_name in zfs_post_reboot_pool.stdout
+    fail_msg: The managed ZFS pool was not natively imported after reboot.
+  when: zfs_supervised_reboot_detected
+
+- name: Verify native encrypted boot state before any convergence
+  ansible.builtin.command: zfs get -H -o value {{ item.property }} {{ item.dataset }}
+  loop:
+    - { dataset: 'tank/secure', property: 'keystatus', expected: 'available' }
+    - { dataset: 'tank/secure', property: 'mounted', expected: 'yes' }
+  register: zfs_post_reboot_key_state
+  changed_when: false
+  when: zfs_supervised_reboot_detected
+
+- name: Require native encrypted boot state before convergence
+  ansible.builtin.assert:
+    that: item.stdout | trim == item.item.expected
+    fail_msg: "Native ZFS boot verification failed for {{ item.item.dataset }}."
+  loop: "{{ zfs_post_reboot_key_state.results | default([]) }}"
+  when: zfs_supervised_reboot_detected
+
+- name: Enumerate every filesystem below the encrypted root before convergence
+  ansible.builtin.command: zfs list -H -r -t filesystem -o name,mounted {{ zfs_secure_dataset }}
+  register: zfs_post_reboot_dataset_mounts
+  changed_when: false
+  when: zfs_supervised_reboot_detected
+
+- name: Require every encrypted-root filesystem mounted natively
+  ansible.builtin.assert:
+    that: item.split('\t')[1] == 'yes'
+    fail_msg: "Native boot did not mount {{ item.split('\t')[0] }}."
+  loop: "{{ zfs_post_reboot_dataset_mounts.stdout_lines | default([]) }}"
+  when: zfs_supervised_reboot_detected
+
+- name: Verify the native generated key unit before convergence
+  ansible.builtin.command: systemctl show --value -p Id zfs-load-key@tank-secure.service
+  register: zfs_post_reboot_key_unit
+  changed_when: false
+  failed_when: zfs_post_reboot_key_unit.rc != 0 or zfs_post_reboot_key_unit.stdout | trim != 'zfs-load-key@tank-secure.service'
+  when: zfs_supervised_reboot_detected
+
+- name: Verify the native generated key unit fragment before convergence
+  ansible.builtin.command: systemctl show --value -p FragmentPath zfs-load-key@tank-secure.service
+  register: zfs_post_reboot_key_fragment
+  changed_when: false
+  failed_when: zfs_post_reboot_key_fragment.rc != 0 or zfs_post_reboot_key_fragment.stdout | trim == ''
+  when: zfs_supervised_reboot_detected
+
+- name: Verify the native encrypted keylocation before convergence
+  ansible.builtin.command: zfs get -H -o value keylocation {{ zfs_secure_dataset }}
+  register: zfs_post_reboot_keylocation
+  changed_when: false
+  when: zfs_supervised_reboot_detected
+
+- name: Require the managed keylocation before convergence
+  ansible.builtin.assert:
+    that: zfs_post_reboot_keylocation.stdout | trim == 'file:///etc/zfs/keys/tank-secure.key'
+    fail_msg: Native boot is not using the managed encrypted dataset key.
+  when: zfs_supervised_reboot_detected
+
+- name: Verify every native encrypted mount dependency before convergence
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/storage_checks.py"
+      - encrypted-mounts
+      - --dataset
+      - "{{ zfs_secure_dataset }}"
+  changed_when: false
+  when: zfs_supervised_reboot_detected
+
+- name: Check for k0s before post-reboot ordering verification
+  ansible.builtin.command: systemctl list-unit-files --no-legend k0scontroller.service
+  register: zfs_post_reboot_k0s_service
+  changed_when: false
+  failed_when: false
+  when:
+    - zfs_supervised_reboot_detected
+    - (private_cloud.stages.k0s | default(false) | bool)
+
+- name: Verify k0s native ordering before convergence when installed
+  ansible.builtin.command: systemctl show -p Requires -p After k0scontroller.service
+  register: zfs_post_reboot_k0s_ordering
+  changed_when: false
+  when:
+    - zfs_supervised_reboot_detected
+    - (private_cloud.stages.k0s | default(false) | bool)
+    - zfs_post_reboot_k0s_service.stdout | default('') | trim | length > 0
+
+- name: Require native ZFS ordering for k0s before convergence
+  ansible.builtin.assert:
+    that:
+      - zfs_post_reboot_k0s_ordering.rc == 0
+      - "'zfs-mount.service' in zfs_post_reboot_k0s_ordering.stdout"
+      - "'zfs-load-key@tank-secure.service' in zfs_post_reboot_k0s_ordering.stdout"
+    fail_msg: k0s boot ordering does not retain native ZFS dependencies.
+  when:
+    - zfs_supervised_reboot_detected
+    - (private_cloud.stages.k0s | default(false) | bool)
+    - zfs_post_reboot_k0s_service.stdout | default('') | trim | length > 0
+
+- name: Atomically record the verified boot ID before convergence
+  ansible.builtin.copy:
+    content: "{{ zfs_current_boot_id.stdout | trim }}\n"
+    dest: "{{ zfs_boot_verified_record }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when: zfs_supervised_reboot_detected
+

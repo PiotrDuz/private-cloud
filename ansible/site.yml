@@ -187,6 +187,11 @@
           when: private_cloud.stages.zabbix_agent | bool
           tags: [zabbix, zabbix_agent]
 
+        - name: Refresh native startup units for every installed dataset
+          ansible.builtin.include_tasks: tasks/zfs_mount_units.yml
+          when: private_cloud.stages.zfs | bool
+          tags: [always]
+
         - name: Print the summarized Ansible result
           ansible.builtin.debug:
             msg:

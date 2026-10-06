@@ -28,6 +28,8 @@ spec:
   template:
     metadata:
       labels: {app.kubernetes.io/name: media-vpn}
+      annotations:
+        checksum/vpn-credentials: {{ private_cloud_secrets.media | to_json | hash('sha256') }}
     spec:
       automountServiceAccountToken: false
       containers:
@@ -36,6 +38,7 @@ spec:
           env:
             - {name: VPN_SERVICE_PROVIDER, value: custom}
             - {name: VPN_TYPE, value: openvpn}
+            - {name: DNS_SERVER, value: 'off'}
             - {name: OPENVPN_CUSTOM_CONFIG, value: /run/media-vpn/custom.conf}
             - name: OPENVPN_USER
               valueFrom: {secretKeyRef: {name: media-vpn, key: username}}
@@ -51,14 +54,25 @@ spec:
           ports:
             - {name: proxy-tcp, containerPort: 8388, protocol: TCP}
             - {name: proxy-udp, containerPort: 8388, protocol: UDP}
-          readinessProbe: {tcpSocket: {port: proxy-tcp}, periodSeconds: 5}
-          livenessProbe: {tcpSocket: {port: proxy-tcp}, initialDelaySeconds: 20, periodSeconds: 10}
+          readinessProbe:
+            tcpSocket: null
+            exec: {command: [/gluetun-entrypoint, healthcheck]}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket: null
+            exec: {command: [/gluetun-entrypoint, healthcheck]}
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
-            requests: {cpu: 100m, memory: 128Mi}
-            limits: {memory: 512Mi}
+            requests: {cpu: 100m, memory: {{ ((['128Mi' | private_cloud_ram_bytes, private_cloud.media.max_ram.openvpn | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi}
+            limits: {memory: {{ private_cloud.media.max_ram.openvpn }}}
           securityContext:
             allowPrivilegeEscalation: false
-            capabilities: {drop: [ALL], add: [NET_ADMIN]}
+            capabilities: {drop: [ALL], add: [NET_ADMIN, CHOWN, DAC_OVERRIDE, SETUID, SETGID, KILL]}
             seccompProfile: {type: RuntimeDefault}
           volumeMounts:
             - {name: tun, mountPath: /dev/net/tun}
@@ -72,8 +86,8 @@ spec:
           readinessProbe: {tcpSocket: {port: dns-tcp}, periodSeconds: 5}
           livenessProbe: {tcpSocket: {port: dns-tcp}, initialDelaySeconds: 10, periodSeconds: 10}
           resources:
-            requests: {cpu: 20m, memory: 32Mi}
-            limits: {memory: 128Mi}
+            requests: {cpu: 20m, memory: {{ ((['32Mi' | private_cloud_ram_bytes, private_cloud.media.max_ram.dns | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi}
+            limits: {memory: {{ private_cloud.media.max_ram.dns }}}
           securityContext:
             runAsNonRoot: true
             runAsUser: 65532
@@ -179,8 +193,8 @@ spec:
           env:
             - {name: LOG_PATH, value: /logs/qbittorrent.log}
           resources:
-            requests: {cpu: 10m, memory: 32Mi}
-            limits: {memory: 128Mi}
+            requests: {cpu: 10m, memory: {{ ((['32Mi' | private_cloud_ram_bytes, private_cloud.media.max_ram.file_logs | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi}
+            limits: {memory: {{ private_cloud.media.max_ram.file_logs }}}
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -214,8 +228,8 @@ spec:
           readinessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 10, periodSeconds: 10}
           livenessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 30, periodSeconds: 20}
           resources:
-            requests: {cpu: 100m, memory: 256Mi}
-            limits: {memory: 2Gi}
+            requests: {cpu: 100m, memory: {{ ((['256Mi' | private_cloud_ram_bytes, private_cloud.media.max_ram[app.name] | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi}
+            limits: {memory: {{ private_cloud.media.max_ram[app.name] }}}
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -234,14 +248,27 @@ spec:
           command: [/bin/sh, -ceu]
           args:
             - |
-              original_gateway=$(ip route show default | awk '{print $3}')
-              ip route add {{ private_cloud.media.openvpn.gateway_cluster_ip }}/32 via "$original_gateway"
-              ip route add {{ private_cloud.networking.service_cidr }} via "$original_gateway"
+              gateway_file=/run/vpn-route-original-gateway
+              if [ -s "$gateway_file" ]; then
+                original_gateway=$(cat "$gateway_file")
+              else
+                original_gateway=$(ip route show default dev eth0 | awk '{print $3; exit}')
+                if [ -z "$original_gateway" ]; then
+                  original_gateway=$(ip route get {{ private_cloud.media.openvpn.gateway_cluster_ip }} | awk '{for (i = 1; i <= NF; i++) if ($i == "via") {print $(i + 1); exit}}')
+                fi
+                [ -n "$original_gateway" ]
+                printf '%s\n' "$original_gateway" > "$gateway_file"
+              fi
+              ip route del default dev tun0 2>/dev/null || true
+              ip link set dev tun0 down 2>/dev/null || true
+              ip tuntap del mode tun dev tun0 2>/dev/null || true
+              ip route replace {{ private_cloud.media.openvpn.gateway_cluster_ip }}/32 via "$original_gateway" dev eth0
+              ip route replace {{ private_cloud.networking.service_cidr }} via "$original_gateway" dev eth0
               ip tuntap add mode tun dev tun0
               ip address add 198.18.0.1/15 dev tun0
               ip link set tun0 up
               ip route replace default dev tun0
-              exec tun2socks -device tun://tun0 -proxy "ss://aes-256-gcm:${PROXY_PASSWORD}@{{ private_cloud.media.openvpn.gateway_cluster_ip }}:8388"
+              exec tun2socks --device tun://tun0 --proxy "ss://aes-256-gcm:${PROXY_PASSWORD}@{{ private_cloud.media.openvpn.gateway_cluster_ip }}:8388"
           env:
             - name: PROXY_PASSWORD
               valueFrom: {secretKeyRef: {name: media-vpn, key: proxy-password}}
@@ -250,10 +277,27 @@ spec:
             capabilities: {drop: [ALL], add: [NET_ADMIN]}
             seccompProfile: {type: RuntimeDefault}
           resources:
-            requests: {cpu: 20m, memory: 32Mi}
-            limits: {memory: 256Mi}
+            requests: {cpu: 20m, memory: {{ ((['32Mi' | private_cloud_ram_bytes, private_cloud.media.max_ram.vpn_route | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi}
+            limits: {memory: {{ private_cloud.media.max_ram.vpn_route }}}
           readinessProbe:
-            exec: {command: [ip, link, show, tun0]}
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  set -- $(ip tuntap show | awk -F: 'NF {print $1}')
+                  [ "$#" -eq 1 ] || exit 1
+                  [ "$1" = tun0 ] || exit 1
+                  for comm in /proc/[0-9]*/comm; do
+                    [ -r "$comm" ] || continue
+                    [ "$(cat "$comm" 2>/dev/null)" = tun2socks ] || continue
+                    pid=${comm#/proc/}
+                    pid=${pid%/comm}
+                    for fdinfo in /proc/"$pid"/fdinfo/*; do
+                      grep -Eq '^iff:[[:space:]]*tun0$' "$fdinfo" && exit 0
+                    done
+                  done
+                  exit 1
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:

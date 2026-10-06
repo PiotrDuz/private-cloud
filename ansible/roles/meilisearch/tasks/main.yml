@@ -75,7 +75,7 @@
     that:
       - meilisearch_existing.results[0].resources | length == 0 or meilisearch_existing.results[0].resources[0].spec.local.path == meilisearch_dataset_mountpoint
       - meilisearch_existing.results[0].resources | length == 0 or meilisearch_existing.results[0].resources[0].spec.capacity.storage == meilisearch_pv_capacity
-      - meilisearch_existing.results[0].resources | length == 0 or meilisearch_node_name in meilisearch_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - meilisearch_existing.results[0].resources | length == 0 or meilisearch_node_name in meilisearch_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values']
       - meilisearch_existing.results[1].resources | length == 0 or meilisearch_existing.results[1].resources[0].spec.resources.requests.storage == meilisearch_pv_capacity
       - meilisearch_existing.results[1].resources | length == 0 or meilisearch_existing.results[1].resources[0].spec.volumeName == meilisearch_pv_name
     fail_msg: Existing Meilisearch persistent storage conflicts with the configured local storage.
@@ -182,3 +182,6 @@
   retries: 60
   delay: 5
   changed_when: false
+
+- name: Validate Meilisearch after installation
+  ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

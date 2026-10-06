@@ -63,7 +63,7 @@
     that:
       - bleve_existing_storage.results[0].resources | length == 0 or bleve_existing_storage.results[0].resources[0].spec.local.path == bleve_dataset_mountpoint
       - bleve_existing_storage.results[0].resources | length == 0 or bleve_existing_storage.results[0].resources[0].spec.capacity.storage == bleve_pv_capacity
-      - bleve_existing_storage.results[0].resources | length == 0 or bleve_node_name in bleve_existing_storage.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - bleve_existing_storage.results[0].resources | length == 0 or bleve_node_name in bleve_existing_storage.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values']
       - bleve_existing_storage.results[1].resources | length == 0 or bleve_existing_storage.results[1].resources[0].spec.resources.requests.storage == bleve_pv_capacity
       - bleve_existing_storage.results[1].resources | length == 0 or bleve_existing_storage.results[1].resources[0].spec.volumeName == bleve_pv_name
     fail_msg: Existing Bleve persistent storage conflicts with the configured local storage.
@@ -94,3 +94,6 @@
   retries: 60
   delay: 5
   changed_when: false
+
+- name: Validate Bleve storage after installation
+  ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

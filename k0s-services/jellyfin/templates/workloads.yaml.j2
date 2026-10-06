@@ -20,7 +20,9 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+{% if private_cloud.stages.intel_gpu | bool %}
         supplementalGroups: [{{ intel_gpu_render_group_id | int }}]
+{% endif %}
       initContainers:
         - name: configure-local-library
           image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
@@ -65,8 +67,13 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 5
           resources:
-            requests: {cpu: 250m, memory: 1Gi, gpu.intel.com/i915: 1}
-            limits: {memory: 4Gi, gpu.intel.com/i915: 1}
+{% if private_cloud.stages.intel_gpu | bool %}
+            requests: {cpu: 250m, memory: {{ ((['1Gi' | private_cloud_ram_bytes, private_cloud.media.max_ram.jellyfin | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi, gpu.intel.com/i915: 1}
+            limits: {memory: {{ private_cloud.media.max_ram.jellyfin }}, gpu.intel.com/i915: 1}
+{% else %}
+            requests: {cpu: 250m, memory: {{ ((['1Gi' | private_cloud_ram_bytes, private_cloud.media.max_ram.jellyfin | private_cloud_ram_bytes] | min / 1048576) | int) }}Mi}
+            limits: {memory: {{ private_cloud.media.max_ram.jellyfin }}}
+{% endif %}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL]}

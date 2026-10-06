@@ -5,11 +5,16 @@ metadata:
   namespace: network-access
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
+    rollingUpdate: null
   selector:
     matchLabels: {app.kubernetes.io/name: amneziawg}
   template:
     metadata:
       labels: {app.kubernetes.io/name: amneziawg}
+      annotations:
+        checksum/config: {{ lookup('template', 'amneziawg-secret.yml.j2') | hash('sha256') }}
     spec:
       hostNetwork: false
       automountServiceAccountToken: false
@@ -52,6 +57,7 @@ spec:
             privileged: false
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL], add: [NET_ADMIN]}
+            seccompProfile: {type: RuntimeDefault}
           volumeMounts:
             - {name: config, mountPath: /etc/amneziawg, readOnly: true}
       volumes:
@@ -76,3 +82,10 @@ spec:
             except:
               - {{ private_cloud.networking.pod_cidr }}
               - {{ private_cloud.networking.service_cidr }}
+    # HostPort traffic to the configured HTTPS endpoint is DNATed to Traefik's pod port.
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: edge}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports: [{protocol: TCP, port: 8443}]

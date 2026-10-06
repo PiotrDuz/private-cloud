@@ -1,4 +1,4 @@
-schema_version: 9
+schema_version: 10
 private_cloud:
   stages:
     zfs: true
@@ -23,16 +23,20 @@ private_cloud:
     zabbix_server: true
     zabbix_agent: true
   storage:
+    arc_max: 4Gi
     disks:
       - /dev/disk/by-id/replace-with-first-disk
       - /dev/disk/by-id/replace-with-second-disk
   k0s:
+    host_reserve_ram: 8Gi
     config_quota: 1G
     images_quota: 10G
     ephemeral_quota: 10G
   networking:
     storage_size: 1G
     acme_email: admin@example.com
+    acme_directory_url: https://acme-v02.api.letsencrypt.org/directory
+    cloudflare_api_url: https://api.cloudflare.com/client/v4
     cloudflare_zone_id: '00000000000000000000000000000000'
     public_ip_url: https://api.ipify.org
     managed_records:
@@ -67,6 +71,16 @@ private_cloud:
               protocol: TCP
               port: 443
   media:
+    max_ram:
+      sonarr: 2Gi
+      radarr: 2Gi
+      prowlarr: 2Gi
+      qbittorrent: 2Gi
+      jellyfin: 4Gi
+      openvpn: 512Mi
+      vpn_route: 256Mi
+      dns: 128Mi
+      file_logs: 128Mi
     storage_size: 1T
     hostname: jellyfin.example.com
     timezone: Etc/UTC

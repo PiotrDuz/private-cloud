@@ -23,6 +23,18 @@ spec:
         runAsUser: 65532
         runAsGroup: 65532
         seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: wait-for-api
+          image: {{ stalwart_wait_image }}
+          command: [python3, /api-check/wait_for_api.py, "{{ stalwart_service_name }}", '8080']
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: api-check, mountPath: /api-check, readOnly: true}
       containers:
         - name: configure
           image: ghcr.io/stalwartlabs/cli:latest@sha256:fe199affac1d120a8c200ef39ae629765a2976270e0453575c1caf906ee15b52
@@ -45,5 +57,9 @@ spec:
           volumeMounts:
             - {name: configuration, mountPath: /configuration, readOnly: true}
       volumes:
+        - name: api-check
+          configMap:
+            name: stalwart-config
+            items: [{key: wait_for_api.py, path: wait_for_api.py}]
         - name: configuration
           secret: {secretName: stalwart-configuration-plan}

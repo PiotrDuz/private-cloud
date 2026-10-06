@@ -15,3 +15,4 @@
 - Give every service dataset a quota.
 - Keep every persistent service PV and PVC at `10Ti`.
 - Do not emit Kubernetes Secret resources from public manifest templates.
+- Disable service links when a Service name collides with application environment variables.

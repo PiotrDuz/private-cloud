@@ -1,0 +1,48 @@
+---
+- name: Verify Intel i915 support on the host
+  block:
+    - name: Read the Intel render device
+      ansible.builtin.stat:
+        path: /dev/dri/renderD128
+      register: intel_gpu_validation_render_device
+
+    - name: Read the Intel kernel module state
+      ansible.builtin.command: lsmod
+      register: intel_gpu_validation_modules
+      changed_when: false
+
+    - name: Require the Intel render device and driver
+      ansible.builtin.assert:
+        that:
+          - intel_gpu_validation_render_device.stat.exists
+          - intel_gpu_validation_render_device.stat.ischr | default(false)
+          - intel_gpu_validation_modules.stdout is search('(?m)^i915\s')
+        fail_msg: The host does not expose the required i915 render device.
+
+- name: Read the Intel GPU plugin DaemonSet
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ intel_gpu_kubeconfig }}"
+    api_version: apps/v1
+    kind: DaemonSet
+    namespace: "{{ intel_gpu_namespace }}"
+    name: "{{ intel_gpu_daemonset_name }}"
+  register: intel_gpu_validation_daemonset
+  changed_when: false
+
+- name: Read the Intel GPU node allocation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ intel_gpu_kubeconfig }}"
+    api_version: v1
+    kind: Node
+    name: "{{ ansible_hostname }}"
+  register: intel_gpu_validation_node
+  changed_when: false
+
+- name: Require the Intel plugin and shared device resources
+  ansible.builtin.assert:
+    that:
+      - intel_gpu_validation_daemonset.resources | length == 1
+      - intel_gpu_validation_node.resources | length == 1
+      - intel_gpu_validation_daemonset.resources[0].status.numberReady | default(0) | int == intel_gpu_validation_daemonset.resources[0].status.desiredNumberScheduled | default(0) | int
+      - (intel_gpu_validation_node.resources[0].status.allocatable[intel_gpu_resource_name] | default('0') | int) >= intel_gpu_shared_device_count | int
+    fail_msg: The Intel device plugin is not ready or has not advertised two shared allocations.

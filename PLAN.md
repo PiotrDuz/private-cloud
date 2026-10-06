@@ -498,5 +498,6 @@ This file is the source of truth for the desired system state and its major deci
     * Critical: trigger on at least one entry with normalized critical severity
     * Missing heartbeat: trigger when no host logging heartbeat appears in the window
 - Include Kubernetes Warning events and classify Traefik HTTP 5xx responses as errors
-- Suppress repeated notifications from each rule for five minutes
+
+- Suppress repeated notifications from each rule for sixty minutes
 - Keep OpenObserve internal logs searchable while excluding them from severity alerts to prevent notification feedback loops

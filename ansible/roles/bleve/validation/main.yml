@@ -1,0 +1,23 @@
+---
+- name: Read the Bleve claim and volume for validation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ bleve_kubeconfig }}"
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ item.namespace | default(omit) }}"
+  loop:
+    - {api_version: v1, kind: PersistentVolume, name: bleve-data}
+    - {api_version: v1, kind: PersistentVolumeClaim, name: bleve-data, namespace: "{{ bleve_namespace }}"}
+  register: bleve_validation_storage
+  changed_when: false
+
+- name: Require the dedicated Bleve data volume to be bound
+  ansible.builtin.assert:
+    that:
+      - bleve_validation_storage.results[0].resources | length == 1
+      - bleve_validation_storage.results[0].resources[0].spec.local.path == bleve_dataset_mountpoint
+      - bleve_validation_storage.results[1].resources | length == 1
+      - bleve_validation_storage.results[1].resources[0].status.phase | default('') == 'Bound'
+      - bleve_validation_storage.results[1].resources[0].spec.volumeName == bleve_pv_name
+    fail_msg: Bleve's dedicated search-index volume is missing or is not bound to its configured dataset.

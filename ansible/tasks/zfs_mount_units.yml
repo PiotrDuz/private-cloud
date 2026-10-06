@@ -1,0 +1,19 @@
+---
+- name: Read the complete native ZFS mount inventory
+  ansible.builtin.command: >-
+    zfs list -H -r -t filesystem -o
+    name,mountpoint,canmount,atime,relatime,devices,exec,readonly,setuid,nbmand,encroot,keylocation tank
+  register: private_cloud_native_mount_inventory
+  changed_when: false
+
+- name: Refresh the native generator inventory after all service datasets exist
+  ansible.builtin.copy:
+    content: "{{ private_cloud_native_mount_inventory.stdout }}\n"
+    dest: /etc/zfs/zfs-list.cache/tank
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Load native mount units for the complete installed system
+  ansible.builtin.systemd:
+    daemon_reload: true

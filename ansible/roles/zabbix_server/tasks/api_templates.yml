@@ -16,7 +16,7 @@
 - name: Select ZFS items for enabled datasets
   ansible.builtin.set_fact:
     zabbix_enabled_zfs_template_items: "{{ zabbix_enabled_zfs_template_items + [item] }}"
-  loop: "{{ zabbix_zfs_template_document.zabbix_export.templates[0].items }}"
+  loop: "{{ zabbix_zfs_template_document.zabbix_export.templates[0]['items'] }}"
   when: item.key not in zabbix_all_dataset_item_keys or item.key in zabbix_monitored_dataset_item_keys
   no_log: true
 

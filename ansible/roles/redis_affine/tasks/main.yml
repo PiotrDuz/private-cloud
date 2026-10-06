@@ -3,7 +3,7 @@
   ansible.builtin.assert:
     that:
       - private_cloud.redis_affine.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
-      - (private_cloud.redis_affine.max_ram | human_to_bytes | int) >= 134217728
+      - (private_cloud.redis_affine.max_ram | private_cloud_ram_bytes | int) >= 134217728
     fail_msg: Redis for AFFiNE configuration is invalid.
 
 - name: Prepare the Redis for AFFiNE kubeconfig
@@ -53,3 +53,6 @@
   retries: 60
   delay: 5
   changed_when: false
+
+- name: Validate Redis for AFFiNE after installation
+  ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

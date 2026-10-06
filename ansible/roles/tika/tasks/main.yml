@@ -81,7 +81,7 @@
       - >-
         tika_existing_storage.results[0].resources | length == 0
         or tika_node_name in
-        tika_existing_storage.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+        tika_existing_storage.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values']
       - >-
         tika_existing_storage.results[1].resources | length == 0
         or tika_existing_storage.results[1].resources[0].spec.resources.requests.storage == tika_pv_capacity
@@ -147,3 +147,6 @@
   retries: 60
   delay: 5
   changed_when: false
+
+- name: Validate Apache Tika after installation
+  ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

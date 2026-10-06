@@ -1,0 +1,243 @@
+---
+- name: Require the private cloud host firewall to be active
+  ansible.builtin.command: systemctl is-active private-cloud-firewall.service
+  register: networking_validation_firewall
+  changed_when: false
+  failed_when: networking_validation_firewall.stdout | trim != 'active'
+
+- name: Read the active private cloud firewall table
+  ansible.builtin.command:
+    argv: [nft, list, table, inet, private_cloud]
+  register: networking_validation_firewall_rules
+  changed_when: false
+
+- name: Verify public service and local administration firewall paths
+  ansible.builtin.assert:
+    that:
+      - networking_validation_firewall_rules.stdout is search('tcp dport \{ 25, 443 \}')
+      - networking_validation_firewall_rules.stdout is search('udp dport ' ~ (private_cloud.networking.amneziawg.listen_port | string))
+      - networking_validation_firewall_rules.stdout is search('iifname "lo" accept')
+    fail_msg: The active firewall does not expose the configured service ports or preserve local host traffic.
+
+- name: Wait for Traefik and AmneziaWG rollouts
+  ansible.builtin.command:
+    argv:
+      - k0s
+      - kubectl
+      - rollout
+      - status
+      - deployment/{{ item.name }}
+      - -n
+      - "{{ item.namespace }}"
+      - --timeout=120s
+  loop:
+    - {name: traefik, namespace: edge}
+    - {name: amneziawg, namespace: network-access}
+  changed_when: false
+
+- name: Read the Traefik service endpoint
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    namespace: edge
+    name: traefik
+  register: networking_validation_traefik_endpoint
+  changed_when: false
+
+- name: Require a ready Traefik service endpoint
+  ansible.builtin.assert:
+    that:
+      - networking_validation_traefik_endpoint.resources | length == 1
+      - networking_validation_traefik_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0
+    fail_msg: Traefik has no ready service endpoint.
+
+- name: Read Traefik's cluster-scoped RBAC
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    api_version: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    name: private-cloud-traefik
+  register: networking_validation_traefik_rbac
+  changed_when: false
+
+- name: Require Traefik's informer permissions
+  ansible.builtin.assert:
+    that:
+      - networking_validation_traefik_rbac.resources | length == 1
+      - >-
+        (networking_validation_traefik_rbac.resources[0].rules
+        | selectattr('resources', 'equalto', ['nodes']) | list | length == 1)
+        and
+        ((networking_validation_traefik_rbac.resources[0].rules
+        | selectattr('resources', 'equalto', ['nodes']) | first).verbs | sort
+        == ['get', 'list', 'watch'])
+      - networking_validation_traefik_rbac.resources[0].rules | selectattr('resources', 'equalto', ['ingresses', 'ingressclasses']) | list | length == 1
+    fail_msg: Traefik cannot synchronize its cluster-scoped ingress and node informers.
+
+- name: Read the Kubernetes API server EndpointSlices
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    api_version: discovery.k8s.io/v1
+    kind: EndpointSlice
+    namespace: default
+    label_selectors:
+      - kubernetes.io/service-name=kubernetes
+  register: networking_validation_api_endpoint_slices
+  changed_when: false
+
+- name: Build the expected Kubernetes API endpoint addresses and ports
+  ansible.builtin.set_fact:
+    networking_validation_api_addresses: "{{ networking_validation_api_endpoint_slices.resources | map(attribute='endpoints') | flatten | selectattr('conditions.ready', 'defined') | selectattr('conditions.ready', 'equalto', true) | map(attribute='addresses') | flatten | unique | list }}"
+    networking_validation_api_tcp_ports: "{{ networking_validation_api_endpoint_slices.resources | map(attribute='ports') | flatten | selectattr('protocol', 'equalto', 'TCP') | map(attribute='port') | unique | list }}"
+  changed_when: false
+
+- name: Require the discovered Kubernetes API endpoint data
+  ansible.builtin.assert:
+    that:
+      - networking_validation_api_addresses | length > 0
+      - networking_validation_api_tcp_ports | length == 1
+    fail_msg: The Kubernetes API service has no ready TCP endpoint for Traefik.
+
+- name: Read Traefik's egress NetworkPolicy
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    api_version: networking.k8s.io/v1
+    kind: NetworkPolicy
+    namespace: edge
+    name: traefik
+  register: networking_validation_traefik_networkpolicy
+  changed_when: false
+
+- name: Require Traefik's egress NetworkPolicy
+  ansible.builtin.assert:
+    that: networking_validation_traefik_networkpolicy.resources | length == 1
+    fail_msg: Traefik's egress NetworkPolicy is missing.
+
+- name: Require egress to every ready Kubernetes API endpoint
+  ansible.builtin.assert:
+    that:
+      - >-
+        (item ~ '/32') in (networking_validation_traefik_networkpolicy.resources[0].spec.egress | to_json)
+      - >-
+        (networking_validation_traefik_networkpolicy.resources[0].spec.egress | to_json
+        | regex_search('"port"\s*:\s*' ~ (networking_validation_api_tcp_ports[0] | string) ~ '[^0-9]')) is not none
+    fail_msg: Traefik's egress policy cannot reach the discovered Kubernetes API endpoint.
+  loop: "{{ networking_validation_api_addresses }}"
+
+- name: Verify the AmneziaWG kernel module loaded on the host
+  ansible.builtin.command:
+    argv: [modinfo, -F, filename, amneziawg]
+  register: networking_validation_amneziawg_module
+  changed_when: false
+
+- name: Require the installed AmneziaWG kernel module
+  ansible.builtin.assert:
+    that: networking_validation_amneziawg_module.stdout is search('/updates/dkms/amneziawg[.]ko')
+    fail_msg: The AmneziaWG kernel module was not installed from DKMS.
+
+- name: Verify AmneziaWG enables forwarding in its isolated network namespace
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, network-access, deployment/amneziawg, --, cat, /proc/sys/net/ipv4/ip_forward]
+  register: networking_validation_amneziawg_forwarding
+  changed_when: false
+
+- name: Require AmneziaWG forwarding enabled
+  ansible.builtin.assert:
+    that: networking_validation_amneziawg_forwarding.stdout | trim == '1'
+    fail_msg: AmneziaWG's network namespace is not forwarding peer traffic.
+
+- name: Read AmneziaWG's egress NetworkPolicy
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    api_version: networking.k8s.io/v1
+    kind: NetworkPolicy
+    namespace: network-access
+    name: amneziawg
+  register: networking_validation_amneziawg_networkpolicy
+  changed_when: false
+
+- name: Require the AmneziaWG egress NetworkPolicy
+  ansible.builtin.assert:
+    that: networking_validation_amneziawg_networkpolicy.resources | length == 1
+    fail_msg: AmneziaWG's egress NetworkPolicy is missing.
+
+- name: Define the exact Traefik endpoint selectors expected for AmneziaWG
+  ansible.builtin.set_fact:
+    networking_validation_amneziawg_traefik_egress_to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: edge
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: traefik
+    networking_validation_amneziawg_traefik_egress_ports:
+      - protocol: TCP
+        port: 8443
+  changed_when: false
+
+- name: Match the exact AmneziaWG HTTPS egress rule
+  ansible.builtin.set_fact:
+    networking_validation_amneziawg_traefik_egress_rules: >-
+      {{ networking_validation_amneziawg_networkpolicy.resources[0].spec.egress
+      | selectattr('to', 'equalto', networking_validation_amneziawg_traefik_egress_to)
+      | selectattr('ports', 'equalto', networking_validation_amneziawg_traefik_egress_ports)
+      | list }}
+  changed_when: false
+
+- name: Require AmneziaWG HTTPS egress to Traefik's pod port
+  ansible.builtin.assert:
+    that: networking_validation_amneziawg_traefik_egress_rules | length == 1
+    fail_msg: AmneziaWG peers cannot reach Traefik's HTTPS pod endpoint through hostPort DNAT.
+
+- name: Read the Cloudflare DDNS CronJob
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    api_version: batch/v1
+    kind: CronJob
+    namespace: dns-system
+    name: cloudflare-ddns
+  register: networking_validation_ddns
+  changed_when: false
+
+- name: Require the configured Cloudflare DDNS job
+  ansible.builtin.assert:
+    that:
+      - networking_validation_ddns.resources | length == 1
+      - networking_validation_ddns.resources[0].spec.jobTemplate.spec.template.spec.containers | selectattr('name', 'equalto', 'updater') | list | length == 1
+    fail_msg: The configured Cloudflare DDNS job is missing its updater container.
+
+- name: Read the Cloudflare DDNS source configuration
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    api_version: v1
+    kind: ConfigMap
+    namespace: dns-system
+    name: cloudflare-ddns
+  register: networking_validation_ddns_config
+  changed_when: false
+
+- name: Require Cloudflare DDNS to use globally configured endpoints
+  ansible.builtin.assert:
+    that:
+      - networking_validation_ddns_config.resources | length == 1
+      - ("ADDRESS_URL = " ~ (private_cloud.networking.public_ip_url | to_json)) in networking_validation_ddns_config.resources[0].data['update.py']
+      - ("API_ROOT = " ~ (private_cloud.networking.cloudflare_api_url | to_json)) in networking_validation_ddns_config.resources[0].data['update.py']
+    fail_msg: Cloudflare DDNS does not use the endpoints from global configuration.
+
+- name: Read the Traefik Cloudflare API endpoint
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    namespace: edge
+    name: traefik
+  register: networking_validation_traefik
+  changed_when: false
+
+- name: Require Traefik to use the configured Cloudflare endpoint
+  ansible.builtin.assert:
+    that:
+      - networking_validation_traefik.resources | length == 1
+      - (networking_validation_traefik.resources[0].spec.template.spec.containers | selectattr('name', 'equalto', 'traefik') | map(attribute='env') | first | selectattr('name', 'equalto', 'CLOUDFLARE_BASE_URL') | map(attribute='value') | first) == private_cloud.networking.cloudflare_api_url
+    fail_msg: Traefik ACME is not configured to use the globally configured Cloudflare endpoint.

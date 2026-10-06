@@ -1,0 +1,49 @@
+---
+- name: Find the Redis for AFFiNE pod for a cache round trip
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ redis_affine_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ redis_affine_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=redis-affine
+  register: redis_affine_validation_pods
+  until:
+    - redis_affine_validation_pods.resources | length > 0
+    - redis_affine_validation_pods.resources[0].status.containerStatuses | default([]) | selectattr('ready', 'equalto', true) | list | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Write a short-lived value through Redis for AFFiNE
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ redis_affine_kubeconfig }}"
+    namespace: "{{ redis_affine_namespace }}"
+    pod: "{{ redis_affine_validation_pods.resources[0].metadata.name }}"
+    command: redis-cli --raw SET private-cloud:validation:affine connected EX 60 NX
+  register: redis_affine_validation_set
+  changed_when: false
+
+- name: Read the Redis for AFFiNE validation value
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ redis_affine_kubeconfig }}"
+    namespace: "{{ redis_affine_namespace }}"
+    pod: "{{ redis_affine_validation_pods.resources[0].metadata.name }}"
+    command: redis-cli --raw GET private-cloud:validation:affine
+  register: redis_affine_validation_get
+  changed_when: false
+
+- name: Require a successful Redis for AFFiNE cache round trip
+  ansible.builtin.assert:
+    that:
+      - redis_affine_validation_set.stdout | trim == 'OK'
+      - redis_affine_validation_get.stdout | trim == 'connected'
+    fail_msg: Redis for AFFiNE did not retain a value across a cache round trip.
+
+- name: Remove the Redis for AFFiNE validation value
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ redis_affine_kubeconfig }}"
+    namespace: "{{ redis_affine_namespace }}"
+    pod: "{{ redis_affine_validation_pods.resources[0].metadata.name }}"
+    command: redis-cli DEL private-cloud:validation:affine
+  changed_when: false

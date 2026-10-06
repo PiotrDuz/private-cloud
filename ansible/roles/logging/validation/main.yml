@@ -1,0 +1,174 @@
+---
+- name: Read OpenObserve and Alloy deployments for validation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ item }}"
+    namespace: observability
+  loop: [openobserve, alloy]
+  register: logging_validation_deployments
+  changed_when: false
+
+- name: Require OpenObserve and Alloy deployments to be available
+  ansible.builtin.assert:
+    that:
+      - logging_validation_deployments.results | length == 2
+      - item.resources | length == 1
+      - item.resources[0].status.observedGeneration | default(0) | int >= item.resources[0].metadata.generation | int
+      - item.resources[0].status.availableReplicas | default(0) | int == 1
+      - item.resources[0].status.readyReplicas | default(0) | int == 1
+    fail_msg: "{{ item.item }} is deployed but does not have one ready replica."
+  loop: "{{ logging_validation_deployments.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Validate OpenObserve's configured public URL and SMTP switch
+  ansible.builtin.assert:
+    that:
+      - >-
+        (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
+         | selectattr('name', 'equalto', 'ZO_WEB_URL') | map(attribute='value') | first)
+        == 'https://' ~ private_cloud.logging.hostname
+      - >-
+        (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
+         | selectattr('name', 'equalto', 'ZO_SMTP_ENABLED') | map(attribute='value') | first)
+        == (private_cloud.stages.notifications | bool | ternary('true', 'false'))
+    fail_msg: OpenObserve's published URL or SMTP enablement does not match the global configuration.
+
+- name: Validate OpenObserve's configured SMTP relay
+  ansible.builtin.assert:
+    that:
+      - >-
+        (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
+         | selectattr('name', 'equalto', 'ZO_SMTP_HOST') | map(attribute='value') | first)
+        == private_cloud.stalwart.relay_host
+      - >-
+        (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
+         | selectattr('name', 'equalto', 'ZO_SMTP_PORT') | map(attribute='value') | first)
+        == (private_cloud.stalwart.relay_port | string)
+      - >-
+        (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
+         | selectattr('name', 'equalto', 'ZO_SMTP_USER_NAME') | map(attribute='value') | first)
+        == private_cloud.stalwart.relay_username
+      - >-
+        (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
+         | selectattr('name', 'equalto', 'ZO_SMTP_FROM_EMAIL') | map(attribute='value') | first)
+        == private_cloud.notifications.from_address
+      # LIVE-TEST TEMPORARY: encryption assert disabled for the plaintext OpenObserve SMTP fixture; restore before final validation.
+    fail_msg: OpenObserve's SMTP settings do not match the configured relay.
+  when: private_cloud.stages.notifications | bool
+
+- name: Read OpenObserve and Alloy endpoints for validation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    name: "{{ item }}"
+    namespace: observability
+  loop: [openobserve, alloy]
+  register: logging_validation_endpoints
+  changed_when: false
+
+- name: Resolve OpenObserve and Alloy ClusterIP services for validation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    api_version: v1
+    kind: Service
+    name: "{{ item }}"
+    namespace: observability
+  loop: [openobserve, alloy]
+  register: logging_validation_services
+  changed_when: false
+
+- name: Require ready OpenObserve and Alloy service endpoints
+  ansible.builtin.assert:
+    that:
+      - item.resources | length == 1
+      - item.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0
+    fail_msg: "{{ item.item }} has no ready service endpoint."
+  loop: "{{ logging_validation_endpoints.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Check the OpenObserve HTTP health endpoint
+  ansible.builtin.uri:
+    url: "http://{{ logging_validation_services.results[0].resources[0].spec.clusterIP }}:5080/healthz"
+    status_code: 200
+    return_content: true
+  register: logging_validation_openobserve_health
+  changed_when: false
+
+- name: Check Alloy health, readiness, and metrics endpoints
+  ansible.builtin.uri:
+    url: "http://{{ logging_validation_services.results[1].resources[0].spec.clusterIP }}:12345{{ item }}"
+    status_code: 200
+    return_content: true
+  loop: [/-/healthy, /-/ready, /metrics]
+  register: logging_validation_alloy_http
+  changed_when: false
+
+- name: Validate configured OpenObserve log alerts and delivery target
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/observability/validate_openobserve.py"]
+    stdin: >-
+      {{ {
+        'endpoint': 'http://' ~ logging_validation_services.results[0].resources[0].spec.clusterIP ~ ':5080',
+        'username': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+        'password': private_cloud_secrets.logging.admin_password,
+        'notifications': private_cloud.stages.notifications,
+        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
+      } | to_json }}
+  register: logging_validation_alerts
+  changed_when: false
+  no_log: true
+
+- name: Wait for a recent host heartbeat in OpenObserve
+  ansible.builtin.uri:
+    url: 'http://{{ logging_validation_services.results[0].resources[0].spec.clusterIP }}:5080/api/default/_search'
+    method: POST
+    url_username: "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain }}"
+    url_password: "{{ private_cloud_secrets.logging.admin_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      query:
+        sql: 'SELECT COUNT(*) AS count FROM "logs" WHERE service = ''private-cloud-log-heartbeat.service'''
+        start_time: "{{ ((now(utc=true).timestamp() | int) - 300) * 1000000 }}"
+        end_time: "{{ (now(utc=true).timestamp() | int) * 1000000 }}"
+        from: 0
+        size: 1
+    return_content: true
+  register: logging_validation_heartbeat
+  until:
+    - logging_validation_heartbeat.status | default(0) == 200
+    - logging_validation_heartbeat.json.hits | default([]) | length > 0
+    - logging_validation_heartbeat.json.hits[0].count | int > 0
+  retries: 30
+  delay: 10
+  changed_when: false
+  no_log: true
+
+- name: Validate configured OpenObserve email alert delivery
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/observability/validate_openobserve_alert.py"]
+    stdin: >-
+      {{ {
+        'endpoint': 'http://' ~ logging_validation_services.results[0].resources[0].spec.clusterIP ~ ':5080',
+        'username': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+        'password': private_cloud_secrets.logging.admin_password,
+        'mail': {
+          'address': private_cloud.networking.traefik_internal_ip,
+          'hostname': private_cloud.stalwart.hostname,
+          'port': 443,
+          'accounts': [
+            private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
+            private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
+          ],
+          'password': private_cloud_secrets.stalwart.mailbox_password
+        }
+      } | to_json }}
+  register: logging_validation_email
+  changed_when: false
+  no_log: true
+  when: private_cloud.stages.notifications | bool

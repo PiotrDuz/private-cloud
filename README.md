@@ -20,9 +20,11 @@ sudo python3 ansible/install.py
 
 ## Configuration
 
-- `ansible/config/private-cloud.yml` stores non-secret desired state.
-- `ansible/config/private-cloud.secrets.yml` stores Ansible Vault ciphertext.
-- `ansible/config/private-cloud.example.yml` documents the configuration contract at public schema version 9 and secrets schema version 5.
+- `/tank/secure/backup/private-cloud-config/private-cloud.yml` stores non-secret desired state.
+- `/tank/secure/backup/private-cloud-config/private-cloud.secrets.yml` stores Ansible Vault ciphertext.
+- The installer stores both files on a root-only dataset with a 1G quota.
+- Initial installation stages configuration under `/run/private-cloud` until the dataset is mounted.
+- `ansible/config/private-cloud.example.yml` documents the configuration contract at public schema version 10 and secrets schema version 6.
 - Public hostnames are configured per service, including the OpenCloud hostname `cloud.example.com`.
 - The Cloudflare managed records cover every published hostname.
 - The Vault password is never stored by the installer.
@@ -55,6 +57,8 @@ sudo python3 ansible/install.py
 - Rotate replaces selected encrypted values.
 - Validate runs the separate live checks after operator setup.
 - Ansible runs all enabled stages in dependency order.
+- Successful installation runs the installed-system validation automatically.
+- Disk discovery falls back to physical device paths when serial IDs are unavailable.
 - The k0s stage creates the workload and infrastructure namespaces.
 
 ## Reboot verification

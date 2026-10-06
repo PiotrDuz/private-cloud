@@ -10,8 +10,8 @@
 
 - name: Calculate PostgreSQL shared buffers
   ansible.builtin.set_fact:
-    postgres_shared_buffers_bytes: "{{ (((private_cloud.postgres.max_ram | human_to_bytes) / 4) | int) }}"
-    postgres_shared_buffers: "{{ ((((private_cloud.postgres.max_ram | human_to_bytes) / 4) / 1048576) | int) }}MB"
+    postgres_shared_buffers_bytes: "{{ (((private_cloud.postgres.max_ram | private_cloud_ram_bytes) / 4) | int) }}"
+    postgres_shared_buffers: "{{ ((((private_cloud.postgres.max_ram | private_cloud_ram_bytes) / 4) / 1048576) | int) }}MB"
 
 - name: Validate PostgreSQL shared buffers minimum
   ansible.builtin.assert:
@@ -159,35 +159,17 @@
   delay: 5
   changed_when: false
 
-- name: Verify PostgreSQL readiness
-  kubernetes.core.k8s_exec:
-    kubeconfig: "{{ postgres_kubeconfig }}"
-    namespace: "{{ postgres_namespace }}"
-    pod: "{{ postgres_pods.resources[0].metadata.name }}"
-    command: pg_isready -U postgres -d postgres
-  changed_when: false
-
-
-- name: Read shared PostgreSQL pgvector status
+- name: Read administrator database extension state
   kubernetes.core.k8s_exec:
     kubeconfig: "{{ postgres_kubeconfig }}"
     namespace: "{{ postgres_namespace }}"
     pod: "{{ postgres_pods.resources[0].metadata.name }}"
     command: >-
       psql -At -U postgres -d postgres -c
-      "SELECT COALESCE((SELECT extversion FROM pg_extension WHERE extname = 'vector'), 'absent') || '|' || COALESCE((SELECT default_version FROM pg_available_extensions WHERE name = 'vector'), 'unavailable');"
-  register: postgres_pgvector_status
+      "SELECT COALESCE((SELECT extversion FROM pg_extension WHERE extname = 'vector'), 'absent')
+      || '|' || COALESCE((SELECT extversion FROM pg_extension WHERE extname = 'vchord'), 'absent');"
+  register: postgres_extension_state
   changed_when: false
-
-- name: Classify shared PostgreSQL pgvector status
-  ansible.builtin.set_fact:
-    postgres_pgvector_installed_version: "{{ (postgres_pgvector_status.stdout | trim).split('|')[0] }}"
-    postgres_pgvector_available_version: "{{ (postgres_pgvector_status.stdout | trim).split('|')[1] }}"
-
-- name: Require the configured pgvector version
-  ansible.builtin.assert:
-    that: postgres_pgvector_available_version == postgres_pgvector_version
-    fail_msg: The shared PostgreSQL image does not provide the configured pgvector version.
 
 - name: Enable pgvector in the PostgreSQL administrator database
   kubernetes.core.k8s_exec:
@@ -195,44 +177,8 @@
     namespace: "{{ postgres_namespace }}"
     pod: "{{ postgres_pods.resources[0].metadata.name }}"
     command: psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS vector;"
-  when: postgres_pgvector_installed_version == 'absent'
+  when: postgres_extension_state.stdout.split('|')[0] == 'absent'
   changed_when: true
-
-
-- name: Verify shared PostgreSQL pgvector
-  kubernetes.core.k8s_exec:
-    kubeconfig: "{{ postgres_kubeconfig }}"
-    namespace: "{{ postgres_namespace }}"
-    pod: "{{ postgres_pods.resources[0].metadata.name }}"
-    command: psql -At -U postgres -d postgres -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';"
-  register: postgres_pgvector_effective
-  changed_when: false
-
-- name: Assert shared PostgreSQL pgvector
-  ansible.builtin.assert:
-    that: postgres_pgvector_effective.stdout | trim == postgres_pgvector_version
-    fail_msg: The shared PostgreSQL vector extension is not enabled at the configured version.
-
-- name: Read shared PostgreSQL VectorChord status
-  kubernetes.core.k8s_exec:
-    kubeconfig: "{{ postgres_kubeconfig }}"
-    namespace: "{{ postgres_namespace }}"
-    pod: "{{ postgres_pods.resources[0].metadata.name }}"
-    command: >-
-      psql -At -U postgres -d postgres -c
-      "SELECT COALESCE((SELECT extversion FROM pg_extension WHERE extname = 'vchord'), 'absent') || '|' || COALESCE((SELECT default_version FROM pg_available_extensions WHERE name = 'vchord'), 'unavailable');"
-  register: postgres_vectorchord_status
-  changed_when: false
-
-- name: Classify shared PostgreSQL VectorChord status
-  ansible.builtin.set_fact:
-    postgres_vectorchord_installed_version: "{{ (postgres_vectorchord_status.stdout | trim).split('|')[0] }}"
-    postgres_vectorchord_available_version: "{{ (postgres_vectorchord_status.stdout | trim).split('|')[1] }}"
-
-- name: Require the configured VectorChord version
-  ansible.builtin.assert:
-    that: postgres_vectorchord_available_version == postgres_vectorchord_version
-    fail_msg: The shared PostgreSQL image does not provide the configured VectorChord version.
 
 - name: Enable VectorChord in the PostgreSQL administrator database
   kubernetes.core.k8s_exec:
@@ -240,61 +186,8 @@
     namespace: "{{ postgres_namespace }}"
     pod: "{{ postgres_pods.resources[0].metadata.name }}"
     command: psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS vchord CASCADE;"
-  when: postgres_vectorchord_installed_version == 'absent'
+  when: postgres_extension_state.stdout.split('|')[1] == 'absent'
   changed_when: true
 
-- name: Verify shared PostgreSQL VectorChord
-  kubernetes.core.k8s_exec:
-    kubeconfig: "{{ postgres_kubeconfig }}"
-    namespace: "{{ postgres_namespace }}"
-    pod: "{{ postgres_pods.resources[0].metadata.name }}"
-    command: psql -At -U postgres -d postgres -c "SELECT extversion FROM pg_extension WHERE extname = 'vchord';"
-  register: postgres_vectorchord_effective
-  changed_when: false
-
-- name: Assert shared PostgreSQL VectorChord
-  ansible.builtin.assert:
-    that: postgres_vectorchord_effective.stdout | trim == postgres_vectorchord_version
-    fail_msg: The shared PostgreSQL VectorChord extension is not enabled at the configured version.
-
-- name: Read effective PostgreSQL settings
-  kubernetes.core.k8s_exec:
-    kubeconfig: "{{ postgres_kubeconfig }}"
-    namespace: "{{ postgres_namespace }}"
-    pod: "{{ postgres_pods.resources[0].metadata.name }}"
-    command: >-
-      psql -At -U postgres -d postgres -c
-      "SELECT pg_size_bytes(current_setting('shared_buffers')), current_setting('full_page_writes'), current_setting('wal_compression'), current_setting('wal_init_zero'), current_setting('wal_recycle'), current_setting('data_checksums');"
-  register: postgres_effective_settings
-  changed_when: false
-
-- name: Verify effective PostgreSQL tuning
-  ansible.builtin.assert:
-    that: (postgres_effective_settings.stdout | trim) == ((postgres_shared_buffers_bytes | string) + '|off|off|off|off|off')
-    fail_msg: Effective PostgreSQL tuning does not match the configured settings.
-
-- name: Verify PostgreSQL ZFS tuning
-  ansible.builtin.command: zfs get -H -o value {{ item.key }} {{ postgres_dataset }}
-  loop: "{{ postgres_zfs_properties | dict2items }}"
-  register: postgres_zfs_effective
-  changed_when: false
-
-- name: Assert PostgreSQL ZFS tuning
-  ansible.builtin.assert:
-    that: item.stdout | trim == item.item.value
-    fail_msg: "PostgreSQL dataset property {{ item.item.key }} is not {{ item.item.value }}."
-  loop: "{{ postgres_zfs_effective.results }}"
-
-- name: Verify PostgreSQL quota and reservation
-  ansible.builtin.command: zfs get -H -p -o value {{ item }} {{ postgres_dataset }}
-  loop:
-    - quota
-    - reservation
-  register: postgres_zfs_capacity
-  changed_when: false
-
-- name: Assert PostgreSQL quota and reservation
-  ansible.builtin.assert:
-    that: item.stdout | int == (private_cloud.postgres.volume_size | human_to_bytes | int)
-    fail_msg: "PostgreSQL dataset {{ item.item }} does not match volume_size."
-  loop: "{{ postgres_zfs_capacity.results }}"
+- name: Validate PostgreSQL after installation
+  ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

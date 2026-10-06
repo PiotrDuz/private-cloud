@@ -1,0 +1,129 @@
+---
+- name: Verify Immich's configured server ping endpoint
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': immich_kubeconfig,
+        'namespace': immich_namespace,
+        'service': immich_service_name,
+        'remote_port': 2283,
+        'path': '/api/server/ping',
+        'json_equal': {'res': 'pong'}
+      } | to_json }}
+  register: immich_validation_server
+  changed_when: false
+
+- name: Verify Immich machine learning service responds
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': immich_kubeconfig,
+        'namespace': immich_namespace,
+        'service': immich_machine_learning_service_name,
+        'remote_port': 3003,
+        'path': '/ping',
+        'status_codes': [200]
+      } | to_json }}
+  register: immich_validation_machine_learning
+  changed_when: false
+
+- name: Run CPU face-detection inference through Immich machine learning
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/immich_ml_inference.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': immich_kubeconfig,
+        'namespace': immich_namespace,
+        'service': immich_machine_learning_service_name,
+        'remote_port': 3003,
+        'model_name': immich_machine_learning_validation_model,
+        'image_size': immich_machine_learning_validation_image_size
+      } | to_json }}
+  register: immich_validation_inference
+  changed_when: false
+
+- name: Find the Immich Valkey pod for a cache round trip
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ immich_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=valkey-immich
+  register: immich_validation_valkey_pods
+  until:
+    - immich_validation_valkey_pods.resources | length > 0
+    - immich_validation_valkey_pods.resources[0].status.containerStatuses | default([]) | selectattr('ready', 'equalto', true) | list | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Write a short-lived value through Immich Valkey
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_validation_valkey_pods.resources[0].metadata.name }}"
+    command: valkey-cli --raw SET private-cloud:validation:immich connected EX 60 NX
+  register: immich_validation_valkey_set
+  changed_when: false
+
+- name: Read the Immich Valkey validation value
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_validation_valkey_pods.resources[0].metadata.name }}"
+    command: valkey-cli --raw GET private-cloud:validation:immich
+  register: immich_validation_valkey_get
+  changed_when: false
+
+- name: Require a successful Immich Valkey cache round trip
+  ansible.builtin.assert:
+    that:
+      - immich_validation_valkey_set.stdout | trim == 'OK'
+      - immich_validation_valkey_get.stdout | trim == 'connected'
+    fail_msg: Immich Valkey did not retain a value across a cache round trip.
+
+- name: Remove the Immich Valkey validation value
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_validation_valkey_pods.resources[0].metadata.name }}"
+    command: valkey-cli DEL private-cloud:validation:immich
+  changed_when: false
+
+- name: Find the Immich database pod for extension validation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ immich_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=postgres
+  register: immich_validation_postgres_pods
+  until:
+    - immich_validation_postgres_pods.resources | length > 0
+    - immich_validation_postgres_pods.resources[0].status.containerStatuses | default([]) | selectattr('ready', 'equalto', true) | list | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Read Immich database extensions
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_validation_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d {{ immich_database_name }} -c
+      "SELECT COALESCE((SELECT extversion FROM pg_extension WHERE extname = 'vector'), 'absent')
+      || '|' || COALESCE((SELECT extversion FROM pg_extension WHERE extname = 'vchord'), 'absent')
+      || '|' || COALESCE((SELECT extname FROM pg_extension WHERE extname = 'earthdistance'), 'absent');"
+  register: immich_validation_extensions
+  changed_when: false
+
+- name: Require Immich database extensions
+  ansible.builtin.assert:
+    that:
+      - immich_validation_extensions.stdout | trim == (immich_pgvector_version ~ '|' ~ immich_vectorchord_version ~ '|earthdistance')
+    fail_msg: The Immich database does not have the configured vector, VectorChord, and earthdistance extensions.

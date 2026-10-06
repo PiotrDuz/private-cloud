@@ -1,0 +1,89 @@
+---
+- name: Read host services for Zabbix Agent validation
+  ansible.builtin.service_facts:
+
+- name: Require the Zabbix Agent service to be running
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.services['zabbix-agent2.service'] is defined
+      - ansible_facts.services['zabbix-agent2.service'].state == 'running'
+    fail_msg: Zabbix Agent 2 is not running.
+
+- name: Require the Zabbix Agent passive endpoint to accept connections
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 10050
+    state: started
+    connect_timeout: 3
+    timeout: 3
+
+- name: Check basic Agent item execution
+  ansible.builtin.command:
+    argv: [zabbix_agent2, -t, "{{ item }}", -c, "{{ zabbix_agent_config }}"]
+  loop: [agent.ping, agent.version, zfs.metrics, zfs.snapshots, memory.ecc.metrics, smart.disk.discovery]
+  register: zabbix_agent_validation_items
+  changed_when: false
+  failed_when: zabbix_agent_validation_items.rc != 0 or 'ZBX_NOTSUPPORTED' in zabbix_agent_validation_items.stdout
+
+- name: Require the Agent ping item to return one
+  ansible.builtin.assert:
+    that: "'|1]' in zabbix_agent_validation_items.results[0].stdout"
+    fail_msg: The Zabbix Agent ping item did not return one.
+
+- name: Run ZFS metrics collector as the Zabbix user
+  ansible.builtin.command:
+    argv: [runuser, -u, zabbix, --, "{{ zabbix_zfs_collector }}", --inventory, "{{ zabbix_dataset_inventory }}", metrics]
+  register: zabbix_agent_validation_zfs_metrics
+  changed_when: false
+
+- name: Run ZFS snapshot collector as the Zabbix user
+  ansible.builtin.command:
+    argv: [runuser, -u, zabbix, --, "{{ zabbix_zfs_collector }}", --inventory, "{{ zabbix_dataset_inventory }}", snapshots]
+  register: zabbix_agent_validation_zfs_snapshots
+  changed_when: false
+
+- name: Validate ZFS collector output
+  ansible.builtin.assert:
+    that:
+      - (zabbix_agent_validation_zfs_metrics.stdout | from_json).error_count | int == 0
+      - (zabbix_agent_validation_zfs_snapshots.stdout | from_json).error_count | int == 0
+    fail_msg: ZFS collector output is invalid or reports errors.
+
+- name: Run memory ECC collector as the Zabbix user
+  ansible.builtin.command:
+    argv: [runuser, -u, zabbix, --, "{{ zabbix_ecc_collector }}"]
+  register: zabbix_agent_validation_ecc_metrics
+  changed_when: false
+
+- name: Validate memory ECC collector output
+  ansible.builtin.assert:
+    that: (zabbix_agent_validation_ecc_metrics.stdout | from_json).error_count | int == 0
+    fail_msg: Memory ECC collector output is invalid or reports errors.
+
+- name: Verify the SMART wrapper command form
+  ansible.builtin.command:
+    argv: [runuser, -u, zabbix, --, sudo, -n, "{{ zabbix_smart_wrapper }}", -j, -V]
+  changed_when: false
+
+- name: Validate configured Alloy and certificate probes
+  ansible.builtin.command:
+    argv: [runuser, -u, zabbix, --, python3, /usr/local/libexec/zabbix/health.py, /etc/zabbix/private-cloud-observability.json]
+  register: zabbix_agent_validation_health
+  changed_when: false
+  when: private_cloud.stages.logging | bool
+
+- name: Require healthy Alloy endpoints and configured certificates
+  ansible.builtin.assert:
+    that:
+      - (zabbix_agent_validation_health.stdout | from_json).alloy_up | int == 1
+      - (zabbix_agent_validation_health.stdout | from_json).metrics_up | int == 1
+      - (zabbix_agent_validation_health.stdout | from_json).certificates | dict2items | length > 0
+    fail_msg: Alloy or a configured TLS certificate probe is unhealthy.
+  when: private_cloud.stages.logging | bool
+
+- name: Require each configured TLS certificate probe to be valid
+  ansible.builtin.assert:
+    that: item.value.valid | int == 1
+    fail_msg: "The configured {{ item.key }} certificate probe failed."
+  loop: "{{ ((zabbix_agent_validation_health.stdout | default('{\"certificates\": {}}')) | from_json).certificates | dict2items }}"
+  when: private_cloud.stages.logging | bool

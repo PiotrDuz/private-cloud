@@ -1,0 +1,49 @@
+---
+- name: Require the generated encrypted key-loading unit
+  ansible.builtin.command: systemctl show -p FragmentPath zfs-load-key@tank-secure.service
+  register: zfs_generated_key
+  changed_when: false
+  failed_when: zfs_generated_key.rc != 0 or zfs_generated_key.stdout | trim == 'FragmentPath='
+
+- name: Verify the generated key unit identity
+  ansible.builtin.command: systemctl show --value -p Id zfs-load-key@tank-secure.service
+  register: zfs_generated_key_definition
+  changed_when: false
+  failed_when: zfs_generated_key_definition.rc != 0 or zfs_generated_key_definition.stdout | trim != 'zfs-load-key@tank-secure.service'
+
+- name: Verify the generated key unit has a resolved fragment
+  ansible.builtin.command: systemctl show --value -p FragmentPath zfs-load-key@tank-secure.service
+  register: zfs_generated_key_fragment
+  changed_when: false
+  failed_when: zfs_generated_key_fragment.rc != 0 or zfs_generated_key_fragment.stdout | trim == ''
+
+- name: Verify every encrypted generated mount requires its key unit
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/storage_checks.py"
+      - encrypted-mounts
+      - --dataset
+      - "{{ zfs_secure_dataset }}"
+  changed_when: false
+
+- name: Verify the encrypted dataset uses the fixed file key
+  ansible.builtin.command: zfs get -H -o value keylocation {{ zfs_secure_dataset }}
+  register: zfs_key_location
+  changed_when: false
+
+- name: Require the fixed file key location
+  ansible.builtin.assert:
+    that: zfs_key_location.stdout | trim == 'file:///etc/zfs/keys/tank-secure.key'
+    fail_msg: The encrypted dataset does not use the managed file key.
+
+- name: Verify the encrypted dataset key format
+  ansible.builtin.command: zfs get -H -o value keyformat {{ zfs_secure_dataset }}
+  register: zfs_key_format
+  changed_when: false
+
+- name: Require passphrase-based encryption
+  ansible.builtin.assert:
+    that: zfs_key_format.stdout | trim == 'passphrase'
+    fail_msg: The encrypted root must use a passphrase key.
+

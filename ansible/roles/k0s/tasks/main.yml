@@ -122,6 +122,7 @@
   ansible.builtin.command: zfs set quota={{ item.item.quota }} {{ item.item.name }}
   loop: "{{ k0s_quota_state.results }}"
   when: item.stdout_lines[1] | int != (item.item.quota | human_to_bytes)
+  notify: Restart k0s controller
 
 - name: Verify configured leaf quotas
   ansible.builtin.command: zfs get -Hp -o value quota {{ item.name }}
@@ -225,12 +226,12 @@
   ansible.builtin.set_fact:
     k0s_default_worker_profile: "{{ (k0s_effective_config.spec.workerProfiles | default([]) | selectattr('name', 'equalto', 'default') | first) | default({'name': 'default', 'values': {}}) }}"
 
-- name: Configure bounded container logs
+- name: Configure bounded container logs and namespaced VPN forwarding
   ansible.builtin.copy:
     content: >-
       {{ k0s_effective_config | combine({'spec': {'workerProfiles':
         (k0s_effective_config.spec.workerProfiles | default([]) | rejectattr('name', 'equalto', 'default') | list) +
-        [k0s_default_worker_profile | combine({'values': {'containerLogMaxSize': '10Mi', 'containerLogMaxFiles': 5, 'podLogsDir': k0s_ephemeral_mountpoint ~ '/logs'}}, recursive=True)]
+        [k0s_default_worker_profile | combine({'values': {'containerLogMaxSize': '10Mi', 'containerLogMaxFiles': 5, 'podLogsDir': k0s_ephemeral_mountpoint ~ '/logs', 'allowedUnsafeSysctls': private_cloud.stages.networking | ternary(['net.ipv4.ip_forward'], [])}}, recursive=True)]
       }}, recursive=True) | to_nice_yaml }}
     dest: "{{ k0s_config_file }}"
     owner: root
@@ -238,10 +239,28 @@
     mode: '0600'
   notify: Restart k0s controller
 
+- name: Detect the Ubuntu AppArmor unconfined change-profile restriction
+  ansible.builtin.stat:
+    path: /proc/sys/kernel/apparmor_restrict_unprivileged_unconfined
+  register: k0s_apparmor_unconfined_restriction
+
+# Ubuntu converts runc's change_onexec into a stacked cri-containerd profile,
+# which then denies signals between processes of the same container.
+- name: Keep container AppArmor profiles unstacked so processes can signal their children
+  ansible.posix.sysctl:
+    name: kernel.apparmor_restrict_unprivileged_unconfined
+    value: '0'
+    sysctl_file: /etc/sysctl.d/60-private-cloud-container-apparmor.conf
+    sysctl_set: true
+    state: present
+    reload: true
+  when: k0s_apparmor_unconfined_restriction.stat.exists
+
 - name: Check for the k0s controller service
   ansible.builtin.command: systemctl list-unit-files --no-legend k0scontroller.service
   register: k0s_controller_check
   changed_when: false
+  failed_when: k0s_controller_check.rc not in [0, 1]
 
 - name: Install the k0s controller and worker service once
   ansible.builtin.command: >-
@@ -259,9 +278,9 @@
 - name: Require an existing controller to use the managed storage paths
   ansible.builtin.assert:
     that:
-      - "'--config={{ k0s_config_file }}' in k0s_existing_controller.stdout"
-      - "'--data-dir={{ k0s_config_mountpoint }}' in k0s_existing_controller.stdout"
-      - "'--kubelet-root-dir={{ k0s_ephemeral_mountpoint }}' in k0s_existing_controller.stdout"
+      - "('--config=' ~ k0s_config_file) in k0s_existing_controller.stdout"
+      - "('--data-dir=' ~ k0s_config_mountpoint) in k0s_existing_controller.stdout"
+      - "('--kubelet-root-dir=' ~ k0s_ephemeral_mountpoint) in k0s_existing_controller.stdout"
     fail_msg: The existing k0s controller uses a different storage layout.
   when: k0s_controller_check.stdout | trim != ''
 
@@ -294,27 +313,33 @@
 - name: Apply pending k0s service dependency changes
   ansible.builtin.meta: flush_handlers
 
-- name: Verify exact k0s mount-unit dependencies
+- name: Wait for the published VPN forwarding worker profile
   ansible.builtin.command:
-    argv:
-      - python3
-      - "{{ playbook_dir }}/storage_checks.py"
-      - k0s-mounts
-      - --service
-      - "{{ k0s_controller_service }}"
-      - --mountpoints
-      - "{{ k0s_config_mountpoint }}"
-      - "{{ k0s_images_mountpoint }}"
-      - "{{ k0s_ephemeral_mountpoint }}"
+    argv: ["{{ k0s_binary_path }}", kubectl, get, configmap, "worker-config-default-{{ k0s_release_version | regex_search('[0-9]+[.][0-9]+') }}", -n, kube-system, -o, "jsonpath={.data.kubeletConfiguration}"]
+  register: k0s_published_worker_profile
   changed_when: false
-
-- name: Wait for a Ready k0s node
-  ansible.builtin.command: "{{ k0s_binary_path }} kubectl get nodes --no-headers"
-  register: k0s_node_status
-  changed_when: false
+  failed_when: false
+  until: k0s_published_worker_profile.rc == 0 and (k0s_published_worker_profile.stdout | from_json).allowedUnsafeSysctls | default([]) == ['net.ipv4.ip_forward']
   retries: 30
-  delay: 10
-  until: k0s_node_status.rc == 0 and ' Ready ' in (' ' ~ k0s_node_status.stdout ~ ' ')
+  delay: 2
+  when: private_cloud.stages.networking | bool
+
+- name: Read the running kubelet configuration
+  ansible.builtin.slurp:
+    src: /run/k0s/kubelet/config.yaml
+  register: k0s_running_worker_profile
+  when: private_cloud.stages.networking | bool
+
+- name: Restart k0s when its worker started before the updated profile was published
+  ansible.builtin.systemd:
+    name: "{{ k0s_controller_service }}"
+    state: restarted
+  when:
+    - private_cloud.stages.networking | bool
+    - (k0s_running_worker_profile.content | b64decode | from_yaml).allowedUnsafeSysctls | default([]) != ['net.ipv4.ip_forward']
+
+- name: Validate the installed k0s node and storage
+  ansible.builtin.include_tasks: ../validation/main.yml
 
 - name: Ensure the runtime kubeconfig directory is root-only
   ansible.builtin.file:
@@ -348,11 +373,3 @@
 - name: Expose the runtime kubeconfig path to subsequent roles
   ansible.builtin.set_fact:
     private_cloud_kubeconfig_path: "{{ k0s_kubeconfig_path }}"
-
-- name: Verify every k0s runtime mountpoint
-  ansible.builtin.command: mountpoint -q {{ item }}
-  loop:
-    - "{{ k0s_config_mountpoint }}"
-    - "{{ k0s_images_mountpoint }}"
-    - "{{ k0s_ephemeral_mountpoint }}"
-  changed_when: false

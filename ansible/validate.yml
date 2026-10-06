@@ -25,6 +25,35 @@
         - name: Validate the cluster
           ansible.builtin.include_tasks: validation/cluster.yml
 
+        - name: Run each enabled stage's service validation
+          ansible.builtin.include_role:
+            name: "{{ validation_stage }}"
+            tasks_from: validate
+          loop:
+            - zfs
+            - k0s
+            - networking
+            - intel_gpu
+            - postgres
+            - meilisearch
+            - media
+            - stalwart
+            - tika
+            - bleve
+            - onlyoffice
+            - opencloud
+            - grist
+            - manticore
+            - redis_affine
+            - affine
+            - immich
+            - logging
+            - zabbix_server
+            - zabbix_agent
+          loop_control:
+            loop_var: validation_stage
+          when: private_cloud.stages[validation_stage] | bool
+
         - name: Validate services
           ansible.builtin.include_tasks: validation/services.yml
 

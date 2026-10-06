@@ -9,8 +9,8 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "logging"))
-from alert_delivery_helpers import matching_message_count
+sys.path.append(str(Path(__file__).resolve().parents[3] / "zabbix"))
+from alert_delivery_helpers import matching_message_count, remove_test_messages
 from api_helpers import ZabbixAPI
 
 
@@ -32,8 +32,8 @@ def main():
     group_ids = {str(group["groupid"]) for group in api.call("host.get", {
         "output": ["hostid"],
         "hostids": [host["hostid"]],
-        "selectGroups": ["groupid"],
-    })[0].get("groups", [])}
+        "selectHostGroups": ["groupid"],
+    })[0].get("hostgroups", [])}
     action_rows = api.call("action.get", {
         "output": "extend",
         "filter": {"name": ["Private cloud all warnings to Stalwart"]},
@@ -101,8 +101,8 @@ def main():
         trigger_id = trigger_result["triggerids"][0]
 
         baseline = matching_message_count(config["mail"], marker)
+        send_when_configured(config["sender_address"], config["sender_port"], config["host"], item_key, "1")
         problem_may_be_active = True
-        send_value(config["sender_address"], config["sender_port"], config["host"], item_key, "1")
         wait_for_messages(config["mail"], marker, baseline + 1)
         send_value(config["sender_address"], config["sender_port"], config["host"], item_key, "0")
         problem_resolved = True
@@ -140,6 +140,10 @@ def main():
                 api.call("item.delete", item_ids)
         except Exception as error:
             cleanup_errors.append(error)
+        try:
+            remove_test_messages(config["mail"], marker)
+        except Exception as error:
+            cleanup_errors.append(error)
         if cleanup_errors:
             details = "; ".join(str(error) for error in cleanup_errors)
             if primary_exception:
@@ -156,6 +160,17 @@ def wait_for_messages(mail, marker, expected):
             return
         time.sleep(10)
     raise RuntimeError("Zabbix did not deliver the expected problem and recovery messages: " + marker)
+
+
+def send_when_configured(address, port, host, key, value):
+    deadline = time.monotonic() + 120
+    while True:
+        try:
+            return send_value(address, port, host, key, value)
+        except RuntimeError as error:
+            if "failed: 1" not in str(error) or time.monotonic() >= deadline:
+                raise
+            time.sleep(5)
 
 
 def send_value(address, port, host, key, value):

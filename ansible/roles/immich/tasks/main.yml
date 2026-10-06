@@ -6,9 +6,9 @@
       - private_cloud.immich.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - private_cloud.immich.machine_learning_max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - private_cloud.immich.valkey_max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
-      - (private_cloud.immich.max_ram | human_to_bytes | int) >= 2147483648
-      - (private_cloud.immich.machine_learning_max_ram | human_to_bytes | int) >= 1073741824
-      - (private_cloud.immich.valkey_max_ram | human_to_bytes | int) >= 134217728
+      - (private_cloud.immich.max_ram | private_cloud_ram_bytes | int) >= 1073741824
+      - (private_cloud.immich.machine_learning_max_ram | private_cloud_ram_bytes | int) >= 1073741824
+      - (private_cloud.immich.valkey_max_ram | private_cloud_ram_bytes | int) >= 134217728
       - private_cloud.immich.machine_learning_accelerator in ['cpu', 'openvino']
       - private_cloud.immich.machine_learning_accelerator != 'openvino' or private_cloud.stages.intel_gpu | bool
       - private_cloud.immich.timezone is match('^[A-Za-z_+-]+/[A-Za-z_+/-]+$')
@@ -120,7 +120,7 @@
     that:
       - immich_existing.results[0].resources | length == 0 or immich_existing.results[0].resources[0].spec.local.path == immich_dataset_mountpoint
       - immich_existing.results[0].resources | length == 0 or immich_existing.results[0].resources[0].spec.capacity.storage == immich_pv_capacity
-      - immich_existing.results[0].resources | length == 0 or immich_node_name in immich_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - immich_existing.results[0].resources | length == 0 or immich_node_name in immich_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values']
       - immich_existing.results[1].resources | length == 0 or immich_existing.results[1].resources[0].spec.resources.requests.storage == immich_pv_capacity
       - immich_existing.results[1].resources | length == 0 or immich_existing.results[1].resources[0].spec.volumeName == immich_pv_name
     fail_msg: Existing Immich persistent storage conflicts with the configured local storage.
@@ -246,20 +246,6 @@
     command: psql -v ON_ERROR_STOP=1 -At -U postgres -d {{ immich_database_name }} -c "CREATE EXTENSION IF NOT EXISTS vector;"
   changed_when: true
 
-- name: Verify Immich pgvector
-  kubernetes.core.k8s_exec:
-    kubeconfig: "{{ immich_kubeconfig }}"
-    namespace: "{{ immich_namespace }}"
-    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
-    command: psql -At -U postgres -d {{ immich_database_name }} -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';"
-  register: immich_pgvector_effective
-  changed_when: false
-
-- name: Assert Immich pgvector
-  ansible.builtin.assert:
-    that: immich_pgvector_effective.stdout | trim == immich_pgvector_version
-    fail_msg: The vector extension is not enabled in the Immich database.
-
 - name: Enable VectorChord in the Immich database
   kubernetes.core.k8s_exec:
     kubeconfig: "{{ immich_kubeconfig }}"
@@ -268,20 +254,6 @@
     command: psql -v ON_ERROR_STOP=1 -At -U postgres -d {{ immich_database_name }} -c "CREATE EXTENSION IF NOT EXISTS vchord CASCADE;"
   changed_when: true
 
-- name: Verify Immich VectorChord
-  kubernetes.core.k8s_exec:
-    kubeconfig: "{{ immich_kubeconfig }}"
-    namespace: "{{ immich_namespace }}"
-    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
-    command: psql -At -U postgres -d {{ immich_database_name }} -c "SELECT extversion FROM pg_extension WHERE extname = 'vchord';"
-  register: immich_vectorchord_effective
-  changed_when: false
-
-- name: Assert Immich VectorChord
-  ansible.builtin.assert:
-    that: immich_vectorchord_effective.stdout | trim == immich_vectorchord_version
-    fail_msg: The VectorChord extension is not enabled in the Immich database.
-
 - name: Enable earthdistance in the Immich database
   kubernetes.core.k8s_exec:
     kubeconfig: "{{ immich_kubeconfig }}"
@@ -289,20 +261,6 @@
     pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
     command: psql -v ON_ERROR_STOP=1 -At -U postgres -d {{ immich_database_name }} -c "CREATE EXTENSION IF NOT EXISTS earthdistance CASCADE;"
   changed_when: true
-
-- name: Verify Immich earthdistance
-  kubernetes.core.k8s_exec:
-    kubeconfig: "{{ immich_kubeconfig }}"
-    namespace: "{{ immich_namespace }}"
-    pod: "{{ immich_postgres_pods.resources[0].metadata.name }}"
-    command: psql -At -U postgres -d {{ immich_database_name }} -c "SELECT extname FROM pg_extension WHERE extname = 'earthdistance';"
-  register: immich_earthdistance_effective
-  changed_when: false
-
-- name: Assert Immich earthdistance
-  ansible.builtin.assert:
-    that: immich_earthdistance_effective.stdout | trim == 'earthdistance'
-    fail_msg: The earthdistance extension is not enabled in the Immich database.
 
 - name: Apply Immich credentials
   kubernetes.core.k8s:
@@ -430,3 +388,6 @@
   retries: 90
   delay: 5
   changed_when: false
+
+- name: Validate Immich after installation
+  ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

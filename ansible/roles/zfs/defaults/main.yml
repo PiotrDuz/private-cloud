@@ -8,6 +8,9 @@ zfs_key_directory: /etc/zfs/keys
 zfs_key_file: /etc/zfs/keys/tank-secure.key
 zfs_backup_dataset: tank/secure/backup
 zfs_no_backup_dataset: tank/secure/no-backup
+zfs_installer_config_dataset: tank/secure/backup/private-cloud-config
+zfs_installer_config_mountpoint: /tank/secure/backup/private-cloud-config
+zfs_installer_config_quota: 1G
 zfs_zed_cache_directory: /etc/zfs/zfs-list.cache
 zfs_legacy_mount_service: /etc/systemd/system/zfs-unlock-mount.service
 zfs_legacy_mount_helper: /usr/local/sbin/zfs-unlock-mount

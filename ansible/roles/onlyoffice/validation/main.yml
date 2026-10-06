@@ -1,0 +1,64 @@
+---
+- name: Find the Ready OnlyOffice pod for user namespace validation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ onlyoffice_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ onlyoffice_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=onlyoffice
+  register: onlyoffice_validation_pods
+  until:
+    - onlyoffice_validation_pods.resources | length > 0
+    - onlyoffice_validation_pods.resources | rejectattr('metadata.deletionTimestamp', 'defined') | selectattr('status.containerStatuses.0.ready', 'equalto', true) | list | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Select the Ready non-terminating OnlyOffice pod
+  ansible.builtin.set_fact:
+    onlyoffice_validation_ready_pod: >-
+      {{ (onlyoffice_validation_pods.resources
+          | rejectattr('metadata.deletionTimestamp', 'defined')
+          | selectattr('status.containerStatuses.0.ready', 'equalto', true)
+          | first) }}
+
+- name: Read the user namespace and UID map inside OnlyOffice
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ onlyoffice_kubeconfig }}"
+    namespace: "{{ onlyoffice_namespace }}"
+    pod: "{{ onlyoffice_validation_ready_pod.metadata.name }}"
+    command: sh -c 'readlink /proc/self/ns/user; cat /proc/self/uid_map'
+  register: onlyoffice_validation_user_namespace
+  changed_when: false
+
+- name: Read the host user namespace
+  ansible.builtin.command: readlink /proc/self/ns/user
+  register: onlyoffice_validation_host_user_namespace
+  changed_when: false
+
+- name: Require OnlyOffice to run in an isolated user namespace
+  ansible.builtin.assert:
+    that:
+      - onlyoffice_validation_ready_pod.spec.hostUsers | default(true) == false
+      - onlyoffice_validation_user_namespace.stdout_lines | length >= 2
+      - onlyoffice_validation_user_namespace.stdout_lines[0] != onlyoffice_validation_host_user_namespace.stdout | trim
+      - onlyoffice_validation_user_namespace.stdout_lines[1].split() | length >= 3
+      - onlyoffice_validation_user_namespace.stdout_lines[1].split()[0] == '0'
+      - onlyoffice_validation_user_namespace.stdout_lines[1].split()[1] | int > 0
+    fail_msg: OnlyOffice is not running with a separate user namespace and a non-root host UID mapping.
+
+- name: Verify OnlyOffice WOPI discovery
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': onlyoffice_kubeconfig,
+        'namespace': onlyoffice_namespace,
+        'service': onlyoffice_service_name,
+        'remote_port': 80,
+        'path': '/hosting/discovery',
+        'body_contains': 'wopi-discovery'
+      } | to_json }}
+  register: onlyoffice_validation_discovery
+  changed_when: false

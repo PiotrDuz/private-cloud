@@ -69,7 +69,12 @@ spec:
           imagePullPolicy: IfNotPresent
           command: [/bin/sh, -c]
           args:
-            - opencloud init || true; opencloud server
+            - |
+              set -eu
+              if [ ! -s /etc/opencloud/opencloud.yaml ]; then
+                opencloud init --quiet --insecure=false
+              fi
+              exec opencloud server
           securityContext:
             runAsNonRoot: true
             privileged: false
@@ -78,6 +83,7 @@ spec:
             seccompProfile: {type: RuntimeDefault}
           env:
             - {name: OC_URL, value: {{ ("https://" ~ private_cloud.opencloud.hostname) | to_json }}}
+            - {name: OC_OIDC_ISSUER, value: {{ ("https://" ~ private_cloud.opencloud.hostname) | to_json }}}
             - {name: PROXY_HTTP_ADDR, value: "0.0.0.0:9200"}
             - {name: PROXY_TLS, value: "false"}
             - {name: OC_INSECURE, value: "false"}
@@ -93,7 +99,7 @@ spec:
             - {name: OC_CACHE_STORE, value: memory}
             - {name: STORAGE_USERS_DRIVER, value: posix}
             - {name: STORAGE_USERS_POSIX_ROOT, value: /var/lib/opencloud/storage/users}
-            - {name: STORAGE_USERS_ID_CACHE_STORE, value: memory}
+            - {name: STORAGE_USERS_ID_CACHE_STORE, value: nats-js-kv}
             - {name: STORAGE_SYSTEM_DRIVER, value: decomposed}
             - {name: WEB_ASSET_APPS_PATH, value: /var/lib/opencloud/web/assets/apps}
             - {name: PROXY_CSP_CONFIG_FILE_LOCATION, value: /etc/opencloud/csp.yaml}

@@ -25,6 +25,7 @@ from install_helpers import (
     PUBLIC_CONFIGURATION,
     RUNTIME_DIRECTORY,
     SECRETS_CONFIGURATION,
+    TEMP_ENCRYPTED_FILE,
     SECRET_SCHEMAS,
     SECRET_STAGES,
     TEMP_PUBLIC_FILE,
@@ -50,6 +51,7 @@ from install_helpers import (
     remove_stale_runtime_files,
     require_interactive_terminal,
     require_commands,
+    require_configuration_dataset,
     require_kubernetes_readiness,
     require_root,
     run_command,
@@ -82,6 +84,8 @@ def run_installation() -> dict[str, Any]:
         remove_stale_runtime_files()
         require_commands(["ansible-playbook", "ansible-vault"])
         require_kubernetes_readiness()
+        if pool_exists():
+            require_configuration_dataset()
         stored_public = load_yaml(PUBLIC_CONFIGURATION) if PUBLIC_CONFIGURATION.is_file() else None
         existing_public = None
         if stored_public is not None:
@@ -112,6 +116,8 @@ def run_installation() -> dict[str, Any]:
             raise InstallerError("An existing public configuration is required for this lifecycle")
         public = collect_valid_public_configuration(existing_public, mode)
         stages = public["private_cloud"]["stages"]
+        if mode == "create" and not stages["zfs"]:
+            raise InstallerError("Initial installation requires ZFS to persist the installer configuration")
 
         old_password: str | None = None
         original_secrets: dict[str, Any] | None = None
@@ -138,7 +144,6 @@ def run_installation() -> dict[str, Any]:
         if original_secrets is not None:
             reject_unsupported_secret_rotations(original_secrets, secrets_configuration)
 
-        public_changed = stored_public is None or public != stored_public
         secrets_changed = original_secrets is None or secrets_configuration != original_secrets
         if not secrets_changed:
             TEMP_SECRET_FILE.unlink(missing_ok=True)
@@ -156,16 +161,20 @@ def run_installation() -> dict[str, Any]:
         atomic_write(TEMP_RUNTIME_FILE, dump_yaml(runtime), 0o600)
         if not prompt_bool("Allow Ansible to start", True):
             raise InstallerError("Ansible run was not confirmed")
-        if public_changed:
-            atomic_write(TEMP_PUBLIC_FILE, dump_yaml(public), 0o600)
+        atomic_write(TEMP_PUBLIC_FILE, dump_yaml(public), 0o600)
         if secrets_changed:
             write_secret_file(secrets_configuration, stages)
-            encrypt_secrets(TEMP_SECRET_FILE, SECRETS_CONFIGURATION, VAULT_PASSWORD_FILE)
-        elif vault_password_changed:
-            rekey_secrets(SECRETS_CONFIGURATION, OLD_VAULT_PASSWORD_FILE, VAULT_PASSWORD_FILE)
-        if public_changed:
-            atomic_write(PUBLIC_CONFIGURATION, dump_yaml(public), 0o640)
+            encrypt_secrets(TEMP_SECRET_FILE, TEMP_ENCRYPTED_FILE, VAULT_PASSWORD_FILE)
+        else:
+            atomic_write(TEMP_ENCRYPTED_FILE, SECRETS_CONFIGURATION.read_text(), 0o600)
+            if vault_password_changed:
+                rekey_secrets(TEMP_ENCRYPTED_FILE, OLD_VAULT_PASSWORD_FILE, VAULT_PASSWORD_FILE)
+        if mode != "create":
+            require_configuration_dataset()
+            atomic_write(PUBLIC_CONFIGURATION, dump_yaml(public), 0o600)
+            atomic_write(SECRETS_CONFIGURATION, TEMP_ENCRYPTED_FILE.read_text(), 0o600)
         run_playbook()
+        run_validation_playbook()
         return {"status": "completed", "mode": mode, "playbook": str(PLAYBOOK)}
 
 
@@ -195,7 +204,7 @@ def runtime_cleanup() -> Iterator[None]:
     try:
         yield
     finally:
-        for path in (TEMP_SECRET_FILE, TEMP_PUBLIC_FILE, TEMP_RUNTIME_FILE, VAULT_PASSWORD_FILE, OLD_VAULT_PASSWORD_FILE, KUBECONFIG_FILE):
+        for path in (TEMP_SECRET_FILE, TEMP_PUBLIC_FILE, TEMP_ENCRYPTED_FILE, TEMP_RUNTIME_FILE, VAULT_PASSWORD_FILE, OLD_VAULT_PASSWORD_FILE, KUBECONFIG_FILE):
             path.unlink(missing_ok=True)
 
 
@@ -224,12 +233,13 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
             discover_disks()
         existing_disks = [] if mode == "create" else cloud["storage"]["disks"]
         cloud["storage"]["disks"] = prompt_disks(existing_disks)
+        cloud["storage"]["arc_max"] = prompt_line("ZFS ARC maximum RAM", cloud["storage"]["arc_max"])
     if "k0s" in sections:
-        for key in ("config_quota", "images_quota", "ephemeral_quota"):
+        for key in ("config_quota", "images_quota", "ephemeral_quota", "host_reserve_ram"):
             cloud["k0s"][key] = prompt_line(f"k0s {key}", cloud["k0s"][key])
     if "networking" in sections:
         networking = cloud["networking"]
-        for key in ("storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "pod_cidr", "service_cidr", "cluster_dns_ip", "traefik_internal_ip", "zabbix_hostname"):
+        for key in ("storage_size", "acme_email", "acme_directory_url", "cloudflare_api_url", "cloudflare_zone_id", "public_ip_url", "pod_cidr", "service_cidr", "cluster_dns_ip", "traefik_internal_ip", "zabbix_hostname"):
             networking[key] = prompt_line(f"Networking {key}", networking[key])
         networking["local_network_cidrs"] = prompt_line(
             "Local network CIDRs separated by spaces", " ".join(networking["local_network_cidrs"])
@@ -265,6 +275,8 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
         media = cloud["media"]
         for key in ("storage_size", "hostname", "timezone"):
             media[key] = prompt_line(f"Media {key}", media[key])
+        for service in media["max_ram"]:
+            media["max_ram"][service] = prompt_line(f"Media {service} maximum RAM", media["max_ram"][service])
         for service in ("sonarr", "radarr"):
             media["quality_profiles"][service] = prompt_choice(
                 f"{service.title()} quality profile",
@@ -531,12 +543,14 @@ def discover_disks() -> list[str]:
 
 
 def stable_disk_id(path: str) -> str | None:
-    directory = Path("/dev/disk/by-id")
-    if not directory.is_dir():
-        return None
     target = Path(os.path.realpath(path))
-    choices = [entry for entry in directory.iterdir() if entry.is_symlink() and "-part" not in entry.name and Path(os.path.realpath(entry)) == target]
-    return str(sorted(choices, key=lambda item: item.name)[0]) if choices else None
+    for directory in (Path("/dev/disk/by-id"), Path("/dev/disk/by-path")):
+        if not directory.is_dir():
+            continue
+        choices = [entry for entry in directory.iterdir() if entry.is_symlink() and "-part" not in entry.name and Path(os.path.realpath(entry)) == target]
+        if choices:
+            return str(sorted(choices, key=lambda item: item.name)[0])
+    return None
 
 
 def prompt_disks(existing: list[str]) -> list[str]:
@@ -557,25 +571,30 @@ def build_runtime_values(public: dict[str, Any], mode: str) -> dict[str, Any]:
 
 
 def run_playbook() -> None:
+    live_log = RUNTIME_DIRECTORY / "install-live.log"
+    atomic_write(live_log, "", 0o600)
     run_command([
         "ansible-playbook",
         "-i", str(INVENTORY),
         str(PLAYBOOK),
-        "--extra-vars", f"@{PUBLIC_CONFIGURATION}",
-        "--extra-vars", f"@{SECRETS_CONFIGURATION}",
+        "--extra-vars", f"@{TEMP_PUBLIC_FILE}",
+        "--extra-vars", f"@{TEMP_ENCRYPTED_FILE}",
         "--extra-vars", f"@{TEMP_RUNTIME_FILE}",
         "--vault-password-file", str(VAULT_PASSWORD_FILE),
-    ], environment={"ANSIBLE_CONFIG": str(ANSIBLE_CONFIG)}, stage="ansible-playbook")
+    ], environment={"ANSIBLE_CONFIG": str(ANSIBLE_CONFIG), "ANSIBLE_LOG_PATH": str(live_log)}, stage="ansible-playbook")
 
 
 def run_validation_playbook() -> None:
+    live_log = RUNTIME_DIRECTORY / "validation-live.log"
+    atomic_write(live_log, "", 0o600)
     run_command([
         "ansible-playbook",
         "-i", str(INVENTORY),
         str(VALIDATION_PLAYBOOK),
         "--extra-vars", f"@{PUBLIC_CONFIGURATION}",
-        "--extra-vars", f"@{TEMP_SECRET_FILE}",
-    ], environment={"ANSIBLE_CONFIG": str(ANSIBLE_CONFIG)}, stage="validation")
+        "--extra-vars", f"@{SECRETS_CONFIGURATION}",
+        "--vault-password-file", str(VAULT_PASSWORD_FILE),
+    ], environment={"ANSIBLE_CONFIG": str(ANSIBLE_CONFIG), "ANSIBLE_LOG_PATH": str(live_log)}, stage="validation")
 
 
 def _copy_mapping(value: dict[str, Any]) -> dict[str, Any]:

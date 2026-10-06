@@ -1,15 +1,15 @@
 ---
-- name: Wait for ARR application workloads
+- name: Wait for the VPN gateway and ARR application workloads
   kubernetes.core.k8s_info:
     kubeconfig: "{{ media_kubeconfig }}"
     api_version: apps/v1
     kind: Deployment
     namespace: media
     name: "{{ item }}"
-  loop: [sonarr, radarr, prowlarr, qbittorrent]
+  loop: [media-vpn, sonarr, radarr, prowlarr, qbittorrent]
   register: media_arr_workload
   until:
-    - media_arr_workload.resources | length == 1
+    - media_arr_workload.resources | default([]) | length == 1
     - media_arr_workload.resources[0].status.observedGeneration | default(0) | int >= media_arr_workload.resources[0].metadata.generation | int
     - media_arr_workload.resources[0].status.updatedReplicas | default(0) | int == 1
     - media_arr_workload.resources[0].status.availableReplicas | default(0) | int == 1
@@ -37,5 +37,8 @@
         'qbittorrent_password': private_cloud_secrets.media.qbittorrent_password
       } | to_json }}
   register: media_arr_configuration
+  until: media_arr_configuration.rc == 0
+  retries: 3
+  delay: 5
   changed_when: (media_arr_configuration.stdout | from_json).changed
   no_log: true

@@ -71,7 +71,7 @@
     that:
       - manticore_existing.results[0].resources | length == 0 or manticore_existing.results[0].resources[0].spec.local.path == manticore_dataset_mountpoint
       - manticore_existing.results[0].resources | length == 0 or manticore_existing.results[0].resources[0].spec.capacity.storage == manticore_pv_capacity
-      - manticore_existing.results[0].resources | length == 0 or manticore_node_name in manticore_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - manticore_existing.results[0].resources | length == 0 or manticore_node_name in manticore_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values']
       - manticore_existing.results[1].resources | length == 0 or manticore_existing.results[1].resources[0].spec.resources.requests.storage == manticore_pv_capacity
       - manticore_existing.results[1].resources | length == 0 or manticore_existing.results[1].resources[0].spec.volumeName == manticore_pv_name
     fail_msg: Existing Manticore persistent storage conflicts with the configured local storage.
@@ -133,3 +133,6 @@
   retries: 60
   delay: 5
   changed_when: false
+
+- name: Validate Manticore after installation
+  ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

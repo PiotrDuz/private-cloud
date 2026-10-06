@@ -4,6 +4,7 @@ private_cloud_zabbix_hostname: private-cloud-zabbix
 private_cloud_zabbix_agent_server_active: 127.0.0.1:31051
 
 private_cloud_dataset_catalog:
+  - {name: installer-config, stage: zfs, dataset: tank/secure/backup/private-cloud-config, color: 42A5F5}
   - {name: openobserve, stage: logging, dataset: tank/secure/no-backup/k0s/services/openobserve, color: FFA726}
   - {name: alloy, stage: logging, dataset: tank/secure/no-backup/k0s/services/alloy, color: 26A69A}
   - {name: config, stage: k0s, dataset: tank/secure/backup/k0s/config, color: 42A5F5}
@@ -32,7 +33,7 @@ private_cloud_dataset_catalog:
 private_cloud_stage_dependencies:
   k0s: [zfs]
   networking: [k0s]
-  media: [networking, intel_gpu]
+  media: [networking]
   intel_gpu: [k0s]
   postgres: [k0s]
   meilisearch: [k0s]

@@ -12,6 +12,9 @@ metadata:
   namespace: edge
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
+    rollingUpdate: null
   selector:
     matchLabels: {app.kubernetes.io/name: traefik}
   template:
@@ -29,7 +32,7 @@ spec:
           image: {{ networking_traefik_image }}
           args:
             - --entryPoints.websecure.address=:8443
-            - --entryPoints.smtp.address=:2525
+            - --entryPoints.smtp.address=:25
             - --log.format=json
             - --log.level=INFO
             - --accesslog=true
@@ -43,6 +46,7 @@ spec:
             - --providers.kubernetesingress.allowexternalnameservices=false
             - --providers.file.filename=/etc/traefik/dynamic/tcp.yaml
             - --providers.file.watch=true
+            - --certificatesresolvers.cloudflare.acme.caserver={{ private_cloud.networking.acme_directory_url }}
             - --certificatesresolvers.cloudflare.acme.email={{ private_cloud.networking.acme_email }}
             - --certificatesresolvers.cloudflare.acme.storage=/data/acme.json
             - --certificatesresolvers.cloudflare.acme.dnschallenge.provider=cloudflare
@@ -51,9 +55,11 @@ spec:
           env:
             - name: CF_DNS_API_TOKEN
               valueFrom: {secretKeyRef: {name: cloudflare-dns-api, key: api-token}}
+            - name: CLOUDFLARE_BASE_URL
+              value: {{ private_cloud.networking.cloudflare_api_url | to_json }}
           ports:
             - {name: https, containerPort: 8443, hostPort: 443, protocol: TCP}
-            - {name: smtp, containerPort: 2525, hostPort: 25, protocol: TCP}
+            - {name: smtp, containerPort: 25, hostPort: 25, protocol: TCP}
           readinessProbe: {httpGet: {path: /ping, port: 8080}, periodSeconds: 5}
           livenessProbe: {httpGet: {path: /ping, port: 8080}, periodSeconds: 10}
           resources:
@@ -62,7 +68,7 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
-            capabilities: {drop: [ALL]}
+            capabilities: {drop: [ALL], add: [NET_BIND_SERVICE]}
           volumeMounts:
             - {name: data, mountPath: /data}
             - {name: dynamic, mountPath: /etc/traefik/dynamic, readOnly: true}
@@ -97,7 +103,7 @@ spec:
   ingress:
     - ports:
         - {protocol: TCP, port: 8443}
-        - {protocol: TCP, port: 2525}
+        - {protocol: TCP, port: 25}
   egress:
     - to:
         - namespaceSelector:
@@ -128,6 +134,14 @@ spec:
         - ipBlock:
             cidr: {{ private_cloud.networking.service_cidr }}
       ports: [{protocol: TCP, port: 443}]
+{% for address in networking_kubernetes_api_addresses %}
+{% for api_port in networking_kubernetes_api_tcp_ports %}
+    - to:
+        - ipBlock:
+            cidr: {{ address }}/32
+      ports: [{protocol: TCP, port: {{ api_port }}}]
+{% endfor %}
+{% endfor %}
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

@@ -1,0 +1,18 @@
+---
+- name: Verify Manticore executes a SQL query over its HTTP API
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': manticore_kubeconfig,
+        'namespace': manticore_namespace,
+        'service': manticore_service_name,
+        'remote_port': 9308,
+        'method': 'POST',
+        'path': '/sql?mode=raw',
+        'body': 'SELECT 1',
+        'headers': {'Content-Type': 'text/plain'},
+        'body_contains': '1'
+      } | to_json }}
+  register: manticore_validation_query
+  changed_when: false

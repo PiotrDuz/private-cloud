@@ -18,6 +18,7 @@ spec:
     spec:
       serviceAccountName: valkey-immich
       automountServiceAccountToken: false
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 999

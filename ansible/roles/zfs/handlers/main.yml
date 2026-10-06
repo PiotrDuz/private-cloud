@@ -1,4 +1,7 @@
 ---
+- name: Update initramfs for the ZFS ARC bound
+  ansible.builtin.command: update-initramfs -u
+
 - name: Reload systemd after zfs changes
   ansible.builtin.systemd:
     daemon_reload: true

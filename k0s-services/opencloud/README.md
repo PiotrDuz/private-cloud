@@ -21,7 +21,7 @@ The OpenCloud service is managed by `ansible/roles/opencloud`.
 - The official Draw.io extension embeds `https://embed.diagrams.net`.
 - The first Draw.io installation requires outbound access to its pinned GitHub release.
 - ConfigMap changes trigger a Deployment rollout through rendered checksums.
-- All supported cache stores use in-memory storage.
+- The POSIX user storage driver requires the built-in NATS JetStream key-value cache for file IDs.
 - A ClusterIP service exposes TCP `9200` only inside the cluster.
 - Traefik publishes the configured hostname, including `/wopi` and `/collaboration`, through HTTPS.
 - The collaboration service shares the OnlyOffice `JWT_SECRET` from `onlyoffice-credentials`.

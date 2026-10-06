@@ -13,6 +13,9 @@ stalwart_pv_name: stalwart-data
 stalwart_pvc_name: stalwart-data
 stalwart_pv_capacity: 10Ti
 stalwart_kubeconfig: /run/private-cloud/kubeconfig
+stalwart_postgres_service: postgres
+stalwart_postgres_port: 5432
 stalwart_meilisearch_service: meilisearch
 stalwart_plan_job_name: stalwart-configure
+stalwart_wait_image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
 stalwart_image: stalwartlabs/stalwart:v0.16@sha256:388dcb75a70727c5b551249a6d34b1f1321294852489e4fa3a4e6be698b7c4f0

@@ -107,6 +107,73 @@ def matching_message_count(config, marker):
     return count
 
 
+def remove_test_messages(config, marker, account=None):
+    """Permanently remove only test messages carrying this unique subject marker."""
+    accounts = [account] if account else config["accounts"]
+    seen = set()
+    failures = []
+    for mailbox in accounts:
+        try:
+            session = session_document(config, mailbox)
+            if session is None:
+                continue
+            account_id = next(iter(session.get("primaryAccounts", {}).values()), None)
+            if account_id is None:
+                account_id = next(iter(session.get("accounts", {})), None)
+            if account_id is None:
+                continue
+            api_path = urllib.parse.urlsplit(session.get("apiUrl", "")).path or "/jmap"
+            query = {
+                "using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"],
+                "methodCalls": [["Email/query", {
+                    "accountId": account_id,
+                    "filter": {"subject": marker},
+                    "limit": 100,
+                }, "query"]],
+            }
+            status, _, body = request_json(config, mailbox, "POST", api_path, query)
+            if status != 200:
+                if account:
+                    failures.append("JMAP could not locate a delivered test message for cleanup")
+                continue
+            responses = json.loads(body).get("methodResponses", [])
+            ids = []
+            query_succeeded = False
+            for name, result, _ in responses:
+                if name == "Email/query":
+                    ids = result.get("ids", [])
+                    query_succeeded = True
+                    break
+            if not query_succeeded:
+                if account:
+                    failures.append("JMAP did not return an Email/query result for cleanup")
+                continue
+            key = (account_id, tuple(ids))
+            if not ids or key in seen:
+                continue
+            seen.add(key)
+            destroy = {
+                "using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"],
+                "methodCalls": [["Email/set", {
+                    "accountId": account_id,
+                    "destroy": ids,
+                }, "destroy"]],
+            }
+            status, _, body = request_json(config, mailbox, "POST", api_path, destroy)
+            if status != 200:
+                failures.append("JMAP rejected deletion of a test message")
+                continue
+            responses = json.loads(body).get("methodResponses", [])
+            result = next((value for name, value, _ in responses if name == "Email/set"), {})
+            destroyed = set(result.get("destroyed", []))
+            if set(ids) - destroyed:
+                failures.append("JMAP did not delete every test message")
+        except (OSError, http.client.HTTPException, ValueError) as error:
+            failures.append("JMAP test-message cleanup failed: " + str(error))
+    if failures:
+        raise RuntimeError("; ".join(failures))
+
+
 def request_json(config, account, method, path, payload=None):
     token = base64.b64encode((account + ":" + config["password"]).encode()).decode()
     headers = {

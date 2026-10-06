@@ -1,0 +1,17 @@
+---
+- name: Validate the authenticated Meilisearch API
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': meilisearch_kubeconfig,
+        'namespace': meilisearch_namespace,
+        'service': meilisearch_service_name,
+        'remote_port': 7700,
+        'path': '/indexes?limit=1',
+        'headers': {'Authorization': 'Bearer ' ~ private_cloud_secrets.meilisearch.master_key},
+        'json_keys': ['results']
+      } | to_json }}
+  register: meilisearch_validation_api
+  changed_when: false
+  no_log: true

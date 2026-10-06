@@ -1,0 +1,98 @@
+---
+- name: Calculate expected PostgreSQL shared buffers for validation
+  ansible.builtin.set_fact:
+    postgres_shared_buffers_bytes: "{{ (((private_cloud.postgres.max_ram | private_cloud_ram_bytes) / 4) | int) }}"
+
+- name: Find the PostgreSQL pod for validation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ postgres_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ postgres_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=postgres
+  register: postgres_validation_pods
+  until:
+    - postgres_validation_pods.resources | length > 0
+    - postgres_validation_pods.resources[0].status.containerStatuses | default([]) | selectattr('ready', 'equalto', true) | list | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Verify PostgreSQL accepts a TCP client query
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ postgres_kubeconfig }}"
+    namespace: "{{ postgres_namespace }}"
+    pod: "{{ postgres_validation_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -v ON_ERROR_STOP=1 -At
+      -U "$POSTGRES_USER" -d postgres -c "SELECT 1;"'
+  register: postgres_validation_tcp_query
+  changed_when: false
+  no_log: true
+
+- name: Require a successful PostgreSQL TCP query
+  ansible.builtin.assert:
+    that: postgres_validation_tcp_query.stdout | trim == '1'
+    fail_msg: PostgreSQL did not return the expected result to a TCP client query.
+
+- name: Read PostgreSQL extension versions
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ postgres_kubeconfig }}"
+    namespace: "{{ postgres_namespace }}"
+    pod: "{{ postgres_validation_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT COALESCE((SELECT extversion FROM pg_extension WHERE extname = 'vector'), 'absent')
+      || '|' || COALESCE((SELECT extversion FROM pg_extension WHERE extname = 'vchord'), 'absent');"
+  register: postgres_validation_extensions
+  changed_when: false
+
+- name: Require the shared PostgreSQL extensions
+  ansible.builtin.assert:
+    that:
+      - postgres_validation_extensions.stdout | trim == (postgres_pgvector_version ~ '|' ~ postgres_vectorchord_version)
+    fail_msg: PostgreSQL does not have the configured pgvector and VectorChord versions enabled.
+
+- name: Read effective PostgreSQL tuning
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ postgres_kubeconfig }}"
+    namespace: "{{ postgres_namespace }}"
+    pod: "{{ postgres_validation_pods.resources[0].metadata.name }}"
+    command: >-
+      psql -At -U postgres -d postgres -c
+      "SELECT pg_size_bytes(current_setting('shared_buffers')), current_setting('full_page_writes'),
+      current_setting('wal_compression'), current_setting('wal_init_zero'), current_setting('wal_recycle'),
+      current_setting('data_checksums');"
+  register: postgres_validation_settings
+  changed_when: false
+
+- name: Require effective PostgreSQL tuning
+  ansible.builtin.assert:
+    that:
+      - postgres_validation_settings.stdout | trim == ((postgres_shared_buffers_bytes | string) + '|off|off|off|off|off')
+    fail_msg: Effective PostgreSQL tuning does not match the configured memory and durability settings.
+
+- name: Read PostgreSQL ZFS tuning
+  ansible.builtin.command: zfs get -H -o value {{ item.key }} {{ postgres_dataset }}
+  loop: "{{ postgres_zfs_properties | dict2items }}"
+  register: postgres_validation_zfs
+  changed_when: false
+
+- name: Require PostgreSQL ZFS tuning
+  ansible.builtin.assert:
+    that: item.stdout | trim == item.item.value
+    fail_msg: "PostgreSQL dataset property {{ item.item.key }} is not {{ item.item.value }}."
+  loop: "{{ postgres_validation_zfs.results }}"
+
+- name: Read PostgreSQL dataset capacity settings
+  ansible.builtin.command: zfs get -H -p -o value {{ item }} {{ postgres_dataset }}
+  loop: [quota, reservation]
+  register: postgres_validation_capacity
+  changed_when: false
+
+- name: Require PostgreSQL dataset capacity settings
+  ansible.builtin.assert:
+    that: item.stdout | int == (private_cloud.postgres.volume_size | human_to_bytes | int)
+    fail_msg: "PostgreSQL dataset {{ item.item }} does not match volume_size."
+  loop: "{{ postgres_validation_capacity.results }}"

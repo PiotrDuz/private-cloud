@@ -65,6 +65,7 @@ OpenCloud's built-in provider and directory supply shared login for Grist, AFFiN
 - Reapply to update enabled client registrations and callback hostnames.
 - Keep directory data, signing keys, and generated configuration together during recovery.
 - Restore the public configuration and Vault ciphertext from the same recovery point.
+- Restore and mount `tank/secure/backup/private-cloud-config` before reapplying.
 - The initial OpenCloud administrator password and OIDC client secrets are not rotatable through the installer.
 - Rotatable groups cover enabled service database passwords, mail credentials, Cloudflare tokens, and VPN credentials.
 - PostgreSQL, Zabbix, and OpenObserve administrator passwords and the ZFS passphrase are not rotatable.
@@ -120,7 +121,7 @@ Traefik renews HTTPS certificates automatically; Stalwart renews its SMTP STARTT
 
 ## Email alerts
 
-When notifications are enabled, Zabbix sends Warning-or-higher problems, recoveries, and hourly reminders. OpenObserve evaluates recognized warning, error, and critical logs every minute and suppresses repeated notifications for five minutes. A single matching log entry can trigger an alert.
+When notifications are enabled, Zabbix sends Warning-or-higher problems, recoveries, and hourly reminders. OpenObserve evaluates recognized warning, error, and critical logs every minute and suppresses repeated notifications for sixty minutes, matching the hourly Zabbix reminders. A single matching log entry can trigger an alert.
 
 The notifications stage sends a test message through the configured SMTP relay and confirms its arrival in the Stalwart mailbox over JMAP before the play finishes.
 

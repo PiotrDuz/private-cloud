@@ -1,0 +1,90 @@
+---
+- name: Read Zabbix server and web deployments for validation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ item }}"
+    namespace: "{{ zabbix_namespace }}"
+  loop: [zabbix-server, zabbix-web]
+  register: zabbix_validation_deployments
+  changed_when: false
+
+- name: Require Zabbix server and web deployments to be available
+  ansible.builtin.assert:
+    that:
+      - item.resources | length == 1
+      - item.resources[0].status.observedGeneration | default(0) | int >= item.resources[0].metadata.generation | int
+      - item.resources[0].status.availableReplicas | default(0) | int == 1
+      - item.resources[0].status.readyReplicas | default(0) | int == 1
+    fail_msg: "{{ item.item }} is deployed but does not have one ready replica."
+  loop: "{{ zabbix_validation_deployments.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Read Zabbix server and web service endpoints for validation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    name: "{{ item }}"
+    namespace: "{{ zabbix_namespace }}"
+  loop: [zabbix-server, zabbix-web]
+  register: zabbix_validation_endpoints
+  changed_when: false
+
+- name: Require ready Zabbix server and web service endpoints
+  ansible.builtin.assert:
+    that:
+      - item.resources | length == 1
+      - item.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0
+    fail_msg: "{{ item.item }} has no ready service endpoint."
+  loop: "{{ zabbix_validation_endpoints.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Resolve Zabbix web service for API validation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    api_version: v1
+    kind: Service
+    name: zabbix-web
+    namespace: "{{ zabbix_namespace }}"
+  register: zabbix_validation_web_service
+  changed_when: false
+
+- name: Select enabled certificate validation targets
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/observability_certificates.yml"
+
+- name: Load the enabled Zabbix dataset inventory
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/monitoring_dataset_inventory.yml"
+
+- name: Verify Zabbix application configuration
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/observability/validate_server.py"]
+    stdin: >-
+      {{ {
+        'url': 'http://' ~ zabbix_validation_web_service.resources[0].spec.clusterIP ~ '/api_jsonrpc.php',
+        'username': private_cloud.zabbix.admin_username,
+        'password': private_cloud_secrets.zabbix.admin_password,
+        'host': private_cloud_zabbix_hostname,
+        'host_group': zabbix_host_group,
+        'dashboard': zabbix_dashboard_name,
+        'datasets': private_cloud_monitored_dataset_names,
+        'template_choices': zabbix_template_choices,
+        'notifications': private_cloud.stages.notifications,
+        'logging': private_cloud.stages.logging and private_cloud.stages.zabbix_agent,
+        'certificates': observability_certificates,
+        'mail_hostname': private_cloud.stalwart.hostname,
+        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+        'from_address': private_cloud.notifications.from_address,
+        'relay': {
+          'host': private_cloud.stalwart.relay_host,
+          'port': private_cloud.stalwart.relay_port,
+          'implicit_tls': private_cloud.stalwart.relay_implicit_tls,
+          'username': private_cloud.stalwart.relay_username
+        }
+      } | to_json }}
+  register: zabbix_validation_application
+  changed_when: false
+  no_log: true

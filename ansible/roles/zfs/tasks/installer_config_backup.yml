@@ -1,0 +1,30 @@
+---
+- name: Provision the installer configuration backup dataset
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: installer-config
+    private_cloud_service_dataset: "{{ zfs_installer_config_dataset }}"
+    private_cloud_service_dataset_mountpoint: "{{ zfs_installer_config_mountpoint }}"
+    private_cloud_service_storage_size: "{{ zfs_installer_config_quota }}"
+
+- name: Restrict access to the installer configuration backup
+  ansible.builtin.file:
+    path: "{{ zfs_installer_config_mountpoint }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Persist public configuration and Vault ciphertext in the configuration dataset
+  ansible.builtin.copy:
+    src: "/run/private-cloud/{{ item.source }}"
+    dest: "{{ zfs_installer_config_mountpoint }}/{{ item.destination }}"
+    remote_src: true
+    decrypt: false
+    owner: root
+    group: root
+    mode: '0600'
+  loop:
+    - {source: public.yml, destination: private-cloud.yml}
+    - {source: private-cloud.secrets.yml, destination: private-cloud.secrets.yml}
+  no_log: true

@@ -80,7 +80,7 @@
     that:
       - stalwart_existing.results[0].resources | length == 0 or stalwart_existing.results[0].resources[0].spec.local.path == stalwart_dataset_mountpoint
       - stalwart_existing.results[0].resources | length == 0 or stalwart_existing.results[0].resources[0].spec.capacity.storage == stalwart_pv_capacity
-      - stalwart_existing.results[0].resources | length == 0 or stalwart_node_name in stalwart_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - stalwart_existing.results[0].resources | length == 0 or stalwart_node_name in stalwart_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values']
       - stalwart_existing.results[1].resources | length == 0 or stalwart_existing.results[1].resources[0].spec.resources.requests.storage == stalwart_pv_capacity
       - stalwart_existing.results[1].resources | length == 0 or stalwart_existing.results[1].resources[0].spec.volumeName == stalwart_pv_name
     fail_msg: Existing Stalwart persistent storage conflicts with the configured local storage.
@@ -209,7 +209,14 @@
 - name: Calculate the Stalwart configuration revision
   ansible.builtin.set_fact:
     stalwart_configuration_revision: >-
-      {{ (lookup('template', 'plan.ndjson.j2') ~ lookup('template', 'runtime-secret.yml.j2') ~ stalwart_image) | hash('sha256') }}
+      {{ (lookup('template', 'plan.ndjson.j2') ~
+          lookup('template', 'runtime-secret.yml.j2') ~
+          stalwart_image ~ stalwart_wait_image ~
+          stalwart_postgres_service ~ stalwart_postgres_port ~
+          lookup('file', role_path ~ '/../../../k0s-services/stalwart/templates/statefulset.yaml.j2') ~
+          lookup('file', role_path ~ '/../../../k0s-services/stalwart/templates/configmap.yaml.j2') ~
+          lookup('file', role_path ~ '/../../../k0s-services/stalwart/templates/configuration-job.yaml.j2') ~
+          lookup('file', role_path ~ '/../../../k0s-services/stalwart/wait_for_api.py')) | hash('sha256') }}
   no_log: true
 
 - name: Render Stalwart manifests from Jinja templates
@@ -336,11 +343,11 @@
       register: stalwart_plan_job
       until:
         - stalwart_plan_job.resources | length > 0
-        - stalwart_plan_job.resources[0].status.succeeded | default(0) | int == 1 or stalwart_plan_job.resources[0].status.failed | default(0) | int > 0
+        - stalwart_plan_job.resources[0].status.succeeded | default(0) | int == 1 or (stalwart_plan_job.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Failed') | selectattr('status', 'equalto', 'True') | list | length > 0)
       retries: 60
       delay: 5
       changed_when: false
-      failed_when: stalwart_plan_job.resources | length > 0 and stalwart_plan_job.resources[0].status.failed | default(0) | int > 0
+      failed_when: stalwart_plan_job.resources | length > 0 and (stalwart_plan_job.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Failed') | selectattr('status', 'equalto', 'True') | list | length > 0)
   always:
     - name: Remove temporary Stalwart configuration resources
       kubernetes.core.k8s:
@@ -420,15 +427,5 @@
       changed_when: false
   when: stalwart_configuration_required | bool
 
-- name: Wait for Stalwart service endpoint
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ stalwart_kubeconfig }}"
-    api_version: v1
-    kind: Endpoints
-    name: "{{ stalwart_endpoint_service_name }}"
-    namespace: "{{ stalwart_namespace }}"
-  register: stalwart_endpoint
-  until: stalwart_endpoint.resources | length > 0 and (stalwart_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0)
-  retries: 60
-  delay: 5
-  changed_when: false
+- name: Validate the installed Stalwart service
+  ansible.builtin.include_tasks: ../validation/main.yml

@@ -141,7 +141,9 @@
 
 - name: Resolve SMTP destinations for notification policies
   ansible.builtin.command:
-    argv: [python3, "{{ playbook_dir }}/../logging/resolve_smtp.py", "{{ private_cloud.stalwart.relay_host }}"]
+    argv: >-
+      {{ ['python3', playbook_dir ~ '/../logging/resolve_smtp.py', private_cloud.stalwart.relay_host]
+         + private_cloud.networking.local_network_cidrs }}
   register: logging_smtp_resolution
   changed_when: false
   when: private_cloud.stages.notifications | bool

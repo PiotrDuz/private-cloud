@@ -1119,7 +1119,7 @@ zabbix_export:
           delay: 1m
           history: 90d
           units: B
-          params: 'last(/ZFS by Zabbix agent active/zfs.dataset.quota["config"])-last(/ZFS by Zabbix agent active/zfs.dataset.used["config"])'
+          params: 'last(//zfs.dataset.quota["config"])-last(//zfs.dataset.used["config"])'
           tags:
             - tag: component
               value: dataset-capacity
@@ -2013,6 +2013,10 @@ zabbix_export:
                     - '$["pools"]["{#POOL.NAME}"]["last_scrub_repaired"]'
                   error_handler: CUSTOM_VALUE
                   error_handler_params: '0'
+                - type: STR_REPLACE
+                  parameters:
+                    - 'null'
+                    - '0'
               master_item:
                 key: zfs.metrics
               tags:
@@ -2036,6 +2040,10 @@ zabbix_export:
                     - '$["pools"]["{#POOL.NAME}"]["last_scrub_epoch"]'
                   error_handler: CUSTOM_VALUE
                   error_handler_params: '0'
+                - type: STR_REPLACE
+                  parameters:
+                    - 'null'
+                    - '0'
               master_item:
                 key: zfs.metrics
               tags:
@@ -2054,6 +2062,10 @@ zabbix_export:
                     - '$["pools"]["{#POOL.NAME}"]["last_scrub_age"]'
                   error_handler: CUSTOM_VALUE
                   error_handler_params: '0'
+                - type: STR_REPLACE
+                  parameters:
+                    - 'null'
+                    - '0'
               master_item:
                 key: zfs.metrics
               tags:
@@ -2077,6 +2089,10 @@ zabbix_export:
                     - '$["pools"]["{#POOL.NAME}"]["last_scrub_duration"]'
                   error_handler: CUSTOM_VALUE
                   error_handler_params: '0'
+                - type: STR_REPLACE
+                  parameters:
+                    - 'null'
+                    - '0'
               master_item:
                 key: zfs.metrics
               tags:
@@ -2094,6 +2110,10 @@ zabbix_export:
                     - '$["pools"]["{#POOL.NAME}"]["last_scrub_errors"]'
                   error_handler: CUSTOM_VALUE
                   error_handler_params: '0'
+                - type: STR_REPLACE
+                  parameters:
+                    - 'null'
+                    - '0'
               master_item:
                 key: zfs.metrics
               tags:

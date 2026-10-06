@@ -1,0 +1,30 @@
+---
+- name: Verify OpenCloud serves its configured OIDC issuer document
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': opencloud_kubeconfig,
+        'namespace': opencloud_namespace,
+        'service': opencloud_service_name,
+        'remote_port': 9200,
+        'path': '/.well-known/openid-configuration',
+        'json_keys': ['authorization_endpoint', 'token_endpoint', 'jwks_uri'],
+        'json_equal': {'issuer': 'https://' ~ private_cloud.opencloud.hostname}
+      } | to_json }}
+  register: opencloud_validation_oidc
+  changed_when: false
+
+- name: Verify OpenCloud administrator storage access
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/opencloud_storage.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': opencloud_kubeconfig,
+        'namespace': opencloud_namespace,
+        'service': opencloud_service_name,
+        'admin_username': opencloud_admin_username,
+        'remote_port': 9200
+      } | to_json }}
+  changed_when: false
+  no_log: true

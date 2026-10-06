@@ -1,0 +1,40 @@
+---
+- name: Wait for Stalwart service endpoint
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    name: "{{ stalwart_endpoint_service_name }}"
+    namespace: "{{ stalwart_namespace }}"
+  register: stalwart_endpoint
+  until: stalwart_endpoint.resources | length > 0 and (stalwart_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0)
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Validate authenticated Stalwart JMAP discovery
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': stalwart_kubeconfig,
+        'namespace': stalwart_namespace,
+        'service': stalwart_service_name,
+        'remote_port': 8080,
+        'path': '/jmap/session',
+        'headers': {'Authorization': 'Basic ' ~ ((private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain ~ ':' ~ private_cloud_secrets.stalwart.mailbox_password) | b64encode)},
+        'json_keys': ['accounts', 'apiUrl', 'capabilities']
+      } | to_json }}
+  changed_when: false
+  no_log: true
+
+- name: Validate anonymous provider forwarding and reject external SMTP relaying
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_inbound_mail.py"]
+    stdin: >-
+      {{ {
+        'address': private_cloud.networking.traefik_internal_ip,
+        'sender': private_cloud.notifications.from_address,
+        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
+      } | to_json }}
+  changed_when: false

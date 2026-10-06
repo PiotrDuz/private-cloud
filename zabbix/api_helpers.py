@@ -23,7 +23,8 @@ class ZabbixAPI:
         with urllib.request.urlopen(request, timeout=30) as response:
             result = json.load(response)
         if "error" in result or "result" not in result:
-            raise RuntimeError("Zabbix API rejected " + method + ": " + result.get("error", {}).get("message", "missing result"))
+            error = result.get("error", {})
+            raise RuntimeError(("Zabbix API rejected " + method + ": " + error.get("message", "missing result") + " " + error.get("data", "")).strip())
         return result["result"]
 
     def ensure(self, resource, identifier, desired, query, force=False):

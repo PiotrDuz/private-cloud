@@ -82,9 +82,10 @@ def check_k0s_mounts(service: str, mountpoints: list[str]) -> None:
 def _require_key_unit(mountpoint: str) -> None:
     unit = output("systemd-escape", "--path", "--suffix=mount", mountpoint).strip()
     requires = output("systemctl", "show", "--value", "-p", "Requires", unit).split()
+    binds_to = output("systemctl", "show", "--value", "-p", "BindsTo", unit).split()
     after = output("systemctl", "show", "--value", "-p", "After", unit).split()
     key_unit = "zfs-load-key@tank-secure.service"
-    if key_unit not in requires or key_unit not in after:
+    if key_unit not in requires + binds_to or key_unit not in after:
         raise CheckError(f"{unit} does not depend on {key_unit}")
 
 

@@ -4,10 +4,10 @@
     that:
       - private_cloud.grist.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.grist.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
-      - (private_cloud.grist.max_ram | human_to_bytes | int) >= 536870912
+      - (private_cloud.grist.max_ram | private_cloud_ram_bytes | int) >= 536870912
       - grist_database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
       - grist_database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
-      - private_cloud.grist.default_email is match('^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$')
+      - private_cloud.grist.default_email is match('^[^@\s]+@[^@\s]+\.[^@\s]+$')
       - private_cloud.grist.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
       - private_cloud_secrets.grist.database_password | length > 0
       - private_cloud_secrets.grist.session_secret | length >= 32
@@ -82,7 +82,7 @@
     that:
       - grist_existing.results[0].resources | length == 0 or grist_existing.results[0].resources[0].spec.local.path == grist_dataset_mountpoint
       - grist_existing.results[0].resources | length == 0 or grist_existing.results[0].resources[0].spec.capacity.storage == grist_pv_capacity
-      - grist_existing.results[0].resources | length == 0 or grist_node_name in grist_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - grist_existing.results[0].resources | length == 0 or grist_node_name in grist_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values']
       - grist_existing.results[1].resources | length == 0 or grist_existing.results[1].resources[0].spec.resources.requests.storage == grist_pv_capacity
       - grist_existing.results[1].resources | length == 0 or grist_existing.results[1].resources[0].spec.volumeName == grist_pv_name
     fail_msg: Existing Grist persistent storage conflicts with the configured local storage.
@@ -287,3 +287,6 @@
   retries: 90
   delay: 5
   changed_when: false
+
+- name: Validate Grist after installation
+  ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

@@ -63,6 +63,14 @@ def configure_prowlarr(client, name, key):
     return client.upsert('/applications', name.title(), 'private-cloud-' + name, fields, {'syncLevel': 'fullSync'})
 
 
+def _connection_state_without_write_only_values(connection):
+    state = copy.deepcopy(connection)
+    for field in state.get('fields', []):
+        if field.get('name') in {'password', 'apiKey'}:
+            field.pop('value', None)
+    return state
+
+
 def read_api_key(path):
     for attempt in range(30):
         try:
@@ -155,8 +163,13 @@ class Arr:
             raise RuntimeError('ARR schema is missing a managed field')
         for field, value in fields.items():
             available[field]['value'] = value
-        changed = existing != desired
-        if changed:
+        changed = (
+            existing is None
+            or _connection_state_without_write_only_values(existing)
+            != _connection_state_without_write_only_values(desired)
+        )
+        has_write_only_fields = any(field in {'password', 'apiKey'} for field in fields)
+        if changed or has_write_only_fields:
             route_id = route + '/' + str(existing['id']) if existing else route
             self.request('PUT' if existing else 'POST', route_id, desired)
         stored = next(item for item in self.request('GET', route) if item['name'] == name)

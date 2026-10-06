@@ -79,7 +79,7 @@
     that:
       - opencloud_existing.results[0].resources | length == 0 or opencloud_existing.results[0].resources[0].spec.local.path == opencloud_dataset_mountpoint
       - opencloud_existing.results[0].resources | length == 0 or opencloud_existing.results[0].resources[0].spec.capacity.storage == opencloud_pv_capacity
-      - opencloud_existing.results[0].resources | length == 0 or opencloud_node_name in opencloud_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - opencloud_existing.results[0].resources | length == 0 or opencloud_node_name in opencloud_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values']
       - opencloud_existing.results[1].resources | length == 0 or opencloud_existing.results[1].resources[0].spec.resources.requests.storage == opencloud_pv_capacity
       - opencloud_existing.results[1].resources | length == 0 or opencloud_existing.results[1].resources[0].spec.volumeName == opencloud_pv_name
     fail_msg: Existing OpenCloud persistent storage conflicts with the configured local storage.
@@ -90,7 +90,7 @@
       - opencloud_existing.results[2].resources | length > 0
       - opencloud_existing.results[2].resources[0].spec.local.path == opencloud_bleve_dataset_mountpoint
       - opencloud_existing.results[2].resources[0].spec.capacity.storage == opencloud_pv_capacity
-      - opencloud_node_name in opencloud_existing.results[2].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - opencloud_node_name in opencloud_existing.results[2].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values']
       - opencloud_existing.results[3].resources | length > 0
       - opencloud_existing.results[3].resources[0].spec.volumeName == opencloud_bleve_pv_name
       - opencloud_existing.results[3].resources[0].status.phase | default('') == 'Bound'
@@ -228,3 +228,6 @@
   retries: 60
   delay: 5
   changed_when: false
+
+- name: Validate OpenCloud after installation
+  ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

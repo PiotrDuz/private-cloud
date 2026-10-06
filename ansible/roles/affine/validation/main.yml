@@ -1,0 +1,45 @@
+---
+- name: Verify AFFiNE serves its configured site
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': affine_kubeconfig,
+        'namespace': affine_namespace,
+        'service': affine_service_name,
+        'remote_port': 3010,
+        'path': '/info',
+        'status_codes': [200, 301, 302, 303]
+      } | to_json }}
+  register: affine_validation_site
+  changed_when: false
+
+- name: Find the AFFiNE database pod for extension validation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ affine_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=postgres
+  register: affine_validation_postgres_pods
+  until:
+    - affine_validation_postgres_pods.resources | length > 0
+    - affine_validation_postgres_pods.resources[0].status.containerStatuses | default([]) | selectattr('ready', 'equalto', true) | list | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Read the AFFiNE database vector extension version
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    namespace: "{{ affine_namespace }}"
+    pod: "{{ affine_validation_postgres_pods.resources[0].metadata.name }}"
+    command: psql -At -U postgres -d {{ affine_database_name }} -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';"
+  register: affine_validation_pgvector
+  changed_when: false
+
+- name: Require the configured AFFiNE vector extension
+  ansible.builtin.assert:
+    that: affine_validation_pgvector.stdout | trim == affine_pgvector_version
+    fail_msg: The AFFiNE database does not have the configured pgvector extension enabled.

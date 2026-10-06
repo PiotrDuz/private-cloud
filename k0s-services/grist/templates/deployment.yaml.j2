@@ -63,18 +63,18 @@ spec:
             requests: {cpu: 250m, memory: {{ private_cloud.grist.max_ram | to_json }}, ephemeral-storage: 256Mi}
             limits: {memory: {{ private_cloud.grist.max_ram | to_json }}, ephemeral-storage: 2Gi}
           startupProbe:
-            httpGet: {path: /, port: http}
+            httpGet: {path: /status, port: http}
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 30
           readinessProbe:
-            httpGet: {path: /, port: http}
+            httpGet: {path: /status, port: http}
             initialDelaySeconds: 20
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 30
           livenessProbe:
-            httpGet: {path: /, port: http}
+            httpGet: {path: /status, port: http}
             initialDelaySeconds: 60
             periodSeconds: 30
             timeoutSeconds: 5

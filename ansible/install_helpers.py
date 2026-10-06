@@ -23,8 +23,10 @@ except ImportError as error:  # pragma: no cover - exercised on an incomplete ho
 
 POOL_NAME = "tank"
 RUNTIME_DIRECTORY = Path("/run/private-cloud")
-PUBLIC_CONFIGURATION = Path(__file__).resolve().parent / "config" / "private-cloud.yml"
-SECRETS_CONFIGURATION = Path(__file__).resolve().parent / "config" / "private-cloud.secrets.yml"
+CONFIGURATION_DATASET = "tank/secure/backup/private-cloud-config"
+CONFIGURATION_DIRECTORY = Path("/tank/secure/backup/private-cloud-config")
+PUBLIC_CONFIGURATION = CONFIGURATION_DIRECTORY / "private-cloud.yml"
+SECRETS_CONFIGURATION = CONFIGURATION_DIRECTORY / "private-cloud.secrets.yml"
 EXAMPLE_CONFIGURATION = Path(__file__).resolve().parent / "config" / "private-cloud.example.yml"
 INVENTORY = Path(__file__).resolve().parent / "inventory" / "hosts.yml"
 PLAYBOOK = Path(__file__).resolve().parent / "site.yml"
@@ -35,13 +37,14 @@ VAULT_PASSWORD_FILE = RUNTIME_DIRECTORY / "vault-password"
 OLD_VAULT_PASSWORD_FILE = RUNTIME_DIRECTORY / "old-vault-password"
 TEMP_SECRET_FILE = RUNTIME_DIRECTORY / "secrets.yml"
 TEMP_PUBLIC_FILE = RUNTIME_DIRECTORY / "public.yml"
+TEMP_ENCRYPTED_FILE = RUNTIME_DIRECTORY / "private-cloud.secrets.yml"
 TEMP_RUNTIME_FILE = RUNTIME_DIRECTORY / "runtime.yml"
 KUBECONFIG_FILE = RUNTIME_DIRECTORY / "kubeconfig"
 INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
 SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate", "validate")
-CURRENT_SCHEMA_VERSION = 9
-CURRENT_SECRETS_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 10
+CURRENT_SECRETS_SCHEMA_VERSION = 6
 SECRET_SCHEMAS = {
     "storage": {"encryption_passphrase"},
     "postgres": {"admin_password"},
@@ -106,7 +109,7 @@ def ensure_runtime_directory(path: Path = RUNTIME_DIRECTORY) -> None:
 
 
 def remove_stale_runtime_files(path: Path = RUNTIME_DIRECTORY) -> None:
-    for name in (TEMP_SECRET_FILE.name, TEMP_PUBLIC_FILE.name, TEMP_RUNTIME_FILE.name, VAULT_PASSWORD_FILE.name, OLD_VAULT_PASSWORD_FILE.name, KUBECONFIG_FILE.name):
+    for name in (TEMP_SECRET_FILE.name, TEMP_PUBLIC_FILE.name, TEMP_ENCRYPTED_FILE.name, TEMP_RUNTIME_FILE.name, VAULT_PASSWORD_FILE.name, OLD_VAULT_PASSWORD_FILE.name, KUBECONFIG_FILE.name):
         candidate = path / name
         if candidate.exists() or candidate.is_symlink():
             details = candidate.lstat()
@@ -115,6 +118,17 @@ def remove_stale_runtime_files(path: Path = RUNTIME_DIRECTORY) -> None:
             if details.st_uid != 0:
                 raise InstallerError(f"Runtime entry is not root-owned: {candidate}")
             candidate.unlink()
+
+
+def require_configuration_dataset() -> None:
+    require_commands(["zfs"])
+    result = subprocess.run(
+        ["zfs", "get", "-H", "-o", "property,value", "mounted,mountpoint", CONFIGURATION_DATASET],
+        check=False, capture_output=True, text=True,
+    )
+    properties = dict(line.split("\t", 1) for line in result.stdout.splitlines() if "\t" in line)
+    if result.returncode != 0 or properties.get("mounted") != "yes" or properties.get("mountpoint") != str(CONFIGURATION_DIRECTORY):
+        raise InstallerError(f"Restore, unlock, and mount {CONFIGURATION_DATASET} at {CONFIGURATION_DIRECTORY} before running the installer")
 
 
 def atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
@@ -234,18 +248,20 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if any(stages[stage] and not all(stages[dependency] for dependency in required) for stage, required in dependencies.items()):
         raise InstallerError("Enabled stages must follow the dependency chain")
     storage = cloud["storage"]
-    if not isinstance(storage, dict) or set(storage) != {"disks"}:
+    if not isinstance(storage, dict) or set(storage) != {"disks", "arc_max"}:
         raise InstallerError("Storage configuration has missing or unknown keys")
+    if not RAM_PATTERN.fullmatch(str(storage.get("arc_max", ""))) or ram_to_bytes(storage["arc_max"]) < 268435456:
+        raise InstallerError("storage.arc_max must be at least 256Mi")
     disks = storage.get("disks") if isinstance(storage, dict) else None
     if not isinstance(disks, list) or any(not isinstance(disk, str) for disk in disks):
         raise InstallerError("storage.disks must be a list of paths")
     if stages["zfs"]:
         if len(disks) < 2 or len(set(disks)) != len(disks):
             raise InstallerError("At least two unique disks are required for ZFS")
-        if any(not re.fullmatch(r"/dev/disk/by-id/[A-Za-z0-9_.:+-]+", disk) for disk in disks):
-            raise InstallerError("ZFS disks must use stable /dev/disk/by-id paths")
+        if any(not re.fullmatch(r"/dev/disk/by-(?:id|path)/[A-Za-z0-9_.:+-]+", disk) for disk in disks):
+            raise InstallerError("ZFS disks must use stable /dev/disk/by-id or /dev/disk/by-path paths")
     k0s = cloud["k0s"]
-    if not isinstance(k0s, dict) or set(k0s) != {"config_quota", "images_quota", "ephemeral_quota"}:
+    if not isinstance(k0s, dict) or set(k0s) != {"config_quota", "images_quota", "ephemeral_quota", "host_reserve_ram"}:
         raise InstallerError("k0s configuration has missing or unknown keys")
     for key in ("config_quota", "images_quota", "ephemeral_quota"):
         if not isinstance(k0s, dict) or not isinstance(k0s.get(key), str) or not k0s[key]:
@@ -253,8 +269,10 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     for key in ("config_quota", "images_quota", "ephemeral_quota"):
         if not QUOTA_PATTERN.fullmatch(k0s[key]):
             raise InstallerError(f"Invalid k0s.{key}")
+    if not RAM_PATTERN.fullmatch(str(k0s.get("host_reserve_ram", ""))) or ram_to_bytes(k0s["host_reserve_ram"]) < ram_to_bytes(storage["arc_max"]) + 1073741824:
+        raise InstallerError("k0s.host_reserve_ram must cover ZFS ARC and at least 1Gi for host services")
     networking = cloud["networking"]
-    expected_networking = {"storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "managed_records", "pod_cidr", "service_cidr", "cluster_dns_ip", "local_network_cidrs", "traefik_internal_ip", "zabbix_hostname", "amneziawg"}
+    expected_networking = {"storage_size", "acme_email", "acme_directory_url", "cloudflare_api_url", "cloudflare_zone_id", "public_ip_url", "managed_records", "pod_cidr", "service_cidr", "cluster_dns_ip", "local_network_cidrs", "traefik_internal_ip", "zabbix_hostname", "amneziawg"}
     if not isinstance(networking, dict) or set(networking) != expected_networking:
         raise InstallerError("Networking configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(networking.get("storage_size", ""))):
@@ -267,6 +285,10 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Invalid networking.cloudflare_zone_id")
     if not re.fullmatch(r"https://[^\s/]+(?:/[^\s]*)?", str(networking.get("public_ip_url", ""))):
         raise InstallerError("Invalid networking.public_ip_url")
+    if not re.fullmatch(r"https://[^\s/]+(?:/[^\s]*)?", str(networking.get("acme_directory_url", ""))):
+        raise InstallerError("Invalid networking.acme_directory_url")
+    if not re.fullmatch(r"https://[^\s/]+(?:/[^\s]*)?", str(networking.get("cloudflare_api_url", ""))):
+        raise InstallerError("Invalid networking.cloudflare_api_url")
     managed_records = networking.get("managed_records")
     if not isinstance(managed_records, list) or not managed_records or len(managed_records) != len(set(managed_records)):
         raise InstallerError("Cloudflare managed records must be a non-empty unique list")
@@ -326,12 +348,19 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
             if rule["protocol"] not in {"TCP", "UDP"} or type(rule["port"]) is not int or not 1 <= rule["port"] <= 65535:
                 raise InstallerError("Invalid AmneziaWG LAN protocol or port")
     media = cloud["media"]
-    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "timezone", "quality_profiles", "openvpn"}:
+    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "timezone", "quality_profiles", "openvpn", "max_ram"}:
         raise InstallerError("Media configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(media.get("storage_size", ""))) or not DOMAIN_PATTERN.fullmatch(str(media.get("hostname", ""))):
         raise InstallerError("Invalid media storage size or hostname")
+    if quota_to_bytes(media["storage_size"]) <= 2 * 1024 ** 3:
+        raise InstallerError("Media dataset quota must exceed 2GiB for Jellyfin startup")
     if not isinstance(media.get("timezone"), str) or not re.fullmatch(r"[A-Za-z_+-]+/[A-Za-z_+/-]+", media["timezone"]):
         raise InstallerError("Invalid media.timezone")
+    media_memory = media.get("max_ram")
+    if not isinstance(media_memory, dict) or set(media_memory) != {"sonarr", "radarr", "prowlarr", "qbittorrent", "jellyfin", "openvpn", "vpn_route", "dns", "file_logs"}:
+        raise InstallerError("Media memory configuration is incomplete")
+    if any(not RAM_PATTERN.fullmatch(str(value)) or ram_to_bytes(value) < 33554432 for value in media_memory.values()):
+        raise InstallerError("Every media memory limit must be at least 32Mi")
     quality_profiles = media.get("quality_profiles")
     if not isinstance(quality_profiles, dict) or set(quality_profiles) != {"sonarr", "radarr"}:
         raise InstallerError("Media quality profile configuration is incomplete")
@@ -379,8 +408,8 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("OnlyOffice configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(onlyoffice.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(onlyoffice.get("max_ram", ""))):
         raise InstallerError("Invalid OnlyOffice size configuration")
-    if ram_to_bytes(onlyoffice["max_ram"]) < 4294967296:
-        raise InstallerError("OnlyOffice max_ram must be at least 4Gi")
+    if ram_to_bytes(onlyoffice["max_ram"]) < 2147483648:
+        raise InstallerError("OnlyOffice max_ram must be at least 2Gi")
     if not isinstance(onlyoffice.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(onlyoffice["hostname"]):
         raise InstallerError("Invalid onlyoffice.hostname")
     opencloud = cloud["opencloud"]
@@ -424,7 +453,7 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     for key in ("max_ram",):
         if not RAM_PATTERN.fullmatch(str(affine.get(key, ""))):
             raise InstallerError(f"Invalid affine.{key}")
-    if ram_to_bytes(affine["max_ram"]) < 2147483648:
+    if ram_to_bytes(affine["max_ram"]) < 1073741824:
         raise InstallerError("AFFiNE memory limit is too small")
     if not isinstance(affine.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(affine["hostname"]):
         raise InstallerError("Invalid affine.hostname")
@@ -437,7 +466,7 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     for key in ("max_ram", "machine_learning_max_ram", "valkey_max_ram"):
         if not RAM_PATTERN.fullmatch(str(immich.get(key, ""))):
             raise InstallerError(f"Invalid immich.{key}")
-    if ram_to_bytes(immich["max_ram"]) < 2147483648 or ram_to_bytes(immich["machine_learning_max_ram"]) < 1073741824 or ram_to_bytes(immich["valkey_max_ram"]) < 134217728:
+    if ram_to_bytes(immich["max_ram"]) < 1073741824 or ram_to_bytes(immich["machine_learning_max_ram"]) < 1073741824 or ram_to_bytes(immich["valkey_max_ram"]) < 134217728:
         raise InstallerError("Immich memory limits are too small")
     if immich.get("machine_learning_accelerator") not in {"cpu", "openvino"}:
         raise InstallerError("Invalid immich.machine_learning_accelerator")
@@ -501,8 +530,8 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         value = logging[service + "_max_ram"]
         if not RAM_PATTERN.fullmatch(str(value)) or ram_to_bytes(value) < minimum:
             raise InstallerError(f"Invalid logging.{service}_max_ram")
-    if type(logging["retention_days"]) is not int or not 1 <= logging["retention_days"] <= 365:
-        raise InstallerError("Logging retention_days must be between 1 and 365")
+    if type(logging["retention_days"]) is not int or not 3 <= logging["retention_days"] <= 365:
+        raise InstallerError("Logging retention_days must be between 3 and 365")
     notifications = cloud["notifications"]
     if not isinstance(notifications, dict) or set(notifications) != {"from_address"} or not EMAIL_PATTERN.fullmatch(str(notifications["from_address"])):
         raise InstallerError("Invalid notifications.from_address")
@@ -611,11 +640,14 @@ def run_command(
     if environment:
         command_environment.update(environment)
     try:
-        return subprocess.run(list(args), input=input_text, text=True, check=True, capture_output=True, env=command_environment)
+        result = subprocess.run(list(args), input=input_text, text=True, check=True, capture_output=True, env=command_environment)
+        if stage in {"ansible-playbook", "validation"}:
+            _write_command_log(args, result.stdout, result.stderr)
+        return result
     except (OSError, subprocess.CalledProcessError) as error:
         stdout = getattr(error, "stdout", "") or ""
         stderr = getattr(error, "stderr", "") or ""
-        log_path = _write_command_failure_log(args, stdout, stderr)
+        log_path = _write_command_log(args, stdout, stderr)
         failed_stage, failed_task, detail = _summarize_command_failure(args[0], stdout, stderr, stage)
         raise InstallerError(
             f"Command failed; stage={failed_stage}; task={failed_task}; error={detail}; detailed_log={log_path}"
@@ -693,6 +725,10 @@ def redact_secrets(configuration: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
+def quota_to_bytes(value: str) -> int:
+    return int(value[:-1]) * 1024 ** ("KMGTPE".index(value[-1]) + 1)
+
+
 def ram_to_bytes(value: str) -> int:
     units = {"Ki": 1024, "Mi": 1024 ** 2, "Gi": 1024 ** 3, "Ti": 1024 ** 4}
     return int(value[:-2]) * units[value[-2:]]
@@ -700,7 +736,7 @@ def ram_to_bytes(value: str) -> int:
 
 
 
-def _write_command_failure_log(args: Sequence[str], stdout: str, stderr: str) -> Path:
+def _write_command_log(args: Sequence[str], stdout: str, stderr: str) -> Path:
     ensure_runtime_directory()
     if INSTALLER_LOG.is_symlink():
         raise InstallerError(f"Unsafe symbolic-link installer log: {INSTALLER_LOG}")
@@ -717,7 +753,9 @@ def _write_command_failure_log(args: Sequence[str], stdout: str, stderr: str) ->
 
 
 def _summarize_command_failure(command: str, stdout: str, stderr: str, stage: str | None) -> tuple[str, str, str]:
-    task_matches = re.findall(r"(?m)^TASK \[([^]]+)]", stdout)
+    failure_match = re.search(r"(?m)^fatal: .*?FAILED! =>", stdout)
+    task_output = stdout[:failure_match.start()] if failure_match else stdout
+    task_matches = re.findall(r"(?m)^TASK \[([^]]+)]", task_output)
     task = task_matches[-1] if task_matches else command
     inferred_stage = task.split(" : ", 1)[0] if " : " in task else stage or command
     failure_lines = re.findall(r"(?m)^fatal: .*?FAILED! => (.+)$", stdout)

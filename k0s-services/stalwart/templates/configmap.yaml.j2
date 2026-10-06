@@ -6,11 +6,13 @@ metadata:
   labels:
     app.kubernetes.io/name: stalwart
 data:
+  wait_for_api.py: |
+{{ lookup('file', role_path ~ '/../../../k0s-services/stalwart/wait_for_api.py') | indent(4, true) }}
   config.json: |
     {
       "@type": "PostgreSql",
-      "host": "postgres",
-      "port": 5432,
+      "host": {{ stalwart_postgres_service | to_json }},
+      "port": {{ stalwart_postgres_port }},
       "database": "stalwart",
       "authUsername": "stalwart",
       "authSecret": {

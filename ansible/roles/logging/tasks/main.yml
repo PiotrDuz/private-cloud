@@ -157,3 +157,6 @@
   register: logging_openobserve_provision
   changed_when: (logging_openobserve_provision.stdout | from_json).changed
   no_log: true
+
+- name: Validate the logging services
+  ansible.builtin.import_tasks: ../validation/main.yml

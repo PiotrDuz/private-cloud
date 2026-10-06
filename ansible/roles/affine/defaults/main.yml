@@ -10,5 +10,5 @@ affine_dataset_mountpoint: /tank/secure/backup/k0s/services/affine
 affine_pv_name: affine-data
 affine_pvc_name: affine-data
 affine_pv_capacity: 10Ti
-affine_pgvector_version: 0.8.1
+affine_pgvector_version: 0.8.2
 affine_kubeconfig: /run/private-cloud/kubeconfig

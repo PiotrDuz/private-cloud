@@ -1,0 +1,205 @@
+---
+- name: Wait for the media VPN and application deployments
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ media_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    namespace: media
+    name: "{{ item }}"
+  loop: [media-vpn, sonarr, radarr, prowlarr, qbittorrent, jellyfin]
+  register: media_validation_deployments
+  until:
+    - media_validation_deployments.resources | default([]) | length == 1
+    - media_validation_deployments.resources[0].status.observedGeneration | default(0) | int >= media_validation_deployments.resources[0].metadata.generation | int
+    - media_validation_deployments.resources[0].status.updatedReplicas | default(0) | int == media_validation_deployments.resources[0].spec.replicas | int
+    - media_validation_deployments.resources[0].status.availableReplicas | default(0) | int == media_validation_deployments.resources[0].spec.replicas | int
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Resolve the media service endpoints
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ media_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    namespace: media
+    name: "{{ item }}"
+  loop: [media-vpn, sonarr, radarr, prowlarr, qbittorrent, jellyfin]
+  register: media_validation_endpoints
+  changed_when: false
+
+- name: Require ready endpoints for the media services
+  ansible.builtin.assert:
+    that:
+      - item.resources | length == 1
+      - item.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0
+    fail_msg: "The media service {{ item.item }} has no ready endpoints."
+  loop: "{{ media_validation_endpoints.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Verify the OpenVPN tunnel is active
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, media, deployment/media-vpn, -c, openvpn, --, ip, link, show, tun0]
+  register: media_validation_openvpn_tunnel
+  changed_when: false
+
+- name: Require the OpenVPN tun0 interface
+  ansible.builtin.assert:
+    that: media_validation_openvpn_tunnel.stdout is search('tun0')
+    fail_msg: The media VPN container has no active tun0 interface.
+
+- name: Read media gateway process capabilities
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ media_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    namespace: media
+    name: media-vpn
+  register: media_validation_gateway
+  changed_when: false
+
+- name: Require Gluetun to signal its nonroot OpenVPN process
+  ansible.builtin.assert:
+    that:
+      - media_validation_gateway.resources | length == 1
+      - >-
+        'KILL' in
+        (media_validation_gateway.resources[0].spec.template.spec.containers
+        | selectattr('name', 'equalto', 'openvpn')
+        | map(attribute='securityContext.capabilities.add') | first)
+    fail_msg: The media gateway cannot signal its nonroot OpenVPN process during recovery.
+
+- name: Verify each ARR tun2socks process is attached to its only TUN device
+  ansible.builtin.command:
+    argv:
+      - k0s
+      - kubectl
+      - exec
+      - -n
+      - media
+      - "deployment/{{ item }}"
+      - -c
+      - vpn-route
+      - --
+      - /bin/sh
+      - -ec
+      - |
+        set -- $(ip tuntap show | awk -F: 'NF {print $1}')
+        [ "$#" -eq 1 ] || exit 1
+        [ "$1" = tun0 ] || exit 1
+        for comm in /proc/[0-9]*/comm; do
+          [ -r "$comm" ] || continue
+          [ "$(cat "$comm" 2>/dev/null)" = tun2socks ] || continue
+          pid=${comm#/proc/}
+          pid=${pid%/comm}
+          for fdinfo in /proc/"$pid"/fdinfo/*; do
+            grep -Eq '^iff:[[:space:]]*tun0$' "$fdinfo" && exit 0
+          done
+        done
+        exit 1
+  loop: [sonarr, radarr, prowlarr, qbittorrent]
+  changed_when: false
+
+- name: Verify qBittorrent's configured and active tunnel routes
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, media, deployment/qbittorrent, -c, vpn-route, --, ip, route, get, 1.1.1.1]
+  register: media_validation_qbittorrent_route
+  changed_when: false
+
+- name: Require qBittorrent's default route through tun0
+  ansible.builtin.assert:
+    that: media_validation_qbittorrent_route.stdout is search('dev tun0')
+    fail_msg: qBittorrent traffic is not routed through its TUN interface.
+
+- name: Read the qBittorrent interface binding
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, media, deployment/qbittorrent, -c, qbittorrent, --, cat, /config/qBittorrent/qBittorrent.conf]
+  register: media_validation_qbittorrent_configuration
+  changed_when: false
+  no_log: true
+
+- name: Require qBittorrent bound to tun0
+  ansible.builtin.assert:
+    that:
+      - "'Session\\Interface=tun0' in media_validation_qbittorrent_configuration.stdout"
+      - "'Session\\InterfaceName=tun0' in media_validation_qbittorrent_configuration.stdout"
+    fail_msg: qBittorrent has lost its tun0 interface binding.
+  no_log: true
+
+- name: Read the ARR application process UIDs
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, media, "deployment/{{ item }}", -c, "{{ item }}", --, id, -u]
+  loop: [sonarr, radarr, prowlarr, qbittorrent]
+  register: media_validation_arr_uids
+  changed_when: false
+
+- name: Require rootless ARR application containers
+  ansible.builtin.assert:
+    that: item.stdout | trim == '1000'
+    fail_msg: "{{ item.item }} is not running as UID 1000."
+  loop: "{{ media_validation_arr_uids.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Resolve ARR service addresses for API validation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ media_kubeconfig }}"
+    api_version: v1
+    kind: Service
+    namespace: media
+    name: "{{ item }}"
+  loop: [sonarr, radarr, prowlarr]
+  register: media_validation_arr_services
+  changed_when: false
+
+- name: Validate the configured ARR APIs and managed integration settings
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/media/check_arr.py"]
+    stdin: >-
+      {{ {
+        'addresses': dict(media_validation_arr_services.results | map(attribute='item') | zip(media_validation_arr_services.results | map(attribute='resources') | map('first') | map(attribute='spec.clusterIP'))),
+        'datasets': media_datasets,
+        'quality_profiles': private_cloud.media.quality_profiles
+      } | to_json }}
+  changed_when: false
+  no_log: true
+
+- name: Read the Jellyfin pod resource configuration
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ media_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    namespace: media
+    name: jellyfin
+  register: media_validation_jellyfin
+  changed_when: false
+
+- name: Require the configured Jellyfin memory limit and accelerator mode
+  ansible.builtin.assert:
+    that:
+      - media_validation_jellyfin.resources | length == 1
+      - media_validation_jellyfin.resources[0].spec.template.spec.containers | selectattr('name', 'equalto', 'jellyfin') | map(attribute='resources') | map(attribute='limits') | map(attribute='memory') | first == private_cloud.media.max_ram.jellyfin
+      - >-
+        ('gpu.intel.com/i915' in
+         (media_validation_jellyfin.resources[0].spec.template.spec.containers |
+          selectattr('name', 'equalto', 'jellyfin') | map(attribute='resources') |
+          map(attribute='requests') | first | default({}))) ==
+        (private_cloud.stages.intel_gpu | bool)
+    fail_msg: Jellyfin memory or Intel GPU configuration does not match the global settings.
+
+- name: Validate Jellyfin's public server API
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {'kubeconfig': media_kubeconfig, 'namespace': 'media', 'service': 'jellyfin',
+          'remote_port': 8096, 'path': '/System/Info/Public',
+          'json_keys': ['Version', 'ProductName', 'ServerName']} | to_json }}
+  changed_when: false
+
+- name: Verify Jellyfin can encode a short CPU video frame
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, media, deployment/jellyfin, --, /usr/lib/jellyfin-ffmpeg/ffmpeg,
+           -hide_banner, -loglevel, error, -f, lavfi, -i, 'color=c=black:s=32x32:r=1',
+           -t, '1', -c:v, libx264, -f, 'null', '-']
+  changed_when: false

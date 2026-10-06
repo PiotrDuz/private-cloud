@@ -7,6 +7,8 @@ metadata:
     app.kubernetes.io/name: immich-machine-learning
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: immich-machine-learning
@@ -17,6 +19,7 @@ spec:
     spec:
       serviceAccountName: immich-machine-learning
       automountServiceAccountToken: false
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -45,13 +48,15 @@ spec:
             - {name: TZ, value: {{ private_cloud.immich.timezone | to_json }}}
             - {name: IMMICH_ENV, value: production}
             - {name: MACHINE_LEARNING_CACHE_FOLDER, value: /cache}
+            - {name: HF_HOME, value: /cache/huggingface}
+            - {name: MPLCONFIGDIR, value: /cache/matplotlib}
           ports:
             - {name: http, containerPort: 3003, protocol: TCP}
           resources:
             requests:
               cpu: 250m
               memory: {{ private_cloud.immich.machine_learning_max_ram | to_json }}
-              ephemeral-storage: 2Gi
+              ephemeral-storage: 1Gi
 {% if private_cloud.immich.machine_learning_accelerator == 'openvino' %}
               gpu.intel.com/i915: 1
 {% endif %}

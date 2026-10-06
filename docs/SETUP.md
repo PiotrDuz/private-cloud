@@ -7,6 +7,8 @@ This runbook lists work that cannot be automated in this repository. Repository 
 - [ ] Point the domain's authoritative DNS to Cloudflare before deployment.
 - [ ] Create separate zone-scoped Cloudflare tokens for DDNS, Traefik ACME, and Stalwart ACME.
 - [ ] Reserve `private_cloud.networking.traefik_internal_ip` for the host on the router.
+- [ ] Provide a physical Intel iGPU or supported PCI passthrough before enabling Intel GPU workloads.
+- [ ] Select Immich CPU acceleration and disable the Intel GPU stage on VMware Workstation.
 - [ ] Confirm the ISP provides a reachable public IPv4 address and permits inbound TCP 25.
 - [ ] Ask the ISP to publish the reverse-DNS PTR record for the public mail address.
 - [ ] Forward WAN TCP 25 and TCP 443, plus the configured AmneziaWG UDP port, to the host.
@@ -25,6 +27,7 @@ This runbook lists work that cannot be automated in this repository. Repository 
 - [ ] Confirm the forwarding alias delivers mail to `<mailbox_username>@<domain>`.
 - [ ] Send a message through the external inbox and confirm it reaches the Stalwart mailbox.
 - [ ] Verify outbound mail uses the configured inbox.eu relay and passes recipient-side authentication checks.
+- [ ] Confirm the outbound relay presents a certificate chaining to a public Mozilla-trusted CA, because OpenObserve uses compiled-in webpki roots.
 
 ## Monitoring
 
@@ -89,6 +92,32 @@ Run the installed-system validation from the repository root after deployment an
 sudo python3 ansible/install.py
 ```
 
+Installation runs the configured live validation automatically after all enabled stages finish.
+
 Choose `validate` at the mode prompt and enter the Ansible Vault password. Validation requires the existing public configuration and encrypted secrets file, and it checks enabled stages. It checks ZFS health, mounts, quotas and k0s startup ordering; cluster node and volume readiness; workload rollouts; ARR user IDs and qBittorrent's tunnel binding; OpenCloud callback acceptance; DNS lookups, trusted HTTPS routes and SMTP STARTTLS; the active host firewall; Zabbix collectors; log heartbeat ingestion; and synthetic OpenObserve and Zabbix email delivery.
 
 The validation action does not create Cloudflare credentials, configure the router, publish mail MX or TXT records, configure ISP mail routing, create user accounts, or set application UI options. The DDNS stage updates the configured public A records. Test WAN reachability, split DNS from LAN and VPN clients, real user sign-ins, Jellyfin password login, VPN isolation, and media playback manually using the acceptance checklist above.
+
+## Ephemeral VM acceptance
+
+Local mocks can exercise DNS routing, trusted HTTPS, ACME account registration and certificate signing, SMTP relay forwarding, and an OpenVPN tunnel using the configured test hostnames. They cannot establish domain ownership, ISP routing, external provider credentials, public mail reputation, or physical GPU access.
+
+For an already configured local trial, restore the mock processes and cluster fixtures after a guest reboot:
+
+```sh
+sudo python3 ansible/validation/mocks/live_test.py restore
+```
+
+The harness preserves its private credentials, CA, and VPN profile under `/var/lib/private-cloud-live-test`; it discards stale process IDs after a reboot. The saved mock profile must match the encrypted media configuration. Reapply can replace the mock workload mounts and Traefik certificate configuration, so restore these fixtures before validating the local trial.
+
+- [ ] Restore the production ACME directory and Cloudflare API URLs in global configuration.
+- [ ] Repeat DNS-01 issuance and renewal against an owned Cloudflare zone.
+- [ ] Confirm public DNS records from an independent resolver.
+- [ ] Confirm inbound forwarding and outbound delivery with the real mail providers.
+- [ ] Test NAT and firewall access from a separate WAN connection.
+- [ ] Replace the local VPN endpoint with the provider profile and credentials.
+- [ ] Test an AmneziaWG peer from a separate client.
+- [ ] Confirm Intel GPU inference and transcoding on accessible hardware.
+- [ ] Size memory and dataset quotas for actual documents, media, logs, and concurrency.
+
+See [the VMware acceptance record](LIVE_TEST.md) for measured results and remaining checks.

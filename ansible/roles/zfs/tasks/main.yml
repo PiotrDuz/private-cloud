@@ -9,178 +9,15 @@
     fail_msg: Storage configuration was not supplied by preflight.
   no_log: true
 
-- name: Read the current boot ID for the native-unit handshake
-  ansible.builtin.command: cat /proc/sys/kernel/random/boot_id
-  register: zfs_current_boot_id
-  changed_when: false
-
-- name: Ensure the boot handshake directory is root-only
-  ansible.builtin.file:
-    path: "{{ zfs_boot_id_record | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: '0700'
-
-- name: Check for the previous native-unit boot ID
-  ansible.builtin.stat:
-    path: "{{ zfs_boot_id_record }}"
-  register: zfs_boot_id_stat
-
-- name: Check for a verified native-unit boot ID
-  ansible.builtin.stat:
-    path: "{{ zfs_boot_verified_record }}"
-  register: zfs_boot_verified_stat
-
-- name: Read the previous native-unit boot ID
-  ansible.builtin.slurp:
-    src: "{{ zfs_boot_id_record }}"
-  register: zfs_previous_boot_id
-  when: zfs_boot_id_stat.stat.exists
-
-- name: Read the verified native-unit boot ID
-  ansible.builtin.slurp:
-    src: "{{ zfs_boot_verified_record }}"
-  register: zfs_previous_verified_boot_id
-  when: zfs_boot_verified_stat.stat.exists
-
-- name: Determine whether a supervised reboot requires verification
-  ansible.builtin.set_fact:
-    zfs_supervised_reboot_detected: >-
-      {{ zfs_boot_id_stat.stat.exists and
-         (zfs_previous_boot_id.content | default('') | b64decode | trim) != (zfs_current_boot_id.stdout | trim) and
-         (not zfs_boot_verified_stat.stat.exists or
-          (zfs_previous_verified_boot_id.content | default('') | b64decode | trim) != (zfs_current_boot_id.stdout | trim)) }}
-
-- name: Determine whether this boot was already verified
-  ansible.builtin.set_fact:
-    zfs_supervised_reboot_verified: >-
-      {{ zfs_boot_verified_stat.stat.exists and
-         (zfs_previous_verified_boot_id.content | default('') | b64decode | trim) == (zfs_current_boot_id.stdout | trim) }}
-
-- name: Verify pool is natively imported after a supervised reboot
-  ansible.builtin.command: zpool list -H -o name {{ zfs_pool_name }}
-  register: zfs_post_reboot_pool
-  changed_when: false
-  when: zfs_supervised_reboot_detected
-
-- name: Require the native pool import after a supervised reboot
-  ansible.builtin.assert:
-    that: zfs_post_reboot_pool.rc == 0 and zfs_pool_name in zfs_post_reboot_pool.stdout
-    fail_msg: The managed ZFS pool was not natively imported after reboot.
-  when: zfs_supervised_reboot_detected
-
-- name: Verify native encrypted boot state before any convergence
-  ansible.builtin.command: zfs get -H -o value {{ item.property }} {{ item.dataset }}
-  loop:
-    - { dataset: 'tank/secure', property: 'keystatus', expected: 'available' }
-    - { dataset: 'tank/secure', property: 'mounted', expected: 'yes' }
-  register: zfs_post_reboot_key_state
-  changed_when: false
-  when: zfs_supervised_reboot_detected
-
-- name: Require native encrypted boot state before convergence
-  ansible.builtin.assert:
-    that: item.stdout | trim == item.item.expected
-    fail_msg: "Native ZFS boot verification failed for {{ item.item.dataset }}."
-  loop: "{{ zfs_post_reboot_key_state.results | default([]) }}"
-  when: zfs_supervised_reboot_detected
-
-- name: Enumerate every filesystem below the encrypted root before convergence
-  ansible.builtin.command: zfs list -H -r -t filesystem -o name,mounted {{ zfs_secure_dataset }}
-  register: zfs_post_reboot_dataset_mounts
-  changed_when: false
-  when: zfs_supervised_reboot_detected
-
-- name: Require every encrypted-root filesystem mounted natively
-  ansible.builtin.assert:
-    that: item.split('\t')[1] == 'yes'
-    fail_msg: "Native boot did not mount {{ item.split('\t')[0] }}."
-  loop: "{{ zfs_post_reboot_dataset_mounts.stdout_lines | default([]) }}"
-  when: zfs_supervised_reboot_detected
-
-- name: Verify the native generated key unit before convergence
-  ansible.builtin.command: systemctl show --value -p Id zfs-load-key@tank-secure.service
-  register: zfs_post_reboot_key_unit
-  changed_when: false
-  failed_when: zfs_post_reboot_key_unit.rc != 0 or zfs_post_reboot_key_unit.stdout | trim != 'zfs-load-key@tank-secure.service'
-  when: zfs_supervised_reboot_detected
-
-- name: Verify the native generated key unit fragment before convergence
-  ansible.builtin.command: systemctl show --value -p FragmentPath zfs-load-key@tank-secure.service
-  register: zfs_post_reboot_key_fragment
-  changed_when: false
-  failed_when: zfs_post_reboot_key_fragment.rc != 0 or zfs_post_reboot_key_fragment.stdout | trim == ''
-  when: zfs_supervised_reboot_detected
-
-- name: Verify the native encrypted keylocation before convergence
-  ansible.builtin.command: zfs get -H -o value keylocation {{ zfs_secure_dataset }}
-  register: zfs_post_reboot_keylocation
-  changed_when: false
-  when: zfs_supervised_reboot_detected
-
-- name: Require the managed keylocation before convergence
-  ansible.builtin.assert:
-    that: zfs_post_reboot_keylocation.stdout | trim == 'file:///etc/zfs/keys/tank-secure.key'
-    fail_msg: Native boot is not using the managed encrypted dataset key.
-  when: zfs_supervised_reboot_detected
-
-- name: Verify every native encrypted mount dependency before convergence
-  ansible.builtin.command:
-    argv:
-      - python3
-      - "{{ playbook_dir }}/storage_checks.py"
-      - encrypted-mounts
-      - --dataset
-      - "{{ zfs_secure_dataset }}"
-  changed_when: false
-  when: zfs_supervised_reboot_detected
-
-- name: Check for k0s before post-reboot ordering verification
-  ansible.builtin.command: systemctl list-unit-files --no-legend k0scontroller.service
-  register: zfs_post_reboot_k0s_service
-  changed_when: false
-  failed_when: false
-  when:
-    - zfs_supervised_reboot_detected
-    - (private_cloud.stages.k0s | default(false) | bool)
-
-- name: Verify k0s native ordering before convergence when installed
-  ansible.builtin.command: systemctl show -p Requires -p After k0scontroller.service
-  register: zfs_post_reboot_k0s_ordering
-  changed_when: false
-  when:
-    - zfs_supervised_reboot_detected
-    - (private_cloud.stages.k0s | default(false) | bool)
-    - zfs_post_reboot_k0s_service.stdout | default('') | trim | length > 0
-
-- name: Require native ZFS ordering for k0s before convergence
-  ansible.builtin.assert:
-    that:
-      - zfs_post_reboot_k0s_ordering.rc == 0
-      - "'zfs-mount.service' in zfs_post_reboot_k0s_ordering.stdout"
-      - "'zfs-load-key@tank-secure.service' in zfs_post_reboot_k0s_ordering.stdout"
-    fail_msg: k0s boot ordering does not retain native ZFS dependencies.
-  when:
-    - zfs_supervised_reboot_detected
-    - (private_cloud.stages.k0s | default(false) | bool)
-    - zfs_post_reboot_k0s_service.stdout | default('') | trim | length > 0
-
-- name: Atomically record the verified boot ID before convergence
-  ansible.builtin.copy:
-    content: "{{ zfs_current_boot_id.stdout | trim }}\n"
-    dest: "{{ zfs_boot_verified_record }}"
-    owner: root
-    group: root
-    mode: '0600'
-  when: zfs_supervised_reboot_detected
+- name: Validate native storage startup before convergence
+  ansible.builtin.include_tasks: ../validation/boot.yml
 
 - name: Require stable unique disk identities for a new pool
   ansible.builtin.assert:
     that:
       - private_cloud.storage.disks | unique | length == private_cloud.storage.disks | length
-      - item is match('^/dev/disk/by-id/')
-    fail_msg: Every new-pool disk must be a unique stable /dev/disk/by-id path.
+      - item is match('^/dev/disk/by-(id|path)/')
+    fail_msg: Every new-pool disk must be a unique stable /dev/disk/by-id or /dev/disk/by-path path.
   loop: "{{ private_cloud.storage.disks }}"
 
 - name: Install OpenZFS packages without upgrading an existing installation
@@ -194,6 +31,29 @@
 - name: Load the ZFS kernel module
   ansible.builtin.command: modprobe zfs
   changed_when: false
+
+- name: Persist the configured ZFS ARC memory bound
+  ansible.builtin.copy:
+    content: "options zfs zfs_arc_max={{ private_cloud.storage.arc_max | private_cloud_ram_bytes }}\n"
+    dest: /etc/modprobe.d/private-cloud-zfs.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Update initramfs for the ZFS ARC bound
+
+- name: Read the current ZFS ARC memory bound
+  ansible.builtin.slurp:
+    src: /sys/module/zfs/parameters/zfs_arc_max
+  register: zfs_arc_max_current
+
+- name: Apply the configured ARC bound to the loaded module
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - "import pathlib,sys; pathlib.Path('/sys/module/zfs/parameters/zfs_arc_max').write_text(sys.argv[1])"
+      - "{{ private_cloud.storage.arc_max | private_cloud_ram_bytes }}"
+  when: (zfs_arc_max_current.content | b64decode | trim | int) != (private_cloud.storage.arc_max | private_cloud_ram_bytes)
 
 - name: Read the installed OpenZFS userland version
   ansible.builtin.command: zfs version
@@ -245,7 +105,7 @@
   failed_when: false
 
 - name: Inspect exportable pools before any disk mutation
-  ansible.builtin.command: zpool import -d /dev/disk/by-id
+  ansible.builtin.command: zpool import -d /dev/disk/by-id -d /dev/disk/by-path
   register: zfs_exportable_pool_scan
   changed_when: false
   failed_when: false
@@ -420,7 +280,7 @@
     -O mountpoint={{ zfs_pool_mountpoint }}
     -O acltype=posixacl -O atime=off -O compression=zstd
     -O dnodesize=auto -O normalization=formD -O xattr=sa
-    -O cachefile=/etc/zfs/zpool.cache
+    -o cachefile=/etc/zfs/zpool.cache
     {{ zfs_pool_name }} raidz1 {{ private_cloud.storage.disks | join(' ') }}
   when: zfs_pool_check.rc != 0
 
@@ -607,6 +467,9 @@
   loop: "{{ zfs_branch_checks.results }}"
   when: item.rc != 0
 
+- name: Back up the installer configuration
+  ansible.builtin.include_tasks: installer_config_backup.yml
+
 - name: Ensure ZED is enabled
   ansible.builtin.systemd:
     name: zfs-zed
@@ -692,53 +555,17 @@
   ansible.builtin.command: systemctl daemon-reload
   changed_when: false
 
-- name: Require the generated encrypted key-loading unit
-  ansible.builtin.command: systemctl show -p FragmentPath zfs-load-key@tank-secure.service
-  register: zfs_generated_key
-  changed_when: false
-  failed_when: zfs_generated_key.rc != 0 or zfs_generated_key.stdout | trim == 'FragmentPath='
+- name: Activate the native key-loading unit for the loaded encryption key
+  ansible.builtin.systemd:
+    name: zfs-load-key@tank-secure.service
+    state: started
 
-- name: Verify the generated key unit identity
-  ansible.builtin.command: systemctl show --value -p Id zfs-load-key@tank-secure.service
-  register: zfs_generated_key_definition
-  changed_when: false
-  failed_when: zfs_generated_key_definition.rc != 0 or zfs_generated_key_definition.stdout | trim != 'zfs-load-key@tank-secure.service'
-
-- name: Verify the generated key unit has a resolved fragment
-  ansible.builtin.command: systemctl show --value -p FragmentPath zfs-load-key@tank-secure.service
-  register: zfs_generated_key_fragment
-  changed_when: false
-  failed_when: zfs_generated_key_fragment.rc != 0 or zfs_generated_key_fragment.stdout | trim == ''
-
-- name: Verify every encrypted generated mount requires its key unit
-  ansible.builtin.command:
-    argv:
-      - python3
-      - "{{ playbook_dir }}/storage_checks.py"
-      - encrypted-mounts
-      - --dataset
-      - "{{ zfs_secure_dataset }}"
+- name: Mount encrypted datasets after activating native key dependencies
+  ansible.builtin.command: zfs mount -a
   changed_when: false
 
-- name: Verify the encrypted dataset uses the fixed file key
-  ansible.builtin.command: zfs get -H -o value keylocation {{ zfs_secure_dataset }}
-  register: zfs_key_location
-  changed_when: false
-
-- name: Require the fixed file key location
-  ansible.builtin.assert:
-    that: zfs_key_location.stdout | trim == 'file:///etc/zfs/keys/tank-secure.key'
-    fail_msg: The encrypted dataset does not use the managed file key.
-
-- name: Verify the encrypted dataset key format
-  ansible.builtin.command: zfs get -H -o value keyformat {{ zfs_secure_dataset }}
-  register: zfs_key_format
-  changed_when: false
-
-- name: Require passphrase-based encryption
-  ansible.builtin.assert:
-    that: zfs_key_format.stdout | trim == 'passphrase'
-    fail_msg: The encrypted root must use a passphrase key.
+- name: Validate native encrypted mounts
+  ansible.builtin.include_tasks: ../validation/native_mounts.yml
 
 - name: Remove the obsolete custom unlock service
   ansible.builtin.systemd:
@@ -822,24 +649,8 @@
     daemon_reload: true
   when: zfs_packaged_scrub_timer | length == 0
 
-- name: Verify pool health
-  ansible.builtin.command: zpool status -x {{ zfs_pool_name }}
-  changed_when: false
-
-- name: Verify encrypted root and branch mounts
-  ansible.builtin.command: zfs get -H -o value mounted {{ item }}
-  loop:
-    - tank/secure
-    - tank/secure/backup
-    - tank/secure/no-backup
-  register: zfs_mount_verification
-  changed_when: false
-
-- name: Require every managed dataset to be mounted
-  ansible.builtin.assert:
-    that: item.stdout | trim == 'yes'
-    fail_msg: "ZFS dataset is not mounted: {{ item.item }}"
-  loop: "{{ zfs_mount_verification.results }}"
+- name: Validate installed storage
+  ansible.builtin.include_tasks: ../validation/main.yml
 
 - name: Atomically record the initial native-unit boot ID after convergence
   ansible.builtin.copy:

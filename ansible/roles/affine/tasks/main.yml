@@ -4,7 +4,7 @@
     that:
       - private_cloud.affine.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.affine.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
-      - (private_cloud.affine.max_ram | human_to_bytes | int) >= 2147483648
+      - (private_cloud.affine.max_ram | private_cloud_ram_bytes | int) >= 1073741824
       - affine_database_name is match('^[A-Za-z_][A-Za-z0-9_]*$')
       - affine_database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
       - private_cloud.affine.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
@@ -140,20 +140,6 @@
   changed_when: true
 
 
-- name: Verify AFFiNE pgvector
-  kubernetes.core.k8s_exec:
-    kubeconfig: "{{ affine_kubeconfig }}"
-    namespace: "{{ affine_namespace }}"
-    pod: "{{ affine_postgres_pods.resources[0].metadata.name }}"
-    command: psql -At -U postgres -d {{ affine_database_name }} -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';"
-  register: affine_pgvector_effective
-  changed_when: false
-
-- name: Assert AFFiNE pgvector
-  ansible.builtin.assert:
-    that: affine_pgvector_effective.stdout | trim == affine_pgvector_version
-    fail_msg: The vector extension is not enabled in the AFFiNE database.
-
 - name: Apply AFFiNE credentials
   kubernetes.core.k8s:
     kubeconfig: "{{ affine_kubeconfig }}"
@@ -188,6 +174,40 @@
   no_log: true
 
 
+- name: Read existing AFFiNE database preparation Job
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: batch/v1
+    kind: Job
+    name: "{{ affine_preparation_job_name }}"
+    namespace: "{{ affine_namespace }}"
+  register: affine_existing_preparation_job
+  changed_when: false
+
+- name: Remove a terminally failed AFFiNE database preparation Job
+  kubernetes.core.k8s:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    state: absent
+    api_version: batch/v1
+    kind: Job
+    name: "{{ affine_preparation_job_name }}"
+    namespace: "{{ affine_namespace }}"
+    delete_options:
+      propagationPolicy: Foreground
+      preconditions:
+        uid: "{{ affine_existing_preparation_job.resources[0].metadata.uid }}"
+    wait: true
+    wait_timeout: 60
+  when:
+    - affine_existing_preparation_job.resources | length > 0
+    - affine_existing_preparation_job.resources[0].status.succeeded | default(0) | int != 1
+    - >-
+      affine_existing_preparation_job.resources[0].status.failed | default(0) | int >=
+        affine_existing_preparation_job.resources[0].spec.backoffLimit | default(6) | int or
+      (affine_existing_preparation_job.resources[0].status.conditions | default([])
+       | selectattr('type', 'equalto', 'Failed')
+       | selectattr('status', 'equalto', 'True') | list | length > 0)
+
 - name: Prepare the fresh AFFiNE database schema
   kubernetes.core.k8s:
     kubeconfig: "{{ affine_kubeconfig }}"
@@ -205,10 +225,27 @@
   register: affine_preparation_job
   until:
     - affine_preparation_job.resources | length > 0
-    - affine_preparation_job.resources[0].status.succeeded | default(0) | int == 1
+    - >-
+      affine_preparation_job.resources[0].status.succeeded | default(0) | int == 1 or
+      affine_preparation_job.resources[0].status.failed | default(0) | int >=
+        affine_preparation_job.resources[0].spec.backoffLimit | default(6) | int or
+      (affine_preparation_job.resources[0].status.conditions | default([])
+       | selectattr('type', 'equalto', 'Failed')
+       | selectattr('status', 'equalto', 'True') | list | length > 0)
   retries: 120
   delay: 5
   changed_when: false
+
+- name: Require AFFiNE database preparation to succeed
+  ansible.builtin.assert:
+    that:
+      - affine_preparation_job.resources[0].status.succeeded | default(0) | int == 1
+    fail_msg: >-
+      AFFiNE database preparation Job failed after
+      {{ affine_preparation_job.resources[0].status.failed | default(0) }} attempts:
+      {{ ((affine_preparation_job.resources[0].status.conditions | default([])
+           | selectattr('type', 'equalto', 'Failed') | list | first | default({})).message
+           | default('no failure details were reported')) }}
 
 - name: Apply AFFiNE workload and services
   kubernetes.core.k8s:
@@ -248,3 +285,6 @@
   retries: 90
   delay: 5
   changed_when: false
+
+- name: Validate AFFiNE after installation
+  ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

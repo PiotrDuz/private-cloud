@@ -72,9 +72,9 @@ def configure_health(api, config):
 
 
 def dependent(api, host_id, master_id, key, name, path, rate=False):
-    preprocessing = [{"type": 12, "params": path}]
+    preprocessing = [{"type": 12, "params": path, "error_handler": 0, "error_handler_params": ""}]
     if rate:
-        preprocessing.append({"type": 10, "params": ""})
+        preprocessing.append({"type": 10, "params": "", "error_handler": 0, "error_handler_params": ""})
     ensure_item(api, {"hostid": host_id, "name": name, "key_": key, "type": 18, "value_type": 0, "delay": "0", "history": "7d", "trends": "90d", "master_itemid": master_id, "preprocessing": preprocessing, "status": 0})
 
 

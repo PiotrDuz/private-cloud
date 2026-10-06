@@ -31,7 +31,7 @@
        selectattr('metadata.name', 'equalto', ('zabbix-server-data' if item.name == 'zabbix' else item.name ~ '-data')) |
        list | length) == 1
     fail_msg: "The enabled {{ item.name }} service has no persistent volume claim."
-  loop: "{{ private_cloud_dataset_catalog | rejectattr('name', 'in', ['config', 'images', 'ephemeral']) | list }}"
+  loop: "{{ private_cloud_dataset_catalog | rejectattr('name', 'in', ['installer-config', 'config', 'images', 'ephemeral']) | list }}"
   loop_control:
     label: "{{ item.name }}"
   when:

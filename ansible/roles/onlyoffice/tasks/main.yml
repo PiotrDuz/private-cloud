@@ -4,7 +4,7 @@
     that:
       - private_cloud.onlyoffice.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.onlyoffice.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
-      - (private_cloud.onlyoffice.max_ram | human_to_bytes | int) >= 4294967296
+      - (private_cloud.onlyoffice.max_ram | private_cloud_ram_bytes | int) >= 2147483648
       - private_cloud.onlyoffice.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
       - private_cloud_secrets.onlyoffice.jwt_secret | length >= 32
     fail_msg: OnlyOffice configuration is invalid.
@@ -73,7 +73,7 @@
     that:
       - onlyoffice_existing.results[0].resources | length == 0 or onlyoffice_existing.results[0].resources[0].spec.local.path == onlyoffice_dataset_mountpoint
       - onlyoffice_existing.results[0].resources | length == 0 or onlyoffice_existing.results[0].resources[0].spec.capacity.storage == onlyoffice_pv_capacity
-      - onlyoffice_existing.results[0].resources | length == 0 or onlyoffice_node_name in onlyoffice_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - onlyoffice_existing.results[0].resources | length == 0 or onlyoffice_node_name in onlyoffice_existing.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values']
       - onlyoffice_existing.results[1].resources | length == 0 or onlyoffice_existing.results[1].resources[0].spec.resources.requests.storage == onlyoffice_pv_capacity
       - onlyoffice_existing.results[1].resources | length == 0 or onlyoffice_existing.results[1].resources[0].spec.volumeName == onlyoffice_pv_name
     fail_msg: Existing OnlyOffice persistent storage conflicts with the configured local storage.
@@ -180,3 +180,6 @@
   retries: 90
   delay: 5
   changed_when: false
+
+- name: Validate OnlyOffice after installation
+  ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

@@ -90,7 +90,7 @@
     that:
       - zabbix_existing_storage.results[0].resources | length == 0 or zabbix_existing_storage.results[0].resources[0].spec.local.path == zabbix_dataset_mountpoint
       - zabbix_existing_storage.results[0].resources | length == 0 or zabbix_existing_storage.results[0].resources[0].spec.capacity.storage == zabbix_pv_capacity
-      - zabbix_existing_storage.results[0].resources | length == 0 or zabbix_node_name in zabbix_existing_storage.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values
+      - zabbix_existing_storage.results[0].resources | length == 0 or zabbix_node_name in zabbix_existing_storage.results[0].resources[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values']
     fail_msg: Existing Zabbix PersistentVolume conflicts with the configured local storage.
 
 - name: Reject incompatible Zabbix persistent volume claim
@@ -338,3 +338,6 @@
 
 - name: Configure Zabbix API resources
   ansible.builtin.import_tasks: api.yml
+
+- name: Validate the Zabbix server
+  ansible.builtin.import_tasks: ../validation/main.yml

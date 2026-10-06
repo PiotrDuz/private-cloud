@@ -86,3 +86,6 @@
   retries: 60
   delay: 5
   changed_when: false
+
+- name: Validate the installed intel_gpu stage
+  ansible.builtin.include_tasks: ../validation/main.yml

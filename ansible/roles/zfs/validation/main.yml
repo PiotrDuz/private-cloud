@@ -1,0 +1,48 @@
+---
+- name: Verify pool health
+  ansible.builtin.command: zpool status -x {{ zfs_pool_name }}
+  changed_when: false
+
+- name: Verify encrypted root and branch mounts
+  ansible.builtin.command: zfs get -H -o value mounted {{ item }}
+  loop:
+    - tank/secure
+    - tank/secure/backup
+    - tank/secure/no-backup
+    - "{{ zfs_installer_config_dataset }}"
+  register: zfs_mount_verification
+  changed_when: false
+
+- name: Require every managed dataset to be mounted
+  ansible.builtin.assert:
+    that: item.stdout | trim == 'yes'
+    fail_msg: "ZFS dataset is not mounted: {{ item.item }}"
+  loop: "{{ zfs_mount_verification.results }}"
+
+- name: Read the installer configuration backup quota
+  ansible.builtin.command: zfs get -H -p -o value quota {{ zfs_installer_config_dataset }}
+  register: zfs_installer_config_quota_verification
+  changed_when: false
+
+- name: Require the installer configuration backup quota
+  ansible.builtin.assert:
+    that: zfs_installer_config_quota_verification.stdout | int == zfs_installer_config_quota | human_to_bytes | int
+    fail_msg: The installer configuration backup quota is incorrect.
+
+- name: Inspect the backed-up installer configuration
+  ansible.builtin.stat:
+    path: "{{ zfs_installer_config_mountpoint }}/{{ item }}"
+  loop:
+    - private-cloud.yml
+    - private-cloud.secrets.yml
+  register: zfs_installer_config_files
+
+- name: Require root-only configuration backup files
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - item.stat.uid | default(-1) == 0
+      - item.stat.gid | default(-1) == 0
+      - item.stat.mode | default('') == '0600'
+    fail_msg: An installer configuration backup file is missing or has incorrect permissions.
+  loop: "{{ zfs_installer_config_files.results }}"

@@ -96,26 +96,64 @@
     chdir: "{{ networking_amneziawg_source }}/src"
   when: networking_amneziawg_source_state.changed
 
+- name: Match AmneziaWG compatibility wrappers to the installed UDP tunnel API
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/patch_amneziawg_compat.py
+      {{ networking_amneziawg_dkms_source }}/compat/compat.h
+      /lib/modules/{{ ansible_kernel }}/build/include/net/udp_tunnel.h
+  register: networking_amneziawg_compat_patch
+  changed_when: networking_amneziawg_compat_patch.stdout | trim == 'updated'
+
 - name: Inspect the AmneziaWG DKMS module
   ansible.builtin.command: dkms status amneziawg/1.0.0
   register: networking_amneziawg_dkms
   changed_when: false
   failed_when: false
 
+- name: Remove a stale AmneziaWG DKMS build after an API patch
+  ansible.builtin.command: dkms remove -m amneziawg -v 1.0.0 --all
+  when: networking_amneziawg_compat_patch.changed and networking_amneziawg_dkms.rc == 0
+
 - name: Register the AmneziaWG DKMS module
   ansible.builtin.command: dkms add -m amneziawg -v 1.0.0
-  when: networking_amneziawg_dkms.rc != 0
+  when: networking_amneziawg_compat_patch.changed or networking_amneziawg_dkms.rc != 0
 
 - name: Build and install the AmneziaWG DKMS module
   ansible.builtin.command: "dkms {{ item }} -m amneziawg -v 1.0.0"
   loop: [build, install]
-  when: "'installed' not in networking_amneziawg_dkms.stdout"
+  when: networking_amneziawg_compat_patch.changed or 'installed' not in networking_amneziawg_dkms.stdout
 
 - name: Load the AmneziaWG kernel module
   community.general.modprobe:
     name: amneziawg
     state: present
     persistent: present
+
+- name: Discover Kubernetes API server EndpointSlices
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    api_version: discovery.k8s.io/v1
+    kind: EndpointSlice
+    namespace: default
+    label_selectors:
+      - kubernetes.io/service-name=kubernetes
+  register: networking_kubernetes_api_endpoint_slices
+  changed_when: false
+
+- name: Select ready Kubernetes API endpoint addresses and TCP ports
+  ansible.builtin.set_fact:
+    networking_kubernetes_api_addresses: "{{ networking_kubernetes_api_endpoint_slices.resources | map(attribute='endpoints') | flatten | selectattr('conditions.ready', 'defined') | selectattr('conditions.ready', 'equalto', true) | map(attribute='addresses') | flatten | unique | list }}"
+    networking_kubernetes_api_tcp_ports: "{{ networking_kubernetes_api_endpoint_slices.resources | map(attribute='ports') | flatten | selectattr('protocol', 'equalto', 'TCP') | map(attribute='port') | unique | list }}"
+  changed_when: false
+
+- name: Require ready Kubernetes API server TCP endpoints
+  ansible.builtin.assert:
+    that:
+      - networking_kubernetes_api_addresses | length > 0
+      - networking_kubernetes_api_addresses | select('match', '^[0-9]{1,3}(\.[0-9]{1,3}){3}$') | list | length == networking_kubernetes_api_addresses | length
+      - networking_kubernetes_api_tcp_ports | length == 1
+    fail_msg: Traefik requires ready IPv4 Kubernetes API server endpoints.
 
 - name: Render networking manifests
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
@@ -158,3 +196,6 @@
     - onlyoffice-public
     - opencloud-public
     - stalwart-public
+
+- name: Validate the installed networking stage
+  ansible.builtin.include_tasks: ../validation/main.yml

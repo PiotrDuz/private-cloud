@@ -1,0 +1,54 @@
+---
+- name: Verify exact k0s mount-unit dependencies
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/storage_checks.py"
+      - k0s-mounts
+      - --service
+      - "{{ k0s_controller_service }}"
+      - --mountpoints
+      - "{{ k0s_config_mountpoint }}"
+      - "{{ k0s_images_mountpoint }}"
+      - "{{ k0s_ephemeral_mountpoint }}"
+  changed_when: false
+
+- name: Wait for a Ready k0s node
+  ansible.builtin.command: "{{ k0s_binary_path }} kubectl get nodes --no-headers"
+  register: k0s_node_status
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: k0s_node_status.rc == 0 and ' Ready ' in (' ' ~ k0s_node_status.stdout ~ ' ')
+
+- name: Read the AppArmor unconfined change-profile restriction
+  ansible.builtin.slurp:
+    src: /proc/sys/kernel/apparmor_restrict_unprivileged_unconfined
+  register: k0s_validation_apparmor_restriction
+  failed_when: false
+
+- name: Require unstacked container AppArmor profiles
+  ansible.builtin.assert:
+    that: k0s_validation_apparmor_restriction.content | b64decode | trim == '0'
+    fail_msg: Stacked container AppArmor profiles deny signals between container processes.
+  when: k0s_validation_apparmor_restriction.content is defined
+
+- name: Verify every k0s runtime mountpoint
+  ansible.builtin.command: mountpoint -q {{ item }}
+  loop:
+    - "{{ k0s_config_mountpoint }}"
+    - "{{ k0s_images_mountpoint }}"
+    - "{{ k0s_ephemeral_mountpoint }}"
+  changed_when: false
+
+- name: Read the active kubelet forwarding allowlist
+  ansible.builtin.slurp:
+    src: /run/k0s/kubelet/config.yaml
+  register: k0s_validation_worker_configuration
+  when: private_cloud.stages.networking | bool
+
+- name: Require the narrowly configured namespaced VPN forwarding setting
+  ansible.builtin.assert:
+    that: (k0s_validation_worker_configuration.content | b64decode | from_yaml).allowedUnsafeSysctls | default([]) == ['net.ipv4.ip_forward']
+    fail_msg: The active kubelet has not loaded the VPN forwarding allowlist.
+  when: private_cloud.stages.networking | bool
