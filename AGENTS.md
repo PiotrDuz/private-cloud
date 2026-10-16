@@ -13,6 +13,7 @@
 - Install or reapply: `sudo python3 ansible/install.py`; requires root, an interactive TTY, PyYAML, and the Python Kubernetes client.
 - Modes: `create`, `update`, `reapply`, `rotate`, `validate`; only `create` erases disks and requires typing `CREATE tank`.
 - Debian hosts must disable the `zabbix_agent` stage; use Ubuntu for all stages.
+- Boot integrity needs Ubuntu on UEFI with a TPM 2.0; enable the `boot_integrity` stage only after the Secure Boot steps in `docs/SETUP.md`.
 - No tests, linter, or CI. Verification is the playbook's preflight and verify tasks on a live host, so changes cannot be fully validated locally.
 - Do not run `ansible-playbook` directly; the installer writes runtime values and the Vault password under `/run/private-cloud`.
 

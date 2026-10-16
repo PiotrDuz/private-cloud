@@ -1,0 +1,3 @@
+# Managed by private-cloud Ansible.
+add_dracutmodules+=" private-cloud-tpm "
+add_drivers+=" {{ boot_integrity_nic_driver }} {{ private_cloud.boot_integrity.extra_drivers | join(' ') }} "

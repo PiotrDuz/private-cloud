@@ -5,6 +5,7 @@ This file is the source of truth for the desired system state and its major deci
 ## Table of contents
 
 - [System configuration](#system-configuration)
+    * [TPM unattended unlock](#tpm-unattended-unlock)
 - [ZFS storage](#zfs-storage)
 - [k0s cluster](#k0s-cluster)
 - [PostgreSQL](#postgresql)
@@ -48,7 +49,27 @@ This file is the source of truth for the desired system state and its major deci
 
 ## System configuration
 
+- Encrypt the root disk with LUKS2 and keep a recovery passphrase
+- Keep the tank/secure key file on the encrypted root
 - Disable all swap, including disk-backed swap and zram
+- Install kernel, firmware, and boot-chain updates only by hand
+- Block DMA with strict IOMMU and kernel memory reads with lockdown
+- Disable magic SysRq
+
+### TPM unattended unlock
+
+- Unlock the root disk at boot through the TPM without operator input
+- Boot only an owner-signed UKI under Secure Boot, without shim or GRUB
+- Keep Secure Boot signing keys off the host
+- Hold the unattended root key in TPM NV memory, readable once per boot
+- Bind the key to PCRs 0, 2, 4, 7, 11, and a salted PCR 15 inventory of hardware and the gateway
+- Wipe the key on a failed check, a gateway change, or a USB attach
+- Wipe the key and power off when the gateway stays silent for 2 minutes at boot
+- Power off after a runtime wipe and never reboot from a check
+- Disable initrd shells
+- Disable console login and external USB devices while armed
+- Run no checks in the wiped state and allow console login with the administrator password
+- Re-enroll the key by hand after each boot-chain update
 
 ## ZFS storage
 

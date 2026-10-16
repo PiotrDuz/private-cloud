@@ -2,6 +2,72 @@
 
 This runbook lists work that cannot be automated in this repository. Repository automation work is tracked in [TODO.md](../TODO.md); the deployed architecture is in [NETWORKING.md](NETWORKING.md) and [OPERATIONS.md](OPERATIONS.md).
 
+## Host installation
+
+- [ ] Install Ubuntu 26.04 LTS with "Use LVM and encryption" on the system disk.
+- [ ] Do not select hardware-backed TPM encryption; the TPM design is in [TPM_ANALYSIS.md](TPM_ANALYSIS.md).
+- [ ] Use a long random LUKS passphrase and store it offline as the recovery passphrase.
+- [ ] Keep the `tank` pool disks out of the installer's partitioning.
+- [ ] Give the Ubuntu administrator account a long random password; the console accepts it only after a TPM wipe.
+
+## Boot integrity
+
+The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.md](TPM_ANALYSIS.md).
+
+### Firmware settings
+
+- [ ] Set a firmware administrator password.
+- [ ] Disable USB, PXE, and network boot.
+- [ ] Disable the one-time boot menu.
+- [ ] Enable Intel PTT.
+- [ ] Enable VT-d and pre-boot DMA protection if offered.
+- [ ] Enable Total Memory Encryption if offered.
+- [ ] Set the host to power on after AC loss.
+
+### Secure Boot owner keys
+
+- [ ] Install openssl, efitools, and sbsigntool on the workstation.
+- [ ] Run `python3 boot-integrity/workstation.py keys <directory>` on the workstation.
+- [ ] Keep the private keys on the workstation only.
+- [ ] Put the firmware in Setup Mode.
+- [ ] Enroll `db.auth`, `KEK.auth`, then `PK.auth` through the firmware menu or `efi-updatevar`.
+- [ ] Keep the existing keys until the signed UKI has booted once.
+
+### Enable the stage
+
+- [ ] Enable `boot_integrity` and set its interface, host address, and gateway in the installer.
+- [ ] Confirm `/etc/crypttab` lists exactly one LUKS volume with the key field set to `none`.
+- [ ] Run the installer and expect the final validation to fail until enrollment is complete.
+- [ ] Copy `/var/lib/private-cloud/uki/<build>/unsigned.efi` to the workstation.
+- [ ] Run `python3 boot-integrity/workstation.py sign unsigned.efi signed.efi <directory>`.
+- [ ] Copy `signed.efi` to `/var/lib/private-cloud/uki/<build>/signed.efi` on the host.
+- [ ] Rerun the installer to place the UKI on the ESP and create the `private-cloud` boot entry.
+- [ ] Reboot and confirm the firmware boots the `private-cloud` entry with Secure Boot on.
+- [ ] Remove the Microsoft keys only after the first signed boot succeeds.
+
+### Enroll the unlock
+
+- [ ] Unplug every external USB device, including the keyboard.
+- [ ] Confirm the host booted the signed UKI.
+- [ ] Rerun the installer and review the gateway MAC and USB device list.
+- [ ] Enter the LUKS recovery passphrase when prompted.
+- [ ] Reboot and confirm the host unlocks without input.
+- [ ] Run the installer `validate` action.
+
+### Board checks
+
+- [ ] Record PCR 1 and PCR 5 across three cold boots and set `extra_pcrs` only if they stay identical.
+- [ ] List the USB devices that `usbcore.authorized_default=2` leaves unauthorized.
+- [ ] Confirm the PTT NV contents survive a cold boot and a power loss.
+- [ ] Confirm the display works after the Microsoft UEFI CA is removed.
+- [ ] Add drivers to `extra_drivers` if enrollment reports an initrd hardware difference.
+
+### Maintenance visits
+
+- [ ] Install held kernel, firmware, and boot-chain updates only while at the host.
+- [ ] Follow the boot-integrity update procedure in [OPERATIONS.md](OPERATIONS.md#boot-integrity-updates).
+- [ ] Confirm an unattended unlock after re-enrollment.
+
 ## External prerequisites
 
 - [ ] Point the domain's authoritative DNS to Cloudflare before deployment.
@@ -119,6 +185,7 @@ Complete the external prerequisites above before the first installation, or the 
 ### Checked automatically
 
 - ZFS health, encryption, mounts, quotas, and k0s startup ordering.
+- Boot integrity: Secure Boot, signed UKI, armed TPM unlock, unattended unlock on the last boot, tripwire, console policy, and update holds.
 - Cluster node, volume, and workload readiness.
 - Service protocols, authenticated APIs, and OpenCloud storage round trips.
 - HTTPS and SMTP STARTTLS certificates chain to Mozilla public roots and expire in more than 14 days.

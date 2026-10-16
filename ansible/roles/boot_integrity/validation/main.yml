@@ -1,0 +1,13 @@
+---
+- name: Check the TPM unlock state, the boot chain, and the runtime policy
+  ansible.builtin.command:
+    argv: [python3, -c, "import json,sys; from boot_integrity_helpers import validation_failures; print(json.dumps(validation_failures(json.load(sys.stdin))))"]
+    chdir: "{{ playbook_dir }}"
+    stdin: "{{ private_cloud.boot_integrity | to_json }}"
+  register: boot_integrity_checks
+  changed_when: false
+
+- name: Require an enrolled and verified TPM unlock
+  ansible.builtin.assert:
+    that: boot_integrity_checks.stdout | from_json | length == 0
+    fail_msg: "Boot integrity is incomplete: {{ boot_integrity_checks.stdout | from_json | join('; ') }}"

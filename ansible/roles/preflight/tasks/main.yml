@@ -2,7 +2,7 @@
 - name: Require the supported public schema version
   ansible.builtin.assert:
     that:
-      - schema_version == 13
+      - schema_version == 14
     fail_msg: Public configuration schema version is unsupported
 
 - name: Require supported Debian-family target
@@ -21,14 +21,14 @@
   ansible.builtin.assert:
     that:
       - private_cloud is mapping
-      - (private_cloud.keys() | list | difference(['stages', 'storage', 'k0s', 'networking', 'media', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'redis_affine', 'affine', 'immich', 'stalwart', 'zabbix', 'logging', 'notifications']) | length) == 0
-      - (['stages', 'storage', 'k0s', 'networking', 'media', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'redis_affine', 'affine', 'immich', 'stalwart', 'zabbix', 'logging', 'notifications'] | difference(private_cloud.keys() | list) | length) == 0
+      - (private_cloud.keys() | list | difference(['stages', 'storage', 'k0s', 'networking', 'media', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'redis_affine', 'affine', 'immich', 'stalwart', 'zabbix', 'logging', 'notifications', 'boot_integrity']) | length) == 0
+      - (['stages', 'storage', 'k0s', 'networking', 'media', 'postgres', 'meilisearch', 'tika', 'bleve', 'onlyoffice', 'opencloud', 'grist', 'manticore', 'redis_affine', 'affine', 'immich', 'stalwart', 'zabbix', 'logging', 'notifications', 'boot_integrity'] | difference(private_cloud.keys() | list) | length) == 0
     fail_msg: Public configuration has missing or unknown sections
 
 - name: Require exact nested public schema
   ansible.builtin.assert:
     that:
-      - (private_cloud.stages.keys() | list | sort) == ['affine', 'bleve', 'grist', 'immich', 'intel_gpu', 'k0s', 'logging', 'manticore', 'media', 'meilisearch', 'networking', 'notifications', 'onlyoffice', 'opencloud', 'postgres', 'redis_affine', 'stalwart', 'tika', 'zabbix_agent', 'zabbix_server', 'zfs']
+      - (private_cloud.stages.keys() | list | sort) == ['affine', 'bleve', 'boot_integrity', 'grist', 'immich', 'intel_gpu', 'k0s', 'logging', 'manticore', 'media', 'meilisearch', 'networking', 'notifications', 'onlyoffice', 'opencloud', 'postgres', 'redis_affine', 'stalwart', 'tika', 'zabbix_agent', 'zabbix_server', 'zfs']
       - (private_cloud.storage.keys() | list | sort) == ['arc_max', 'disks']
       - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'host_reserve_ram', 'images_quota']
       - (private_cloud.networking.keys() | list | sort) == ['acme_email', 'amneziawg', 'cloudflare_zone_id', 'cluster_dns_ip', 'local_network_cidrs', 'managed_records', 'pod_cidr', 'public_ip_url', 'service_cidr', 'storage_size', 'traefik_internal_ip', 'zabbix_hostname']
@@ -51,6 +51,7 @@
       - (private_cloud.zabbix.keys() | list | sort) == ['admin_username', 'storage_size']
       - (private_cloud.logging.keys() | list | sort) == ['alloy_max_ram', 'alloy_storage_size', 'hostname', 'openobserve_max_ram', 'openobserve_storage_size', 'retention_days']
       - (private_cloud.notifications.keys() | list) == ['from_address']
+      - (private_cloud.boot_integrity.keys() | list | sort) == ['extra_drivers', 'extra_pcrs', 'gateway_ip', 'host_address', 'interface']
     fail_msg: Public configuration has missing or unknown nested keys
 
 - name: Require a valid dataset catalog
@@ -167,7 +168,7 @@
     that:
       - private_cloud.stages[item] is boolean
     fail_msg: Every stage flag must be Boolean
-  loop: [zfs, k0s, networking, media, intel_gpu, postgres, meilisearch, stalwart, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, logging, notifications, zabbix_server, zabbix_agent]
+  loop: [zfs, boot_integrity, k0s, networking, media, intel_gpu, postgres, meilisearch, stalwart, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, logging, notifications, zabbix_server, zabbix_agent]
 
 - name: Require stage dependencies
   ansible.builtin.assert:
@@ -181,6 +182,25 @@
     that: ansible_facts.distribution == 'Ubuntu'
     fail_msg: The Zabbix Agent stage requires Ubuntu
   when: private_cloud.stages.zabbix_agent | bool
+
+- name: Check boot integrity host capabilities
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /sys/firmware/efi
+    - /dev/tpmrm0
+    - "/sys/class/net/{{ private_cloud.boot_integrity.interface }}"
+  register: preflight_boot_integrity_paths
+  when: private_cloud.stages.boot_integrity | bool
+
+- name: Require Ubuntu on UEFI with a TPM 2.0 and the unlock interface for boot integrity
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.architecture == 'x86_64'
+      - preflight_boot_integrity_paths.results | map(attribute='stat.exists') | select('equalto', false) | list | length == 0
+    fail_msg: Boot integrity requires Ubuntu on x86_64 UEFI with /dev/tpmrm0 and the configured network interface.
+  when: private_cloud.stages.boot_integrity | bool
 
 - name: Require k0s values
   ansible.builtin.assert:
@@ -962,6 +982,7 @@
       zabbix: "{{ private_cloud.zabbix }}"
       logging: "{{ private_cloud.logging }}"
       notifications: "{{ private_cloud.notifications }}"
+      boot_integrity: "{{ private_cloud.boot_integrity }}"
       secrets:
         storage_encryption_passphrase: configured
         postgres_admin_password: configured

@@ -34,6 +34,14 @@
               tags: [system]
           tags: [system]
 
+        - name: Configure TPM boot integrity
+          ansible.builtin.include_role:
+            name: boot_integrity
+            apply:
+              tags: [boot_integrity]
+          when: private_cloud.stages.boot_integrity | bool
+          tags: [boot_integrity]
+
         - name: Configure OpenZFS storage
           ansible.builtin.include_role:
             name: zfs

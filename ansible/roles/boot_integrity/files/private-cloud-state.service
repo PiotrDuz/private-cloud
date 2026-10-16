@@ -1,0 +1,13 @@
+[Unit]
+Description=Private cloud console policy
+DefaultDependencies=no
+After=local-fs.target
+Before=getty-pre.target
+ConditionPathExists=/dev/tpmrm0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/private-cloud/tripwire.py console
+
+[Install]
+WantedBy=multi-user.target

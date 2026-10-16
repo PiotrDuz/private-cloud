@@ -77,6 +77,7 @@ private_cloud_dataset_catalog:
 
 # k0s and networking require each other; networking owns the default-deny baseline.
 private_cloud_stage_dependencies:
+  boot_integrity: []
   k0s: [zfs, networking]
   networking: [k0s]
   media: [networking]

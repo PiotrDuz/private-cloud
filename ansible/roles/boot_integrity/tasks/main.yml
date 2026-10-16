@@ -1,0 +1,167 @@
+---
+- name: Install boot integrity packages
+  ansible.builtin.apt:
+    name: "{{ boot_integrity_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Resolve the root LUKS volume name
+  ansible.builtin.command:
+    argv: [python3, -c, "from boot_integrity_helpers import luks_volume; print(luks_volume())"]
+    chdir: "{{ playbook_dir }}"
+  register: boot_integrity_luks
+  changed_when: false
+
+- name: Resolve the kernel driver of the unlock interface
+  ansible.builtin.command:
+    argv: [readlink, -f, "/sys/class/net/{{ private_cloud.boot_integrity.interface }}/device/driver/module"]
+  register: boot_integrity_nic
+  changed_when: false
+
+- name: Record resolved boot integrity values
+  ansible.builtin.set_fact:
+    boot_integrity_luks_volume: "{{ boot_integrity_luks.stdout | trim }}"
+    boot_integrity_nic_driver: "{{ boot_integrity_nic.stdout | trim | basename }}"
+
+- name: Create boot integrity directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /etc/private-cloud
+    - "{{ boot_integrity_helper_directory }}"
+    - "{{ boot_integrity_state_directory }}"
+    - "{{ boot_integrity_state_directory }}/uki"
+    - "{{ boot_integrity_module_directory }}"
+    - /etc/dracut.conf.d
+    - /etc/systemd/system/getty@.service.d
+    - /etc/systemd/system/serial-getty@.service.d
+    - /etc/systemd/system/console-getty.service.d
+
+- name: Install boot integrity helpers
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ boot_integrity_helper_directory }}/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {src: inventory.sh, dest: inventory.sh, mode: '0755'}
+    - {src: tripwire.py, dest: tripwire.py, mode: '0755'}
+    - {src: uki.py, dest: uki.py, mode: '0755'}
+    - {src: "{{ playbook_dir }}/tpm_nv.py", dest: tpm_nv.py, mode: '0644'}
+    - {src: "{{ playbook_dir }}/boot_settings.py", dest: boot_settings.py, mode: '0644'}
+
+- name: Install the boot integrity settings
+  ansible.builtin.template:
+    src: boot-integrity.conf.j2
+    dest: /etc/private-cloud/boot-integrity.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install the initrd unlock module
+  ansible.builtin.copy:
+    src: "dracut/90private-cloud-tpm/{{ item.name }}"
+    dest: "{{ boot_integrity_module_directory }}/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {name: module-setup.sh, mode: '0755'}
+    - {name: unlock.sh, mode: '0755'}
+    - {name: private-cloud-tpm-unlock.service, mode: '0644'}
+    - {name: system.conf, mode: '0644'}
+
+- name: Configure the initrd drivers and module
+  ansible.builtin.template:
+    src: dracut.conf.j2
+    dest: /etc/dracut.conf.d/90-private-cloud.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install tripwire and console policy units
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ boot_integrity_unit_directory }}/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - private-cloud-state.service
+    - private-cloud-tripwire.service
+
+- name: Restrict console logins to the unarmed state
+  ansible.builtin.copy:
+    src: console-policy.conf
+    dest: "{{ boot_integrity_unit_directory }}/{{ item }}.service.d/10-private-cloud.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [getty@, serial-getty@, console-getty]
+
+- name: Disable magic SysRq
+  ansible.builtin.copy:
+    src: sysctl.conf
+    dest: /etc/sysctl.d/90-private-cloud.conf
+    owner: root
+    group: root
+    mode: '0644'
+  register: boot_integrity_sysctl
+
+- name: Apply the SysRq setting
+  ansible.builtin.command: sysctl --system
+  when: boot_integrity_sysctl.changed
+  changed_when: true
+
+- name: Block automatic boot-chain updates
+  ansible.builtin.copy:
+    src: 52private-cloud-boot-chain
+    dest: /etc/apt/apt.conf.d/52private-cloud-boot-chain
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Disable automatic firmware refresh
+  ansible.builtin.file:
+    src: /dev/null
+    dest: /etc/systemd/system/fwupd-refresh.timer
+    state: link
+    force: true
+
+- name: Find installed boot-chain packages
+  ansible.builtin.command:
+    argv: "{{ ['dpkg-query', '-W', '-f=${Package}\n'] + boot_integrity_held_packages + ['linux-image-' ~ ansible_kernel, 'linux-modules-' ~ ansible_kernel] }}"
+  register: boot_integrity_installed
+  changed_when: false
+  failed_when: false
+
+- name: Hold boot-chain packages
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: "{{ boot_integrity_installed.stdout_lines }}"
+
+- name: Build the unsigned UKI and its PCR 11 manifest
+  ansible.builtin.command: "{{ boot_integrity_helper_directory }}/uki.py build"
+  register: boot_integrity_build
+  changed_when: boot_integrity_build.stdout.startswith('built ')
+
+- name: Install the signed UKI and its boot entry when present
+  ansible.builtin.command: "{{ boot_integrity_helper_directory }}/uki.py install"
+  register: boot_integrity_install
+  changed_when: boot_integrity_install.stdout.startswith('installed ')
+
+- name: Enable the console policy and the tripwire
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    daemon_reload: true
+  loop:
+    - private-cloud-state.service
+    - private-cloud-tripwire.service

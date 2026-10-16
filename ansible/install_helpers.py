@@ -40,10 +40,12 @@ TEMP_PUBLIC_FILE = RUNTIME_DIRECTORY / "public.yml"
 TEMP_ENCRYPTED_FILE = RUNTIME_DIRECTORY / "private-cloud.secrets.yml"
 TEMP_RUNTIME_FILE = RUNTIME_DIRECTORY / "runtime.yml"
 KUBECONFIG_FILE = RUNTIME_DIRECTORY / "kubeconfig"
+LUKS_PASSPHRASE_FILE = RUNTIME_DIRECTORY / "luks-passphrase"
+LUKS_KEY_FILE = RUNTIME_DIRECTORY / "luks-key"
 INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
 SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate", "validate")
-CURRENT_SCHEMA_VERSION = 13
+CURRENT_SCHEMA_VERSION = 14
 CURRENT_SECRETS_SCHEMA_VERSION = 8
 SECRET_SCHEMAS = {
     "storage": {"encryption_passphrase"},
@@ -152,7 +154,7 @@ def ensure_runtime_directory(path: Path = RUNTIME_DIRECTORY) -> None:
 
 
 def remove_stale_runtime_files(path: Path = RUNTIME_DIRECTORY) -> None:
-    for name in (TEMP_SECRET_FILE.name, TEMP_PUBLIC_FILE.name, TEMP_ENCRYPTED_FILE.name, TEMP_RUNTIME_FILE.name, VAULT_PASSWORD_FILE.name, OLD_VAULT_PASSWORD_FILE.name, KUBECONFIG_FILE.name):
+    for name in (TEMP_SECRET_FILE.name, TEMP_PUBLIC_FILE.name, TEMP_ENCRYPTED_FILE.name, TEMP_RUNTIME_FILE.name, VAULT_PASSWORD_FILE.name, OLD_VAULT_PASSWORD_FILE.name, KUBECONFIG_FILE.name, LUKS_PASSPHRASE_FILE.name, LUKS_KEY_FILE.name):
         candidate = path / name
         if candidate.exists() or candidate.is_symlink():
             details = candidate.lstat()
@@ -277,11 +279,11 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if configuration["schema_version"] != CURRENT_SCHEMA_VERSION:
         raise InstallerError(f"Public configuration schema_version must be {CURRENT_SCHEMA_VERSION}")
     cloud = configuration["private_cloud"]
-    expected = {"stages", "storage", "k0s", "networking", "media", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix", "logging", "notifications"}
+    expected = {"stages", "storage", "k0s", "networking", "media", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix", "logging", "notifications", "boot_integrity"}
     if set(cloud) != expected:
         raise InstallerError("Public configuration has missing or unknown sections")
     stages = cloud["stages"]
-    if not isinstance(stages, dict) or set(stages) != {"zfs", "k0s", "networking", "media", "intel_gpu", "postgres", "meilisearch", "stalwart", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "zabbix_server", "zabbix_agent", "logging", "notifications"}:
+    if not isinstance(stages, dict) or set(stages) != {"zfs", "boot_integrity", "k0s", "networking", "media", "intel_gpu", "postgres", "meilisearch", "stalwart", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "zabbix_server", "zabbix_agent", "logging", "notifications"}:
         raise InstallerError("Stage configuration is incomplete")
     if any(type(value) is not bool for value in stages.values()):
         raise InstallerError("Every stage flag must be Boolean")
@@ -593,6 +595,8 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     notifications = cloud["notifications"]
     if not isinstance(notifications, dict) or set(notifications) != {"from_address"} or not EMAIL_PATTERN.fullmatch(str(notifications["from_address"])):
         raise InstallerError("Invalid notifications.from_address")
+    boot_integrity = cloud["boot_integrity"]
+    validate_boot_integrity(boot_integrity)
     public_hostnames = {
         "logging": logging["hostname"],
         "networking": amneziawg["hostname"],
@@ -611,6 +615,26 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     missing_records = sorted(set(enabled_hostnames) - set(managed_records))
     if missing_records:
         raise InstallerError(f"Cloudflare managed records are missing: {', '.join(missing_records)}")
+
+
+def validate_boot_integrity(boot_integrity: Any) -> None:
+    if not isinstance(boot_integrity, dict) or set(boot_integrity) != {"interface", "host_address", "gateway_ip", "extra_pcrs", "extra_drivers"}:
+        raise InstallerError("Boot integrity configuration has missing or unknown keys")
+    if not re.fullmatch(r"[a-z][a-z0-9]{0,14}", str(boot_integrity["interface"])):
+        raise InstallerError("Invalid boot_integrity.interface")
+    try:
+        host = ipaddress.IPv4Interface(boot_integrity["host_address"])
+        gateway = ipaddress.IPv4Address(boot_integrity["gateway_ip"])
+    except (TypeError, ValueError) as error:
+        raise InstallerError("Invalid boot_integrity.host_address or boot_integrity.gateway_ip") from error
+    if "/" not in boot_integrity["host_address"] or gateway not in host.network or gateway == host.ip:
+        raise InstallerError("The boot_integrity gateway must be another address in the host network")
+    extra_pcrs = boot_integrity["extra_pcrs"]
+    if not isinstance(extra_pcrs, list) or any(type(value) is not int or value not in {1, 5} for value in extra_pcrs) or len(set(extra_pcrs)) != len(extra_pcrs):
+        raise InstallerError("boot_integrity.extra_pcrs must be a unique list drawn from 1 and 5")
+    extra_drivers = boot_integrity["extra_drivers"]
+    if not isinstance(extra_drivers, list) or any(not isinstance(value, str) or not re.fullmatch(r"[a-z0-9_]+", value) for value in extra_drivers):
+        raise InstallerError("boot_integrity.extra_drivers must be a list of kernel module names")
 
 
 def validate_secrets_configuration(configuration: Mapping[str, Any], stages: Mapping[str, bool]) -> None:

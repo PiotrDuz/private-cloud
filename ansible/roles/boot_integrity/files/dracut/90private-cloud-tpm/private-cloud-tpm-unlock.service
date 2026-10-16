@@ -1,0 +1,15 @@
+[Unit]
+Description=Private cloud TPM unlock
+DefaultDependencies=no
+ConditionPathExists=/etc/initrd-release
+After=tpm2.target systemd-pcrphase-initrd.service systemd-udevd.service
+Before=cryptsetup-pre.target
+Conflicts=shutdown.target initrd-switch-root.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/private-cloud/unlock.sh
+ExecStop=/usr/lib/private-cloud/unlock.sh cleanup
+TimeoutStartSec=infinity
+SyslogIdentifier=private-cloud-tpm

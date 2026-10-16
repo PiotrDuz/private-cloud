@@ -1,0 +1,30 @@
+---
+boot_integrity_command_line:
+  - lockdown=confidentiality
+  - intel_iommu=on
+  - iommu.strict=1
+  - usbcore.authorized_default=2
+  - rd.shell=0
+  - rd.emergency=poweroff
+boot_integrity_packages:
+  - dracut
+  - tpm2-tools
+  - systemd-ukify
+  - systemd-boot-efi
+  - iputils-arping
+  - efibootmgr
+  - cryptsetup
+  - sbsigntool
+boot_integrity_held_packages:
+  - linux-generic
+  - linux-image-generic
+  - linux-firmware
+  - intel-microcode
+  - dracut
+  - dracut-core
+  - systemd-ukify
+  - systemd-boot-efi
+boot_integrity_helper_directory: /usr/local/libexec/private-cloud
+boot_integrity_module_directory: /usr/lib/dracut/modules.d/90private-cloud-tpm
+boot_integrity_state_directory: /var/lib/private-cloud
+boot_integrity_unit_directory: /etc/systemd/system

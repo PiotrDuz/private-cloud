@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
+from boot_integrity_helpers import enroll_boot_integrity
 from install_helpers import (
     ANSIBLE_CONFIG,
     CURRENT_SECRETS_SCHEMA_VERSION,
@@ -18,6 +19,8 @@ from install_helpers import (
     INVENTORY,
     KUBECONFIG_FILE,
     LOCK_FILE,
+    LUKS_KEY_FILE,
+    LUKS_PASSPHRASE_FILE,
     MODES,
     OLD_VAULT_PASSWORD_FILE,
     PLAYBOOK,
@@ -187,9 +190,15 @@ def run_installation() -> dict[str, Any]:
             atomic_write(PUBLIC_CONFIGURATION, dump_yaml(public), 0o600)
             atomic_write(SECRETS_CONFIGURATION, TEMP_ENCRYPTED_FILE.read_text(), 0o600)
         run_playbook()
+        boot_integrity = enroll_boot_integrity(public["private_cloud"]["boot_integrity"]) if stages["boot_integrity"] else None
+        if boot_integrity is not None:
+            print(f"boot_integrity: {boot_integrity}", file=sys.stderr)
         run_validation_playbook()
         clear_create_intent()
-        return {"status": "completed", "mode": mode, "playbook": str(PLAYBOOK)}
+        result = {"status": "completed", "mode": mode, "playbook": str(PLAYBOOK)}
+        if boot_integrity is not None:
+            result["boot_integrity"] = boot_integrity
+        return result
 
 
 @contextmanager
@@ -218,7 +227,7 @@ def runtime_cleanup() -> Iterator[None]:
     try:
         yield
     finally:
-        for path in (TEMP_SECRET_FILE, TEMP_PUBLIC_FILE, TEMP_ENCRYPTED_FILE, TEMP_RUNTIME_FILE, VAULT_PASSWORD_FILE, OLD_VAULT_PASSWORD_FILE, KUBECONFIG_FILE):
+        for path in (TEMP_SECRET_FILE, TEMP_PUBLIC_FILE, TEMP_ENCRYPTED_FILE, TEMP_RUNTIME_FILE, VAULT_PASSWORD_FILE, OLD_VAULT_PASSWORD_FILE, KUBECONFIG_FILE, LUKS_PASSPHRASE_FILE, LUKS_KEY_FILE):
             path.unlink(missing_ok=True)
 
 
@@ -233,9 +242,9 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
         return existing
     source = existing or default_public_configuration()
     if mode == "update":
-        sections = prompt_line("Sections to change (stages, storage, k0s, networking, media, postgres, meilisearch, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, stalwart, zabbix, logging, notifications)", "").split()
+        sections = prompt_line("Sections to change (stages, storage, k0s, networking, media, postgres, meilisearch, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, stalwart, zabbix, logging, notifications, boot_integrity)", "").split()
     else:
-        sections = ["stages", "storage", "k0s", "networking", "media", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix", "logging", "notifications"]
+        sections = ["stages", "storage", "k0s", "networking", "media", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix", "logging", "notifications", "boot_integrity"]
     result = _copy_mapping(source)
     stages = result["private_cloud"]["stages"]
     if "stages" in sections:
@@ -349,6 +358,13 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
             cloud["logging"][key] = prompt(f"Logging {key}", cloud["logging"][key])
     if "notifications" in sections:
         cloud["notifications"]["from_address"] = prompt_line("Alert sender authorized by the SMTP relay", cloud["notifications"]["from_address"])
+    if "boot_integrity" in sections:
+        boot = cloud["boot_integrity"]
+        for key in ("interface", "host_address", "gateway_ip"):
+            boot[key] = prompt_line(f"Boot integrity {key}", boot[key])
+        pcrs = prompt_line("Boot integrity extra PCRs separated by spaces (1 and 5 only)", " ".join(str(value) for value in boot["extra_pcrs"])).split()
+        boot["extra_pcrs"] = [int(value) if value.isdigit() else value for value in pcrs]
+        boot["extra_drivers"] = prompt_line("Boot integrity extra initrd drivers separated by spaces", " ".join(boot["extra_drivers"])).split()
     if "zabbix" in sections:
         for key in ("storage_size", "admin_username"):
             cloud["zabbix"][key] = prompt_line(f"Zabbix {key}", cloud["zabbix"][key])

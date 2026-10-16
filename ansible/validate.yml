@@ -35,6 +35,7 @@
             name: "{{ validation_stage }}"
             tasks_from: validate
           loop:
+            - boot_integrity
             - zfs
             - k0s
             - networking

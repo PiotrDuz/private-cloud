@@ -1,7 +1,8 @@
-schema_version: 13
+schema_version: 14
 private_cloud:
   stages:
     zfs: true
+    boot_integrity: false
     k0s: true
     networking: true
     media: true
@@ -160,3 +161,9 @@ private_cloud:
     retention_days: 14
   notifications:
     from_address: user@example.com
+  boot_integrity:
+    interface: enp1s0
+    host_address: 192.168.1.10/24
+    gateway_ip: 192.168.1.1
+    extra_pcrs: []
+    extra_drivers: []

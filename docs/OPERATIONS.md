@@ -169,3 +169,26 @@ Backup automation and independent outage monitoring are not configured by this r
 - Keep encryption keys and configuration recovery material outside this host.
 - Periodically restore an independent backup and record the result.
 - After reboot, confirm datasets are mounted, pods are ready, and monitoring has resumed.
+
+## Boot integrity updates
+
+- Hold kernel, firmware, and boot-chain packages until a maintenance visit.
+- Stop the tripwire before attaching a keyboard to a running armed host.
+- Run the installer after package updates to build the new unsigned UKI.
+- Sign the UKI on the workstation and copy it to `signed.efi` in the build directory.
+- Rerun the installer to install the signed UKI.
+- Expect the first reboot to wipe the unlock and ask for the LUKS recovery passphrase.
+- Log in with the administrator password and unplug external USB devices.
+- Rerun the installer to enroll the unlock again.
+- Reboot and run the installer `validate` action.
+
+### Recovery
+
+- A wiped host boots without checks and waits for the recovery passphrase.
+- A host that powers off after boot lost the router for more than 2 minutes and wiped its unlock.
+- Power the router on first, then the host, before re-enrolling after a long outage.
+- A moved or stolen-and-recovered host needs the same re-enrollment.
+- Read `journalctl -b -t private-cloud-tpm` for the wipe reason of the last boot.
+- Compare the logged PCR values with `expected_pcrs` in `/var/lib/private-cloud/boot-integrity.json`.
+- Delete a build directory under `/var/lib/private-cloud/uki/` to force a rebuild.
+

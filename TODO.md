@@ -15,6 +15,21 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 - [x] Define manual native account deletion and data removal in the operations runbook.
 - [x] Document application-specific account deletion and credential revocation in the operations runbook.
 
+## Boot integrity acceptance
+
+- [ ] Build the initrd with the dracut module and list its contents with `lsinitrd`.
+- [ ] Boot the signed UKI under Secure Boot and confirm the recovery prompt on the first armed-less boot.
+- [ ] Enroll the unlock and confirm an unattended reboot unlocks root and k0s.
+- [ ] Confirm the initrd wipes the unlock and powers off after 2 minutes without a gateway answer.
+- [ ] Confirm a router that answers within 2 minutes still lets the host unlock.
+- [ ] Confirm a wrong gateway MAC wipes the unlock and the next boot runs no checks.
+- [ ] Confirm an attached USB device wipes the unlock and powers the host off at runtime.
+- [ ] Confirm a USB keyboard works at the recovery prompt after a wipe.
+- [ ] Confirm console login works only after a wipe.
+- [ ] Confirm held packages and the unattended-upgrades blacklist keep the booted kernel installed.
+- [ ] Confirm Zabbix, Alloy, and Intel GPU workloads run under kernel lockdown.
+- [ ] Add Zabbix items for the unlock state, Secure Boot state, and tripwire state.
+
 ## Runtime validation gaps
 
 - [ ] Verify that ZFS unlock and k0s startup succeed after an actual reboot.

@@ -1,0 +1,14 @@
+[Unit]
+Description=Private cloud TPM tripwire
+After=multi-user.target network-online.target
+ConditionPathExists=/dev/tpmrm0
+
+[Service]
+ExecCondition=/usr/local/libexec/private-cloud/tripwire.py armed
+ExecStartPre=/usr/bin/sleep 20
+ExecStart=/usr/local/libexec/private-cloud/tripwire.py run
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

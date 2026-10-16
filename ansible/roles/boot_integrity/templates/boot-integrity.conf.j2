@@ -1,0 +1,7 @@
+# Managed by private-cloud Ansible; the initrd hook and the host helpers read this file.
+INTERFACE={{ private_cloud.boot_integrity.interface }}
+HOST_ADDRESS={{ private_cloud.boot_integrity.host_address }}
+GATEWAY_IP={{ private_cloud.boot_integrity.gateway_ip }}
+PCRS={{ ([0, 2, 4, 7] + private_cloud.boot_integrity.extra_pcrs) | unique | sort | join(',') }}
+LUKS_VOLUME={{ boot_integrity_luks_volume }}
+COMMAND_LINE="{{ boot_integrity_command_line | join(' ') }}"
