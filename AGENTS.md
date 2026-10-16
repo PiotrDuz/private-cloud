@@ -28,7 +28,7 @@
 
 ## Layout
 
-- `ansible/roles/<stage>/` one role per installer stage; `ansible/tasks/*.yml` holds shared snippets such as `render_manifests.yml` and `service_dataset*.yml`.
+- `ansible/roles/<stage>/` one role per installer stage; `ansible/roles/system/` always runs first and is not a stage; `ansible/tasks/*.yml` holds shared snippets such as `render_manifests.yml` and `service_dataset*.yml`.
 - `k0s-services/<service>/templates/*.yaml.j2` is the source of truth for Kubernetes resources; see `k0s-services/AGENTS.md`.
 - `ansible/roles/<stage>/files/` holds Python scripts that the role copies to the host, embeds in manifests, or runs during the play.
 - `zabbix/` holds Zabbix collectors and templates shared by the Zabbix server and agent roles.

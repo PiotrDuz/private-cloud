@@ -1,0 +1,21 @@
+---
+- name: Read active swap devices for validation
+  ansible.builtin.slurp:
+    src: /proc/swaps
+  register: system_validation_swaps
+
+- name: Require no active swap
+  ansible.builtin.assert:
+    that: (system_validation_swaps.content | b64decode).splitlines() | length == 1
+    fail_msg: Swap is active; the host must run without disk-backed swap or zram.
+
+- name: Read the swap target state
+  ansible.builtin.command: systemctl is-enabled swap.target
+  register: system_validation_swap_target
+  changed_when: false
+  failed_when: false
+
+- name: Require masked boot-time swap activation
+  ansible.builtin.assert:
+    that: system_validation_swap_target.stdout | trim == 'masked'
+    fail_msg: swap.target must be masked so no swap activates at boot.

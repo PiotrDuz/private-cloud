@@ -27,6 +27,13 @@
             var: private_cloud_summary
           tags: [always, summary]
 
+        - name: Configure the host system
+          ansible.builtin.include_role:
+            name: system
+            apply:
+              tags: [system]
+          tags: [system]
+
         - name: Configure OpenZFS storage
           ansible.builtin.include_role:
             name: zfs

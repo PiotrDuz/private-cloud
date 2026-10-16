@@ -4,6 +4,7 @@ This file is the source of truth for the desired system state and its major deci
 
 ## Table of contents
 
+- [System configuration](#system-configuration)
 - [ZFS storage](#zfs-storage)
 - [k0s cluster](#k0s-cluster)
 - [PostgreSQL](#postgresql)
@@ -44,6 +45,10 @@ This file is the source of truth for the desired system state and its major deci
     * [OpenObserve](#openobserve)
         + [Storage and queries](#storage-and-queries)
         + [Log alert rules and delivery](#log-alert-rules-and-delivery)
+
+## System configuration
+
+- Disable all swap, including disk-backed swap and zram
 
 ## ZFS storage
 

@@ -19,6 +19,11 @@
           ansible.builtin.include_tasks: tasks/kubeconfig.yml
           when: private_cloud.stages.k0s | bool
 
+        - name: Validate host system configuration
+          ansible.builtin.include_role:
+            name: system
+            tasks_from: validate
+
         - name: Validate storage
           ansible.builtin.include_tasks: validation/storage.yml
 

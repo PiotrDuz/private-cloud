@@ -1,0 +1,39 @@
+---
+- name: Read active swap devices
+  ansible.builtin.slurp:
+    src: /proc/swaps
+  register: system_active_swaps
+
+- name: Prevent boot-time swap activation from fstab, GPT, and zram units
+  ansible.builtin.systemd_service:
+    name: swap.target
+    masked: true
+
+- name: Remove zram swap packages
+  ansible.builtin.apt:
+    name:
+      - systemd-zram-generator
+      - zram-config
+      - zram-tools
+    state: absent
+    purge: true
+
+- name: Remove swap entries from fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^\s*[^#\s]+\s+\S+\s+swap\s'
+    state: absent
+
+- name: Disable active swap
+  ansible.builtin.command: swapoff --all
+  when: (system_active_swaps.content | b64decode).splitlines() | length > 1
+
+- name: Delete disabled swap files
+  ansible.builtin.file:
+    path: "{{ item.split()[0] }}"
+    state: absent
+  loop: "{{ (system_active_swaps.content | b64decode).splitlines()[1:] }}"
+  when: item.split()[1] == 'file'
+
+- name: Validate host system configuration
+  ansible.builtin.include_tasks: ../validation/main.yml
