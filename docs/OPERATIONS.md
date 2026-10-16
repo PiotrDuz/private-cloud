@@ -16,6 +16,7 @@ Open Zabbix at `networking.zabbix_hostname` and review **Monitoring → Problems
 | Latest data → ZFS scrub | Last completion, repaired bytes, and remaining errors. | Investigate failures or no completed scrub for 40 days. |
 | Latest data → ZFS snapshots | Retained bytes, oldest age, and collector errors. | Check growth and age against the chosen retention schedule. |
 | Alloy health | Collector availability, metrics availability, retries, and dropped entries. | Investigate unhealthy collection and delivery pressure. |
+| Certificate health | HTTPS and SMTP certificate validity and days remaining. | Investigate at 21 days; act urgently at 7 days. |
 
 - Check timestamps and unsupported items when metrics disappear.
 - Use ZFS quota utilization rather than advertised 10Ti PV capacity.
@@ -31,6 +32,8 @@ Open Zabbix at `networking.zabbix_hostname` and review **Monitoring → Problems
 - Include qBittorrent's `file-logs` container when inspecting its application messages.
 - Filter host collector errors by private-cloud-zabbix-* service names in OpenObserve.
 - Filter Zabbix Agent journal logs by the zabbix-agent2.service service name.
+- Filter sudo, su, login, and SSH authentication events by the host-auth service name.
+- Filter firewall unit and kernel firewall messages by the private-cloud-firewall.service and kernel service names.
 - Check Jellyfin FFmpeg diagnostics under `/config/log` for transcoding failures.
 - Treat unclassified logs as evidence for investigation even when no log alert fires.
 - Search historical logs after an outage because delayed entries outside the five-minute alert window do not trigger log alerts.
@@ -66,10 +69,22 @@ OpenCloud's built-in provider and directory supply shared login for Grist, AFFiN
 - Restore the public configuration and Vault ciphertext from the same recovery point.
 - Restore and mount `tank/secure/backup/private-cloud-config` before reapplying.
 - The initial OpenCloud administrator password and OIDC client secrets are not rotatable through the installer.
-- Rotatable groups cover enabled service database passwords, mail credentials, Cloudflare tokens, and VPN credentials.
+- The Immich, AFFiNE, and Jellyfin administrator passwords are bootstrap credentials and are not rotatable.
+- Change those passwords inside each application after the installer claims the instance.
+- Rotatable groups cover enabled service database passwords, mail credentials, Cloudflare tokens, and the AirVPN WireGuard keys.
+- The OpenCloud WOPI secret, Grist cookie secret, and Zabbix agent PSK are also rotatable.
+- A PSK rotation updates the Zabbix host object and restarts the agent on the same run.
 - PostgreSQL, Zabbix, and OpenObserve administrator passwords and the ZFS passphrase are not rotatable.
 
 OpenCloud does not attest email verification. AFFiNE's [supported claim mapping](https://github.com/toeverything/AFFiNE/blob/v0.27.3/packages/backend/server/src/plugins/oauth/providers/oidc.ts) for `claim_email_verified` names an absent claim so its supported OIDC mapping accepts administrator-controlled email identities; administrators must keep these addresses unique and prevent reassignment while downstream accounts exist.
+
+## Media VPN
+
+- Generate a new AirVPN WireGuard configuration in the Client Area when rotating keys or changing server.
+- Rotate `wireguard_private_key` and `wireguard_preshared_key` together through the installer `rotate` mode.
+- Update `media.vpn` endpoint, port, peer public key, and address through `update` mode when the server changes.
+- The Secret revision annotation restarts the gateway pod on the next run.
+- Check the tunnel with `sudo k0s kubectl exec -n media deployment/media-vpn -c wireguard -- ip -4 address show dev wg0`.
 
 ## Account deletion
 
@@ -88,7 +103,7 @@ Account deletion is manual in each application; OIDC does not synchronize accoun
 | Application | Disable while preserving data | Delete account and revoke credentials |
 | --- | --- | --- |
 | OpenCloud | Disable the account in the admin area. | Remove owned spaces and files, shares, app passwords, and sessions before deleting the user. |
-| Grist | Disable OpenCloud login and remove site access. | Delete owned documents and API keys, remove memberships, and delete the Grist account after resolving ownership. |
+| Grist | Disable OpenCloud login and remove site access. | Delete owned documents, remove memberships, and delete the Grist account after resolving ownership. |
 | AFFiNE | Disable OpenCloud login and remove workspace access. | Delete owned workspaces and attachments, revoke sessions and tokens, and delete the AFFiNE account. |
 | Immich | Disable OpenCloud login and revoke active sessions. | Revoke API keys and devices, delete the user in Administration, and confirm the queued library deletion completes. |
 | Stalwart | Deny authentication permissions while retaining mailbox data. | Revoke app passwords and API keys, delete the account and aliases, and confirm mail and blob cleanup completes. |
@@ -117,10 +132,15 @@ Traefik renews HTTPS certificates automatically; Stalwart renews its SMTP STARTT
 - Treat fewer than 7 days remaining as urgent.
 - Check the affected service's Cloudflare token and outbound connectivity after renewal failures.
 - Check SMTP separately because the mail website presents Traefik's certificate.
+- Zabbix certificate checks run whenever the Zabbix Agent stage is enabled, independently of logging.
 
 ## Email alerts
 
-When notifications are enabled, Zabbix sends Warning-or-higher problems, recoveries, and hourly reminders. OpenObserve evaluates recognized warning, error, and critical logs every minute and suppresses repeated notifications for sixty minutes, matching the hourly Zabbix reminders. A single matching log entry can trigger an alert.
+When notifications are enabled, Zabbix tracks metric alerts as problems and sends Warning-or-higher problems, recoveries, and hourly reminders. OpenObserve evaluates recognized warning, error, and critical logs every minute and sends throttled event notifications without recovery or reminder emails. A single matching log entry can trigger an alert.
+
+Each OpenObserve rule suppresses repeated notifications for sixty minutes across all services. OpenObserve 0.90.3 has no per-service throttling outside its enterprise deduplication, so one noisy service can hide a new failure in another service for that hour. Search the `logs` stream after any alert to review every service in the window.
+
+The missing-heartbeat rule runs an SQL aggregate over the last five minutes and returns a row only when the heartbeat count is zero. OpenObserve sends no notification for a query with no rows, so this form is required.
 
 Alerts go directly to Stalwart's internal SMTP listener on TCP 2525 without TLS or authentication. Network policies permit OpenObserve and Zabbix to reach this listener, and anonymous external relaying remains disabled. Global validation sends a test message over this path and confirms its arrival in the Stalwart mailbox over JMAP.
 
@@ -129,7 +149,8 @@ OpenObserve excludes its own logs from severity alerts, and Zabbix does not prob
 | Check | Where to investigate |
 | --- | --- |
 | Missing Zabbix email | Reports → Action log, trigger actions, SMTP media, recipient permissions, and severity selection. |
-| Missing OpenObserve email | Alert state, destination, silence period, SMTP settings, and OpenObserve logs. |
+| Missing OpenObserve email | Alert state, destination, sixty-minute silence period, SMTP settings, and OpenObserve logs. |
+| Missing Zabbix agent data | PSK file ownership and mode, host PSK identity, and the Zabbix Agent journal. |
 | Email accepted but absent from inbox | Internal SMTP service, network policies, and Stalwart delivery or filtering logs. |
 | Repeated log alerts | OpenObserve query, affected service, and dependency logs. |
 

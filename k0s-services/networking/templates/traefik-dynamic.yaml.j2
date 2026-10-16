@@ -34,9 +34,15 @@ data:
               Remote-User: ""
               Remote-Email: ""
               Remote-Groups: ""
+        # Traefik replaces untrusted X-Forwarded-* but passes RFC 7239 Forwarded, which Stalwart prefers.
+        strip-forwarded:
+          headers:
+            customRequestHeaders:
+              Forwarded: ""
+        # oauth2-proxy answers 202 with the verified email in X-Forwarded-User, or redirects the browser to OpenCloud sign-in.
         forward-auth:
           forwardAuth:
-            address: http://forward-auth.edge.svc.cluster.local:4181
+            address: http://forward-auth.edge.svc.cluster.local:4180/
             trustForwardHeader: false
             authResponseHeaders:
               - X-Forwarded-User

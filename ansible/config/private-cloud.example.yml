@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 13
 private_cloud:
   stages:
     zfs: true
@@ -75,21 +75,23 @@ private_cloud:
       prowlarr: 1Gi
       qbittorrent: 1Gi
       jellyfin: 4Gi
-      openvpn: 256Mi
+      vpn_gateway: 256Mi
       vpn_route: 64Mi
       dns: 128Mi
       file_logs: 64Mi
     storage_size: 1T
     hostname: jellyfin.example.com
     timezone: Etc/UTC
+    jellyfin_admin_username: admin
     quality_profiles:
       sonarr: 1080p
       radarr: 1080p
-    openvpn:
+    vpn:
       gateway_cluster_ip: 10.96.0.53
-      endpoint_ip: 198.51.100.10
-      endpoint_port: 1194
-      endpoint_protocol: UDP
+      endpoint_ip: 1.2.3.4 # replace with your AirVPN entry IP
+      endpoint_port: 1637
+      peer_public_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= # replace with the AirVPN server public key
+      address: 10.128.64.2/32 # replace with your AirVPN interface IPv4 address
   postgres:
     volume_size: 20G
     max_ram: 2Gi
@@ -123,6 +125,7 @@ private_cloud:
     storage_size: 100G
     max_ram: 2Gi
     hostname: affine.example.com
+    admin_email: admin@example.com
   immich:
     storage_size: 100G
     hostname: photos.example.com
@@ -131,6 +134,7 @@ private_cloud:
     machine_learning_max_ram: 3Gi
     machine_learning_accelerator: openvino
     valkey_max_ram: 256Mi
+    admin_email: admin@example.com
   stalwart:
     storage_size: 100G
     max_ram: 1Gi

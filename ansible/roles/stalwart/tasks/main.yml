@@ -199,6 +199,36 @@
   changed_when: true
   no_log: true
 
+- name: Create the scoped Meilisearch search key for Stalwart
+  ansible.builtin.command:
+    argv: [python3, "{{ role_path }}/files/ensure_meilisearch_key.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': stalwart_kubeconfig,
+        'namespace': stalwart_namespace,
+        'service': stalwart_meilisearch_service,
+        'port': stalwart_meilisearch_port,
+        'master_key': private_cloud_secrets.meilisearch.master_key,
+        'key': {
+          'uid': stalwart_meilisearch_key_uid,
+          'name': stalwart_meilisearch_key_name,
+          'actions': stalwart_meilisearch_key_actions,
+          'indexes': stalwart_meilisearch_key_indexes,
+          'expiresAt': none
+        }
+      } | to_json }}
+  register: stalwart_search_key
+  until: stalwart_search_key.rc == 0
+  retries: 3
+  delay: 5
+  changed_when: false
+  no_log: true
+
+- name: Remember the Stalwart search key
+  ansible.builtin.set_fact:
+    stalwart_search_api_key: "{{ (stalwart_search_key.stdout | from_json).key }}"
+  no_log: true
+
 - name: Apply Stalwart runtime credentials
   kubernetes.core.k8s:
     kubeconfig: "{{ stalwart_kubeconfig }}"
@@ -206,17 +236,33 @@
     definition: "{{ lookup('template', 'runtime-secret.yml.j2') | from_yaml }}"
   no_log: true
 
-- name: Calculate the Stalwart configuration revision
+- name: Read the applied Stalwart runtime credentials revision
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    api_version: v1
+    kind: Secret
+    name: "{{ stalwart_runtime_secret_name }}"
+    namespace: "{{ stalwart_namespace }}"
+  register: stalwart_applied_runtime_secret
+  changed_when: false
+  no_log: true
+
+- name: Calculate the Stalwart configuration revisions
   ansible.builtin.set_fact:
+    stalwart_secret_revision: >-
+      {{ stalwart_applied_runtime_secret.resources[0].metadata.resourceVersion }}-{{
+      (private_cloud_secrets.stalwart.admin_password ~ "\n" ~ private_cloud_secrets.stalwart.mailbox_password)
+      | private_cloud_hmac(private_cloud_secrets.storage.encryption_passphrase) }}
     stalwart_configuration_revision: >-
       {{ (lookup('template', 'plan.ndjson.j2') ~
-          lookup('template', 'runtime-secret.yml.j2') ~
-          stalwart_image ~ stalwart_wait_image ~
+          stalwart_image ~ stalwart_cli_image ~ stalwart_wait_image ~
           stalwart_postgres_service ~ stalwart_postgres_port ~
           lookup('file', role_path ~ '/../../../k0s-services/stalwart/templates/statefulset.yaml.j2') ~
           lookup('file', role_path ~ '/../../../k0s-services/stalwart/templates/configmap.yaml.j2') ~
           lookup('file', role_path ~ '/../../../k0s-services/stalwart/templates/configuration-job.yaml.j2') ~
           lookup('file', role_path ~ '/../../../k0s-services/stalwart/wait_for_api.py')) | hash('sha256') }}
+  vars:
+    stalwart_plan_redacted: true
   no_log: true
 
 - name: Render Stalwart manifests from Jinja templates
@@ -257,7 +303,7 @@
 - name: Determine whether Stalwart configuration must be applied
   ansible.builtin.set_fact:
     stalwart_configuration_required: >-
-      {{ stalwart_existing_statefulset.resources | length == 0 or ((stalwart_existing_statefulset.resources[0].spec.template.metadata.annotations | default({})).get("private-cloud.example/configuration-revision", "") != stalwart_configuration_revision) }}
+      {{ stalwart_existing_statefulset.resources | length == 0 or ((stalwart_existing_statefulset.resources[0].spec.template.metadata.annotations | default({})).get("private-cloud.example/configuration-revision", "") != stalwart_configuration_revision) or ((stalwart_existing_statefulset.resources[0].spec.template.metadata.annotations | default({})).get("private-cloud.example/secret-revision", "") != stalwart_secret_revision) }}
 
 
 - name: Apply Stalwart configuration with temporary recovery access
@@ -293,7 +339,7 @@
             template:
               metadata:
                 annotations:
-                  private-cloud.example/recovery-revision: "{{ stalwart_configuration_revision }}"
+                  private-cloud.example/recovery-revision: "{{ stalwart_configuration_revision }}-{{ stalwart_secret_revision }}"
       no_log: true
 
     - name: Wait for Stalwart recovery access
@@ -380,6 +426,7 @@
                 annotations:
                   private-cloud.example/recovery-revision: null
                   private-cloud.example/configuration-revision: "{{ stalwart_configuration_revision }}"
+                  private-cloud.example/secret-revision: "{{ stalwart_secret_revision }}"
       when:
         - stalwart_plan_job is defined
         - stalwart_plan_job.resources | default([]) | length > 0

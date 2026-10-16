@@ -25,8 +25,8 @@ def main():
         }), "managed host")
         if host["host"] != config["host"] or host["name"] != config["host"] or str(host["status"]) != "0":
             raise RuntimeError("The configured Zabbix host is missing, renamed, or disabled")
-        if str(host.get("tls_accept")) != "1" or str(host.get("tls_connect")) != "1":
-            raise RuntimeError("The managed Zabbix host does not accept and use its configured TLS mode")
+        if str(host.get("tls_accept")) != "2" or str(host.get("tls_connect")) != "2":
+            raise RuntimeError("The managed Zabbix host does not require PSK for agent connections")
 
         group = require_one(api("hostgroup.get", {
             "output": ["groupid", "name"],
@@ -67,8 +67,8 @@ def main():
         if not expected_datasets.issubset(configured_datasets):
             raise RuntimeError("The storage dashboard does not include every dataset enabled in the global configuration")
 
-        if config["logging"]:
-            validate_logging_items(api, host["hostid"], config["certificates"])
+        if config["health"]:
+            validate_health_items(api, host["hostid"], config["certificates"], config["alloy"])
         if config["notifications"]:
             validate_notifications(api, config, group["groupid"])
         else:
@@ -86,8 +86,10 @@ def main():
             pass
 
 
-def validate_logging_items(api, host_id, certificates):
+def validate_health_items(api, host_id, certificates, alloy):
     keys = ["observability.health"]
+    if alloy:
+        keys.extend("observability." + field for field in ("alloy_up", "metrics_up", "alloy_retries", "alloy_dropped"))
     for certificate in certificates:
         name = certificate["name"]
         keys.extend([

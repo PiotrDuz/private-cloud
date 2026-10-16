@@ -6,6 +6,51 @@ Source baseline: `a4e6b58` (`Fixes and rearrangement`). No implementation has ch
 
 This revision adds a service-by-service review of every template in `k0s-services/` against [PLAN.md](../PLAN.md). It also simplifies the report: each issue is described in general terms, with the affected files named so it can be traced.
 
+## Resolution status (14 October 2026)
+
+The findings below describe the baseline `a4e6b58`. The repository now implements a resolution for each of them. Nothing has run on a live host, so every row is **implemented, pending live acceptance**; partial resolutions are stated in the row.
+
+| ID | Status | Resolution |
+| --- | --- | --- |
+| F01 | Implemented, pending live acceptance | The catalog owns an allowed-dataset list that the ZFS collector enforces, including the configuration dataset. |
+| F02 | Implemented, pending live acceptance | Pool validation maps partitions to their parent disks before comparing. |
+| F03 | Implemented, pending live acceptance | AFFiNE alters its role password, and Traefik and forward-auth restart through Secret revision annotations. |
+| F04 | Implemented, pending live acceptance | The installer claims the Immich, AFFiNE, and Jellyfin administrators before publishing their routes, and Zabbix is published only after its password is set. |
+| F05 | Implemented, pending live acceptance | OnlyOffice allows only the OpenCloud host through its ipfilter rules, and OpenCloud enables proof-key verification. |
+| F06 | Implemented, pending live acceptance | The heartbeat rule is an SQL aggregate that returns a row only when the count is zero. |
+| F07 | Implemented, pending live acceptance | The k0s configuration receives the configured pod and service CIDRs, and they are immutable after install. |
+| F08 | Implemented, pending live acceptance | The installer records a create intent and resumes an interrupted create against the matching pool. |
+| F09 | Implemented, pending live acceptance | The installer refuses to disable a stage that is already enabled. |
+| F10 | Implemented, pending live acceptance | Networking is mandatory with k0s and the cluster DNS address derives from the service CIDR. |
+| F11 | Partial, pending live acceptance | Logout ends at the OpenCloud sign-in page through its end-session endpoint; there is no `/signed-out` route. |
+| F12 | Implemented, pending live acceptance | Sonarr, Radarr, Prowlarr, and qBittorrent use the Recreate strategy. |
+| F13 | Implemented, pending live acceptance | Traefik has no Kubernetes API access: it reads file-provider routes from route ConfigMaps and has no RBAC or service-account token. |
+| F14 | Implemented, pending live acceptance | Stalwart is pinned to v0.16.26 by digest. |
+| F15 | Partial, pending live acceptance | PLAN.md is narrowed to throttled event alerts with per-rule 60-minute throttling; Zabbix owns problems, recovery, and reminders, and certificate checks no longer need logging. |
+| F16 | Implemented, pending live acceptance | The validator renders policies from the templates and compares selectors, types, ingress, and egress. |
+| F17 | Implemented, pending live acceptance | DDNS compares content, proxy status, and TTL and rejects non-public addresses. |
+| F18 | Implemented, pending live acceptance | Application and helper egress targets the Traefik pod on TCP 8443. |
+| F19 | Implemented, pending live acceptance | AFFiNE sets `AFFINE_SERVER_EXTERNAL_URL` to its public origin. |
+| F20 | Implemented, pending live acceptance | Grist sets `GRIST_IGNORE_SESSION=true` so identity follows the proxy header on every request. |
+| F21 | Decided, no API access | Grist is browser-only and API keys are not supported. |
+| F22 | Implemented, pending live acceptance | The agent and the Zabbix host object use a Vault PSK with a fixed identity, and the PSK is rotatable. |
+| F23 | Implemented, pending live acceptance | Admin passwords need 16 characters, vendor defaults are rejected, and the installer offers generated values. |
+| F24 | Implemented, pending live acceptance | The journal filter keeps sudo, su, login, sshd, logind, and firewall events. |
+| F25 | Partial, pending live acceptance | Jellyfin trusts the pod network as known proxies; Stalwart trusts forwarded headers globally and a policy limits the source to Traefik and the configuration Job. |
+| F26 | Implemented, pending live acceptance | Pod annotations carry Secret revisions instead of credential hashes. |
+| F27 | Implemented, pending live acceptance | Identity validation checks client secrets, redirects, and the end-session path instead of any HTTP success. |
+| F28 | Partial, pending live acceptance | Traefik may query public addresses on TCP and UDP 53; Stalwart uses cluster DNS and needed no change. |
+| F29 | Implemented, pending live acceptance | OpenCloud has its own WOPI secret in the `opencloud-wopi` Secret that OnlyOffice never receives. |
+| F30 | Implemented, pending live acceptance | oauth2-proxy v7.15.5 replaces traefik-forward-auth. |
+| F31 | Implemented, pending live acceptance | Stalwart receives a scoped `st_*` Meilisearch key instead of the master key. |
+| F32 | Implemented, pending live acceptance | Jellyfin sets `fsGroupChangePolicy: OnRootMismatch` and mounts the library claim read-only. |
+| F33 | Implemented, pending live acceptance | Images are pinned by tag and digest and OpenCloud uses the stable 7.2.4 image. |
+| F34 | Implemented, pending live acceptance | Stalwart and Grist disable service links. |
+| F35 | Implemented, pending live acceptance | OpenObserve administrator and ingestion credentials live in separate Secrets. |
+| F36 | Implemented, pending live acceptance | AFFiNE and OnlyOffice drop all capabilities and add back only what they need. |
+| Docs | Implemented | The alert relay, Intel GPU, installer mode, and live-handoff statements are corrected. |
+| Media VPN | Implemented, pending live acceptance | Media VPN switched to AirVPN WireGuard (user decision, 16 October 2026). |
+
 ## Summary
 
 The architecture is coherent and largely follows PLAN.md. Good foundations are already in place:
@@ -150,8 +195,8 @@ Files: `k0s-services/opencloud/templates/deployment.yaml.j2`, `k0s-services/only
 
 **F13 — Traefik can read every Secret (High, confirmed).**
 A ClusterRole grants Traefik `get`, `list`, and `watch` on Secrets cluster-wide. Compromise of the Internet-facing edge would expose every application credential.
-*Fix:* use namespace-scoped Roles for the namespaces Traefik serves, and keep only cluster-scoped discovery permissions in the ClusterRole.
-File: `k0s-services/networking/templates/traefik-rbac.yaml.j2`.
+*Resolution:* Traefik uses only the file provider with per-service route ConfigMaps, so it has no Kubernetes API access, RBAC, or service-account token.
+File: `k0s-services/networking/templates/traefik.yaml.j2`.
 
 **F31 — Stalwart uses the Meilisearch master key (Medium, confirmed). New.**
 Stalwart receives `MEILI_MASTER_KEY`, which grants full administration of Meilisearch, including key management. PLAN.md asks for service credentials for backend APIs.
@@ -219,7 +264,7 @@ Three advertised rotations do not fully take effect:
 *Fix:* alter the role password, and add secret checksums to the Traefik and ForwardAuth pod templates.
 
 **F09 — Disabling a stage does not stop it (Medium, confirmed).**
-A disabled stage is skipped rather than removed. Its Deployments and Ingresses keep running and stay public, but drop out of validation and monitoring.
+A disabled stage is skipped rather than removed. Its Deployments and route ConfigMaps keep running and stay public, but drop out of validation and monitoring.
 *Fix:* stop and unpublish disabled services while keeping their data, or refuse to disable an installed stage.
 
 **F12 — ARR apps can run two writers during updates (Medium, confirmed).**
@@ -279,9 +324,9 @@ A deleted or weakened NetworkPolicy passes validation as long as its name is kno
 | Bleve | ✅ | Dedicated PV mounted into OpenCloud. |
 | Immich and Valkey | ⚠️ | VectorChord, ML with OpenVINO, OIDC, and ephemeral Valkey match. Open admin signup (F04). |
 | Stalwart | ⚠️ | PostgreSQL store, Meilisearch search, SMTP proxy protocol, and internal alert listener match. Master key (F31), proxy IP (F25), version bug (F14), service links (F34), possible ACME DNS issue (F28). |
-| ARR stack and OpenVPN | ⚠️ | Fail-closed VPN routing, DNS through the VPN, and qBittorrent sidecar logging match. Two writers during updates (F12), password hash annotation (F26). |
+| ARR stack and AirVPN WireGuard | ⚠️ | Fail-closed VPN routing, DNS through the VPN, and qBittorrent sidecar logging match. Two writers during updates (F12), password hash annotation (F26). |
 | Jellyfin | ⚠️ | Read-only library mount, GPU, Traefik-only ingress, and metadata egress match. Open setup wizard (F04), proxy IP (F25), recursive re-ownership (F32). |
-| Traefik and ForwardAuth | ⚠️ | Ports, no dashboard, JSON logs, and header stripping match. Cluster-wide Secret access (F13), ACME DNS (F28), translated endpoint (F18), rotation (F03). |
+| Traefik and ForwardAuth | ⚠️ | Ports, no dashboard, JSON logs, and header stripping match. ACME DNS (F28), translated endpoint (F18), rotation (F03). |
 | AmneziaWG | ✅ | Peer ACLs inside the pod. The outer egress policy is broad and relies on those ACLs. |
 | DDNS | ⚠️ | Dedicated token. Does not reconcile record settings (F17). |
 | Alloy | ⚠️ | Digest-pinned, read-only host mounts, ingestion-only credentials. Journal filter gaps (F24). |
@@ -321,7 +366,7 @@ A deleted or weakened NetworkPolicy passes validation as long as its name is kno
 1. Fix the installation blockers: F01, F02, F08, and F07.
 2. Fix certificate issuance (F28) and pod-to-edge routing (F18). Then prove both with a real Let's Encrypt run.
 3. Close the administrator bootstrap window (F04) and enforce password rules (F23).
-4. Separate the WOPI secret (F29), restrict WOPI hosts (F05), and narrow Traefik RBAC (F13).
+4. Separate the WOPI secret (F29) and restrict WOPI hosts (F05).
 5. Configure AFFiNE's public URL (F19) and fix the Grist identity issues, ideally by replacing the helper: F11, F20, F21, and F30.
 6. Complete the rotations (F03), use Recreate for the ARR apps (F12), and fix Jellyfin `fsGroup` (F32).
 7. Fix the heartbeat alert (F06) and define the incident model (F15).

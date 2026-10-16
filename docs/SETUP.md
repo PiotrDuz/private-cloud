@@ -5,7 +5,7 @@ This runbook lists work that cannot be automated in this repository. Repository 
 ## External prerequisites
 
 - [ ] Point the domain's authoritative DNS to Cloudflare before deployment.
-- [ ] Use a registered domain, a reachable OpenVPN provider endpoint, and a public SMTP relay; validation rejects private or reserved substitutes.
+- [ ] Use a registered domain, a reachable AirVPN WireGuard endpoint, and a public SMTP relay; validation rejects private or reserved substitutes.
 - [ ] Create separate zone-scoped Cloudflare tokens for DDNS, Traefik ACME, and Stalwart ACME.
 - [ ] Reserve `private_cloud.networking.traefik_internal_ip` for the host on the router.
 - [ ] Provide a physical Intel iGPU or supported PCI passthrough before enabling Intel GPU workloads.
@@ -28,11 +28,24 @@ This runbook lists work that cannot be automated in this repository. Repository 
 - [ ] Send a message through the external inbox and confirm it reaches the Stalwart mailbox.
 - [ ] Verify outbound mail uses the configured inbox.eu relay and passes recipient-side authentication checks.
 
+## AirVPN WireGuard values
+
+- [ ] Open AirVPN Client Area, then Config Generator.
+- [ ] Select Linux and WireGuard, then choose one server.
+- [ ] Copy the `Endpoint` IP address to `media.vpn.endpoint_ip` and its port to `media.vpn.endpoint_port`.
+- [ ] Copy the `[Peer]` `PublicKey` to `media.vpn.peer_public_key`.
+- [ ] Copy the `[Interface]` `Address` IPv4 value to `media.vpn.address`.
+- [ ] Enter the `[Interface]` `PrivateKey` as `media.wireguard_private_key` when prompted.
+- [ ] Enter the `[Peer]` `PresharedKey` as `media.wireguard_preshared_key` when prompted.
+- [ ] Ignore the IPv6 address and `DNS`; the gateway uses the in-tunnel resolver `10.128.0.1`.
+- [ ] Use a literal IP endpoint, not a hostname.
+
 ## Monitoring
 
 - [ ] Configure external outage monitoring independent of this host and Stalwart.
 
 - [ ] Review the live alert validation email and confirm it reaches the configured Stalwart mailbox.
+- [ ] Expect a Traefik "no such file or directory" error alert after installer runs that change routes; Traefik reloads the routes and needs no action.
 
 ## Services
 
@@ -49,6 +62,7 @@ This runbook lists work that cannot be automated in this repository. Repository 
 - [ ] Keep local administrator access in downstream applications.
 - [ ] Assign application permissions and administrator grants within each application.
 - [ ] Confirm newly enabled users can sign into Grist, AFFiNE, and Immich.
+- [ ] Use Grist only from a browser session because API keys are unsupported.
 
 ### AFFiNE OIDC
 
@@ -63,9 +77,17 @@ This runbook lists work that cannot be automated in this repository. Repository 
 
 ### Jellyfin native login
 
-- [ ] Complete Jellyfin's initial setup with a native administrator password.
+- [ ] Confirm the installer completed Jellyfin's initial setup.
 - [ ] Create users and grant their library access in Jellyfin.
 - [ ] Authorize supported native clients through Jellyfin Quick Connect.
+
+## First administrators
+
+- [ ] Sign in to Immich with `private_cloud.immich.admin_email` and the stored Immich administrator password.
+- [ ] Sign in to AFFiNE with `private_cloud.affine.admin_email` and the stored AFFiNE administrator password.
+- [ ] Sign in to Jellyfin with `private_cloud.media.jellyfin_admin_username` and the stored Jellyfin administrator password.
+- [ ] Record any generated password printed once by the installer.
+- [ ] Change the passwords inside each application if desired.
 
 ## Network and DNS
 
@@ -74,7 +96,7 @@ This runbook lists work that cannot be automated in this repository. Repository 
 - [ ] Confirm SSH, the Kubernetes API, and Zabbix are unavailable from WAN networks.
 - [ ] Confirm the DKIM record resolves publicly.
 - [ ] Verify inbound SMTP preserves the sender address through Proxy Protocol.
-- [ ] Interrupt OpenVPN and confirm guarded media apps lose external access.
+- [ ] Interrupt the AirVPN WireGuard tunnel and confirm guarded media apps lose external access.
 - [ ] Confirm each AmneziaWG peer can reach only its approved LAN destinations.
 
 ## Deployment acceptance
@@ -109,7 +131,7 @@ Complete the external prerequisites above before the first installation, or the 
 - Traefik, Stalwart, and DDNS use the production Let's Encrypt and Cloudflare endpoints.
 - Stalwart uses the external SMTP relay for non-local outbound mail.
 - Guarded media traffic exits through the VPN with an address different from the home WAN address.
-- The OpenVPN endpoint is a public IPv4 address.
+- The WireGuard endpoint is a public IPv4 address.
 - OpenCloud discovery and every enabled client callback are accepted.
 - Internal SMTP validation, OpenObserve alerts, and Zabbix alerts reach the Stalwart mailbox.
 - The host trust store contains no local CAs.
@@ -130,7 +152,7 @@ Complete the external prerequisites above before the first installation, or the 
 - [ ] Confirm outbound mail passes SPF, DKIM, and DMARC at an external recipient.
 - [ ] Confirm the Cloudflare tokens are zone-scoped with only DNS edit permission.
 - [ ] Watch the first Let's Encrypt renewal for Traefik and Stalwart.
-- [ ] Interrupt OpenVPN and confirm guarded media apps lose Internet access.
+- [ ] Interrupt the AirVPN WireGuard tunnel and confirm guarded media apps lose Internet access.
 - [ ] Connect an AmneziaWG peer from a separate client and check its LAN allowlist.
 - [ ] Complete real browser and mobile sign-ins for every OIDC application.
 - [ ] Confirm Intel GPU inference and transcoding on the installed hardware.

@@ -232,8 +232,10 @@
       {{ private_cloud_rendered_manifests
          | selectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim']) | list }}
     zabbix_workload_manifests: >-
-      {{ private_cloud_rendered_manifests
+      {{ private_cloud_service_manifests
          | rejectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim']) | list }}
+    zabbix_route_manifests: >-
+      {{ private_cloud_route_manifests }}
 
 - name: Apply Zabbix storage
   kubernetes.core.k8s:
@@ -338,6 +340,12 @@
 
 - name: Configure Zabbix API resources
   ansible.builtin.import_tasks: api.yml
+
+- name: Publish the Zabbix web interface after the administrator password is set
+  kubernetes.core.k8s:
+    kubeconfig: "{{ zabbix_kubeconfig }}"
+    state: present
+    definition: "{{ zabbix_route_manifests }}"
 
 - name: Validate the Zabbix server
   ansible.builtin.import_tasks: ../validation/main.yml

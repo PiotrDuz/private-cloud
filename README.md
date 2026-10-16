@@ -24,12 +24,16 @@ sudo python3 ansible/install.py
 - `/tank/secure/backup/private-cloud-config/private-cloud.secrets.yml` stores Ansible Vault ciphertext.
 - The installer stores both files on a root-only dataset with a 10MiB quota.
 - Initial installation stages configuration under `/run/private-cloud` until the dataset is mounted.
-- `ansible/config/private-cloud.example.yml` documents the configuration contract at public schema version 11 and secrets schema version 6.
+- `ansible/config/private-cloud.example.yml` documents the configuration contract at public schema version 13 and secrets schema version 8.
 - Public hostnames are configured per service, including the OpenCloud hostname `cloud.example.com`.
 - The Cloudflare managed records cover every published hostname.
 - The Vault password is never stored by the installer.
 - The `CREATE tank` authorization is requested only before new pool creation.
-- The installer reads the multiline OpenVPN profile from a file path.
+- The installer records a root-only create intent before pool creation and resumes an interrupted create from it.
+- Administrator passwords need 16 characters, and pressing Enter at a secret prompt generates a value.
+- The installer claims the Immich, AFFiNE, and Jellyfin administrators before publishing their routes.
+- The installer refuses to disable an enabled stage or change the cluster network ranges.
+- The installer prompts for the AirVPN WireGuard private and preshared keys.
 
 ## Kubernetes manifests
 
@@ -43,7 +47,7 @@ sudo python3 ansible/install.py
 - The logging stage deploys Alloy and OpenObserve in `observability`.
 - The notifications stage enables OpenObserve SMTP and Zabbix email actions.
 - OpenCloud provides shared OIDC login for Grist, AFFiNE, and Immich.
-- The edge forward-auth helper authenticates Grist through OpenCloud.
+- The edge oauth2-proxy helper authenticates Grist browser sessions through OpenCloud.
 - The media stage keeps the ARR stack and shared media library on `no-backup` datasets.
 - Redis for AFFiNE, Intel GPU support, and Immich are independent installer stages.
 - Immich uses the shared PostgreSQL service with pgvector and VectorChord.

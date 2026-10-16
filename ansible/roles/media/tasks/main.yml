@@ -8,33 +8,16 @@
       - private_cloud.media.timezone is match('^[A-Za-z_+-]+/[A-Za-z_+/-]+$')
       - private_cloud.media.quality_profiles.sonarr in ['720p', '1080p', '2160p']
       - private_cloud.media.quality_profiles.radarr in ['720p', '1080p', '2160p']
-      - private_cloud.media.openvpn.endpoint_port | int >= 1
-      - private_cloud.media.openvpn.endpoint_port | int <= 65535
-      - private_cloud.media.openvpn.endpoint_protocol in ['TCP', 'UDP']
-      - private_cloud_secrets.media.openvpn_configuration | length > 0
-      - private_cloud_secrets.media.openvpn_username | length > 0
-      - private_cloud_secrets.media.openvpn_password | length > 0
+      - private_cloud.media.vpn.endpoint_port | int >= 1
+      - private_cloud.media.vpn.endpoint_port | int <= 65535
+      - private_cloud.media.vpn.peer_public_key is match('^[A-Za-z0-9+/]{43}=$')
+      - private_cloud.media.vpn.address is match('^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$')
+      - private_cloud_secrets.media.jellyfin_admin_password | length >= 16
+      - private_cloud_secrets.media.wireguard_private_key is match('^[A-Za-z0-9+/]{43}=$')
+      - private_cloud_secrets.media.wireguard_preshared_key is match('^[A-Za-z0-9+/]{43}=$')
       - private_cloud_secrets.media.qbittorrent_password is string
       - private_cloud_secrets.media.qbittorrent_password | length >= 16
       - private_cloud_secrets.media.proxy_password is match('^[A-Za-z0-9_-]{16,64}$')
-      - >-
-        (private_cloud_secrets.media.openvpn_configuration |
-         regex_findall('(?m)^\\s*remote\\s+([^\\s]+)\\s+([0-9]+)') | length) == 1
-      - >-
-        (private_cloud_secrets.media.openvpn_configuration |
-         regex_findall('(?m)^\\s*remote\\s+([^\\s]+)\\s+([0-9]+)'))[0][0] ==
-        private_cloud.media.openvpn.endpoint_ip
-      - >-
-        ((private_cloud_secrets.media.openvpn_configuration |
-          regex_findall('(?m)^\\s*remote\\s+([^\\s]+)\\s+([0-9]+)'))[0][1] | int) ==
-        private_cloud.media.openvpn.endpoint_port
-      - >-
-        (private_cloud_secrets.media.openvpn_configuration |
-         regex_findall('(?im)^\s*proto\s+(tcp[^\s]*|udp[^\s]*)\s*$') | length) == 1
-      - >-
-        (private_cloud_secrets.media.openvpn_configuration |
-         regex_findall('(?im)^\s*proto\s+' ~ private_cloud.media.openvpn.endpoint_protocol ~ '[^\s]*\s*$') |
-         length) == 1
     fail_msg: Media configuration is invalid.
   no_log: true
 
@@ -49,6 +32,12 @@
       - media_tun_device.stat.exists
       - media_tun_device.stat.ischr | default(false)
     fail_msg: The media VPN requires /dev/net/tun.
+
+- name: Load the WireGuard kernel module
+  community.general.modprobe:
+    name: wireguard
+    state: present
+    persistent: present
 
 - name: Prepare media service datasets
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
@@ -112,7 +101,7 @@
   kubernetes.core.k8s:
     kubeconfig: "{{ media_kubeconfig }}"
     state: present
-    definition: "{{ lookup('template', 'openvpn-secret.yml.j2') | from_yaml }}"
+    definition: "{{ lookup('template', 'vpn-secret.yml.j2') | from_yaml }}"
   no_log: true
 
 - name: Apply qBittorrent credentials
@@ -120,6 +109,24 @@
     kubeconfig: "{{ media_kubeconfig }}"
     state: present
     definition: "{{ lookup('template', 'qbittorrent-secret.yml.j2') | from_yaml }}"
+  no_log: true
+
+- name: Read applied media Secret revisions
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ media_kubeconfig }}"
+    api_version: v1
+    kind: Secret
+    namespace: media
+    name: "{{ item }}"
+  loop: [media-vpn, qbittorrent-credentials]
+  register: media_secret_revisions
+  changed_when: false
+  no_log: true
+
+- name: Record media Secret revisions for pod templates
+  ansible.builtin.set_fact:
+    media_vpn_secret_revision: "{{ media_secret_revisions.results[0].resources[0].metadata.resourceVersion }}"
+    media_qbittorrent_secret_revision: "{{ media_secret_revisions.results[1].resources[0].metadata.resourceVersion }}"
   no_log: true
 
 - name: Render arr stack manifests
@@ -141,12 +148,61 @@
     manifest_service: jellyfin
     manifest_template_dir: "{{ role_path }}/../../../k0s-services/jellyfin/templates"
 
+- name: Select Jellyfin manifest stages
+  ansible.builtin.set_fact:
+    jellyfin_workload_manifests: >-
+      {{ private_cloud_service_manifests }}
+    jellyfin_route_manifests: >-
+      {{ private_cloud_route_manifests }}
+
 - name: Apply Jellyfin workloads
   kubernetes.core.k8s:
     kubeconfig: "{{ media_kubeconfig }}"
     state: present
-    definition: "{{ private_cloud_rendered_manifests }}"
+    definition: "{{ jellyfin_workload_manifests }}"
   no_log: true
+
+- name: Wait for the Jellyfin deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ media_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    namespace: media
+    name: jellyfin
+  register: media_jellyfin_deployment
+  until:
+    - media_jellyfin_deployment.resources | default([]) | length == 1
+    - media_jellyfin_deployment.resources[0].status.observedGeneration | default(0) | int >= media_jellyfin_deployment.resources[0].metadata.generation | int
+    - media_jellyfin_deployment.resources[0].status.updatedReplicas | default(0) | int == media_jellyfin_deployment.resources[0].spec.replicas | int
+    - media_jellyfin_deployment.resources[0].status.availableReplicas | default(0) | int == media_jellyfin_deployment.resources[0].spec.replicas | int
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Claim the Jellyfin administrator before publishing the route
+  ansible.builtin.command:
+    argv: [python3, "{{ role_path }}/files/claim_jellyfin_admin.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': media_kubeconfig,
+        'namespace': 'media',
+        'service': 'jellyfin',
+        'port': 8096,
+        'username': private_cloud.media.jellyfin_admin_username,
+        'password': private_cloud_secrets.media.jellyfin_admin_password
+      } | to_json }}
+  register: media_jellyfin_admin_claim
+  until: media_jellyfin_admin_claim.rc == 0
+  retries: 5
+  delay: 10
+  changed_when: (media_jellyfin_admin_claim.stdout | from_json).changed
+  no_log: true
+
+- name: Publish the Jellyfin route after the administrator exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ media_kubeconfig }}"
+    state: present
+    definition: "{{ jellyfin_route_manifests }}"
 
 - name: Configure ARR application connections
   ansible.builtin.import_tasks: configure_arr.yml

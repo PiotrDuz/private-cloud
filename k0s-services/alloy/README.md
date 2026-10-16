@@ -12,6 +12,9 @@ Alloy is managed by `ansible/roles/logging` through the `logging` stage.
 - The dataset uses the configured quota and a dedicated `10Ti` PV.
 - Persistent storage keeps source positions and the write-ahead log.
 - An OpenObserve ingestion passcode keeps the administrator password out of Alloy.
+- Alloy mounts only the `openobserve-ingest` Secret.
+- The journal keeps k0s, ZFS, SSH, Zabbix Agent, systemd, firewall, and heartbeat units plus kernel messages.
+- The journal also keeps sudo, su, login, sshd, and systemd-logind entries under the `host-auth` service.
 
 ## Configuration and limits
 

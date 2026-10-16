@@ -28,3 +28,42 @@
       } | to_json }}
   changed_when: false
   no_log: true
+
+- name: Read the OpenCloud deployment for secret isolation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ opencloud_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ opencloud_service_name }}"
+    namespace: "{{ opencloud_namespace }}"
+  register: opencloud_validation_deployment
+  changed_when: false
+
+- name: Require the WOPI secret to come only from the OpenCloud secret
+  ansible.builtin.assert:
+    that:
+      - opencloud_validation_deployment.resources | length == 1
+      - >-
+        opencloud_validation_deployment.resources[0].spec.template.spec.containers[0].env
+        | selectattr('name', 'equalto', 'COLLABORATION_WOPI_SECRET')
+        | map(attribute='valueFrom.secretKeyRef.name') | list == [opencloud_wopi_secret_name]
+      - opencloud_validation_deployment.resources[0].spec.template.spec | to_json is not search('onlyoffice-credentials')
+      - opencloud_validation_deployment.resources[0].spec.template.metadata.annotations['private-cloud.example/wopi-secret-revision'] | length > 0
+    fail_msg: OpenCloud must read its WOPI secret only from the OpenCloud-owned secret and carry its revision annotation.
+
+- name: Require OnlyOffice to accept the OpenCloud WOPI host
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': opencloud_kubeconfig,
+        'namespace': opencloud_namespace,
+        'service': 'onlyoffice',
+        'remote_port': 80,
+        'method': 'POST',
+        'path': '/hosting/wopi/word/view?WOPISrc=' ~ ('https://' ~ private_cloud.opencloud.hostname ~ '/wopi/files/validation') | urlencode,
+        'headers': {'Content-Type': 'application/x-www-form-urlencoded'},
+        'body': 'access_token=validation&access_token_ttl=1',
+        'body_contains': 'var statusCode = "401";'
+      } | to_json }}
+  changed_when: false

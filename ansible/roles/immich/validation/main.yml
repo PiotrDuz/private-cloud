@@ -14,6 +14,20 @@
   register: immich_validation_server
   changed_when: false
 
+- name: Verify the Immich instance has an administrator
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': immich_kubeconfig,
+        'namespace': immich_namespace,
+        'service': immich_service_name,
+        'remote_port': 2283,
+        'path': '/api/server/config',
+        'json_equal': {'isInitialized': true}
+      } | to_json }}
+  changed_when: false
+
 - name: Verify Immich machine learning service responds
   ansible.builtin.command:
     argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]

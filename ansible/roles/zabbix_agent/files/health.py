@@ -10,9 +10,9 @@ from health_helpers import certificate_health, collect_alloy
 def main():
     config = json.loads(Path(sys.argv[1]).read_text())
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
-        alloy = executor.submit(collect_alloy, config)
+        alloy = executor.submit(collect_alloy, config) if "alloy" in config["endpoints"] else None
         certificates = {entry["name"]: executor.submit(certificate_health, config["address"], entry) for entry in config["certificates"]}
-        result = alloy.result()
+        result = alloy.result() if alloy else {}
         result["certificates"] = {name: future.result() for name, future in certificates.items()}
     print(json.dumps(result, separators=(",", ":")))
 

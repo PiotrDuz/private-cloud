@@ -25,10 +25,10 @@ clients:
     origins: []
     application_type: native
 {% endfor %}
-{% for stage, client_id, name, callbacks in [
-  ('grist', 'grist-forward-auth', 'Grist', ['https://' ~ private_cloud.grist.hostname ~ '/_oauth']),
-  ('affine', 'affine', 'AFFiNE', ['https://' ~ private_cloud.affine.hostname ~ '/oauth/callback']),
-  ('immich', 'immich', 'Immich', ['https://' ~ private_cloud.immich.hostname ~ '/auth/login', 'https://' ~ private_cloud.immich.hostname ~ '/user-settings', 'app.immich:///oauth-callback'])
+{% for stage, client_id, name, callbacks, logout_redirects in [
+  ('grist', 'grist-forward-auth', 'Grist', ['https://' ~ private_cloud.grist.hostname ~ '/oauth2/callback'], ['https://' ~ private_cloud.opencloud.hostname ~ '/']),
+  ('affine', 'affine', 'AFFiNE', ['https://' ~ private_cloud.affine.hostname ~ '/oauth/callback'], []),
+  ('immich', 'immich', 'Immich', ['https://' ~ private_cloud.immich.hostname ~ '/auth/login', 'https://' ~ private_cloud.immich.hostname ~ '/user-settings', 'app.immich:///oauth-callback'], [])
 ] %}
 {% if private_cloud.stages[stage] | bool %}
   - id: {{ client_id }}
@@ -36,7 +36,7 @@ clients:
     trusted: true
     secret: {{ private_cloud_secrets[stage].oidc_client_secret | to_json }}
     redirect_uris: {{ callbacks | to_json }}
-    post_logout_redirect_uris: []
+    post_logout_redirect_uris: {{ logout_redirects | to_json }}
     origins: [{{ ('https://' ~ private_cloud[stage].hostname) | to_json }}]
     application_type: ""
 {% endif %}

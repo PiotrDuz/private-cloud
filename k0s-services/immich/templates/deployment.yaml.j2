@@ -17,7 +17,7 @@ spec:
       labels:
         app.kubernetes.io/name: immich
       annotations:
-        checksum/oauth-config: {{ (private_cloud.opencloud.hostname ~ private_cloud_secrets.immich.oidc_client_secret) | hash('sha256') }}
+        private-cloud.example/secret-revision: "{{ immich_secret_revision }}"
     spec:
       serviceAccountName: immich
       automountServiceAccountToken: false

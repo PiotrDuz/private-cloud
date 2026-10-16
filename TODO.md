@@ -50,3 +50,24 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 - [ ] Verify collector failure logs reach OpenObserve for ZFS, ECC, and SMART.
 - [ ] Verify OpenObserve query and SMTP failures appear in logs and alerts.
 - [ ] Validate media VPN and Jellyfin isolation from logging access.
+- [ ] Verify the AirVPN WireGuard tunnel fails closed when the endpoint is unreachable.
+
+## Hardening validation gaps
+
+- [ ] Obtain a real Let's Encrypt certificate through Traefik with the public DNS 53 egress.
+- [ ] Verify OIDC discovery, token exchange, and WOPI callbacks reach the Traefik pod on TCP 8443.
+- [ ] Verify the installer claims Immich, AFFiNE, and Jellyfin administrators before their routes are published.
+- [ ] Verify Traefik serves every route from route ConfigMaps without Kubernetes API access.
+- [ ] Verify the Zabbix route ConfigMap appears only after the administrator password is set.
+- [ ] Verify oauth2-proxy login on the Grist host with a fresh OpenCloud session.
+- [ ] Verify Grist logout through `/oauth2/sign_out` ends the OpenCloud session and lands on the sign-in page.
+- [ ] Verify the OpenCloud end-session path and `id_token_hint` handling with OpenCloud 7.2.4.
+- [ ] Verify WOPI proof-key verification between OnlyOffice 9.4.0.1 and OpenCloud 7.2.4.
+- [ ] Fall back to `COLLABORATION_APP_PROOF_DISABLE=true` if proof-key verification fails.
+- [ ] Verify OnlyOffice rejects a foreign WOPI host.
+- [ ] Verify the Draw.io extension installs and opens with OpenCloud 7.2.4.
+- [ ] Verify Stalwart indexes and searches through its scoped Meilisearch key.
+- [ ] Verify the OpenObserve heartbeat aggregate alert fires when heartbeats stop.
+- [ ] Verify Zabbix PSK agent traffic works and a PSK rotation reconnects the agent.
+- [ ] Verify an interrupted `create` resumes from the recorded intent.
+- [ ] Verify k0s starts and routes with custom pod and service CIDRs.

@@ -1,5 +1,8 @@
 # Live installation work summary and remaining goals
 
+> Note: the headline status below predates the later entries in this file and is stale.
+> Note: the live run used a mock ACME server, so real certificate issuance remains unproven.
+
 ## Goals and requirements
 
 The goal is to make the repository's installation scripts produce a working private cloud from a clean machine, then demonstrate that every enabled service works. The live VM run must expose actual installation failures, correct their causes in repository source, and continue until the complete installation and validation path succeeds.

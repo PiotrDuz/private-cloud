@@ -1,10 +1,48 @@
 {% if private_cloud.stages.grist | bool %}
+{% set forward_auth_config %}
+server:
+  bindAddress: 0.0.0.0:4180
+upstreamConfig:
+  upstreams:
+    - id: authenticated
+      path: /
+      static: true
+      staticCode: 202
+injectResponseHeaders:
+  - name: X-Forwarded-User
+    values:
+      - claimSource:
+          claim: email
+providers:
+  - id: opencloud
+    provider: oidc
+    name: OpenCloud
+    clientID: grist-forward-auth
+    clientSecretFile: /run/secrets/forward-auth/oidc-client-secret
+    scope: openid profile email
+    code_challenge_method: S256
+    oidcConfig:
+      issuerURL: {{ ("https://" ~ private_cloud.opencloud.hostname) | to_json }}
+      emailClaim: email
+      userIDClaim: email
+      audienceClaims: [aud]
+      insecureSkipNonce: false
+{% endset %}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: forward-auth
   namespace: edge
 automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: forward-auth
+  namespace: edge
+data:
+  oauth2-proxy.yaml: |
+{{ forward_auth_config | indent(4, true) }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -22,13 +60,18 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: forward-auth
+      annotations:
+        private-cloud.example/config-checksum: "{{ forward_auth_config | hash('sha256') }}"
+        private-cloud.example/secret-revision: "{{ networking_forward_auth_secret_revision }}"
     spec:
       serviceAccountName: forward-auth
       automountServiceAccountToken: false
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
         runAsGroup: 65532
+        fsGroup: 65532
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: forward-auth
@@ -40,25 +83,44 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
+          args:
+            - --alpha-config=/etc/oauth2-proxy/oauth2-proxy.yaml
+            - --reverse-proxy=true
+            - --trusted-proxy-ip={{ private_cloud.networking.pod_cidr }}
+            - --redirect-url={{ "https://" ~ private_cloud.grist.hostname ~ "/oauth2/callback" }}
+            - --whitelist-domain={{ private_cloud.grist.hostname }}
+            - --whitelist-domain={{ private_cloud.opencloud.hostname }}
+            - --email-domain=*
+            - --skip-provider-button=true
+            - --cookie-name=__Host-grist-auth
+            - --cookie-secure=true
+            - --cookie-httponly=true
+            - --cookie-samesite=lax
+            - --cookie-expire=8h
+            - --silence-ping-logging=true
           env:
-            - {name: DEFAULT_PROVIDER, value: oidc}
-            - {name: PROVIDERS_OIDC_ISSUER_URL, value: {{ ("https://" ~ private_cloud.opencloud.hostname) | to_json }}}
-            - {name: PROVIDERS_OIDC_CLIENT_ID, value: grist-forward-auth}
-            - {name: URL_PATH, value: /_oauth}
-            - {name: LOGOUT_REDIRECT, value: {{ ("https://" ~ private_cloud.grist.hostname ~ "/signed-out") | to_json }}}
-            - {name: LOG_LEVEL, value: info}
-            - {name: LOG_FORMAT, value: json}
-            - name: PROVIDERS_OIDC_CLIENT_SECRET
-              valueFrom: {secretKeyRef: {name: forward-auth, key: oidc-client-secret}}
-            - name: SECRET
+            - {name: GOMEMLIMIT, value: 48MiB}
+            - name: OAUTH2_PROXY_COOKIE_SECRET
               valueFrom: {secretKeyRef: {name: forward-auth, key: cookie-secret}}
           ports:
-            - {name: http, containerPort: 4181, protocol: TCP}
+            - {name: http, containerPort: 4180, protocol: TCP}
           resources:
             requests: {cpu: 25m, memory: {{ private_cloud_memory_requests.forward_auth }}, ephemeral-storage: 32Mi}
             limits: {memory: 64Mi, ephemeral-storage: 128Mi}
-          readinessProbe: {tcpSocket: {port: http}, periodSeconds: 10, timeoutSeconds: 3, failureThreshold: 6}
-          livenessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 20, periodSeconds: 30, timeoutSeconds: 3, failureThreshold: 5}
+          readinessProbe: {httpGet: {path: /ping, port: http}, periodSeconds: 10, timeoutSeconds: 3, failureThreshold: 6}
+          livenessProbe: {httpGet: {path: /ping, port: http}, initialDelaySeconds: 20, periodSeconds: 30, timeoutSeconds: 3, failureThreshold: 5}
+          volumeMounts:
+            - {name: config, mountPath: /etc/oauth2-proxy, readOnly: true}
+            - {name: credentials, mountPath: /run/secrets/forward-auth, readOnly: true}
+      volumes:
+        - name: config
+          configMap: {name: forward-auth}
+        - name: credentials
+          secret:
+            secretName: forward-auth
+            defaultMode: 0440
+            items:
+              - {key: oidc-client-secret, path: oidc-client-secret}
 ---
 apiVersion: v1
 kind: Service
@@ -71,7 +133,7 @@ spec:
   selector:
     app.kubernetes.io/name: forward-auth
   ports:
-    - {name: http, port: 4181, targetPort: http, protocol: TCP}
+    - {name: http, port: 4180, targetPort: http, protocol: TCP}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -87,7 +149,7 @@ spec:
         - podSelector:
             matchLabels: {app.kubernetes.io/name: traefik}
       ports:
-        - {protocol: TCP, port: 4181}
+        - {protocol: TCP, port: 4180}
   egress:
     - to:
         - namespaceSelector:
@@ -97,9 +159,11 @@ spec:
       ports:
         - {protocol: UDP, port: 53}
         - {protocol: TCP, port: 53}
+    # HostPort traffic to the public hostname is DNATed to Traefik's pod port before policy evaluation.
     - to:
-        - ipBlock: {cidr: {{ private_cloud.networking.traefik_internal_ip }}/32}
-      ports: [{protocol: TCP, port: 443}]
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports: [{protocol: TCP, port: 8443}]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -115,5 +179,5 @@ spec:
         - podSelector:
             matchLabels: {app.kubernetes.io/name: forward-auth}
       ports:
-        - {protocol: TCP, port: 4181}
+        - {protocol: TCP, port: 4180}
 {% endif %}

@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-route-immich
+  namespace: edge
+  labels: {private-cloud.example/traefik-route: "true"}
+data:
+  immich.yaml: |
+    http:
+      routers:
+        immich:
+          entryPoints: [websecure]
+          rule: Host(`{{ private_cloud.immich.hostname }}`)
+          service: immich
+          tls:
+            certResolver: cloudflare
+      services:
+        immich:
+          loadBalancer:
+            servers:
+              - url: http://immich.private-cloud.svc.cluster.local:2283

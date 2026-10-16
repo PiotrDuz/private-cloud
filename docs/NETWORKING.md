@@ -2,7 +2,7 @@
 
 > **Status:** implemented in repository configuration on 7 September 2026; deployment, router configuration, Cloudflare records, and external acceptance remain operator work.
 
-The cluster uses default-deny pod networking, a restricted host firewall, Traefik for HTTPS and inbound SMTP, AmneziaWG for remote access, and OpenVPN as the guarded media applications' only Internet exit.
+The cluster uses default-deny pod networking, a restricted host firewall, Traefik for HTTPS and inbound SMTP, AmneziaWG for remote access, and AirVPN WireGuard as the guarded media applications' only Internet exit.
 
 ![Cluster networking, permitted paths and blocked boundaries](diagrams/networking.png)
 
@@ -13,8 +13,8 @@ The cluster uses default-deny pod networking, a restricted host firewall, Traefi
 | Namespace / zone | Responsibility | Boundary |
 | --- | --- | --- |
 | `private-cloud` | Applications, OpenCloud identity, and dependencies. | Explicit application flows only. |
-| `media` | Jellyfin, Sonarr, Radarr, Prowlarr, and qBittorrent. | Jellyfin accepts only Traefik ingress and exits directly for metadata; guarded apps exit through OpenVPN. |
-| `edge` | Traefik HTTPS and SMTP entry plus the Grist ForwardAuth helper. | Only approved application listeners are reachable. |
+| `media` | Jellyfin, Sonarr, Radarr, Prowlarr, and qBittorrent. | Jellyfin accepts only Traefik ingress and exits directly for metadata; guarded apps exit through AirVPN WireGuard. |
+| `edge` | Traefik HTTPS and SMTP entry plus the Grist oauth2-proxy helper. | Only approved application listeners are reachable. |
 | `network-access` | AmneziaWG server and peer forwarding. | Per-peer LAN permissions and public Internet egress. |
 | `dns-system` | Cloudflare DDNS updater. | DNS management has no application-data access. |
 | `observability` | Alloy and OpenObserve. | Alloy ingests node logs; OpenObserve provides the authenticated HTTPS interface. |
@@ -45,8 +45,22 @@ The home router remains outside this repository. It must forward WAN TCP `443`, 
 
 Traefik binds host TCP `443` and TCP `25` from a pod in `edge`.
 
-- HTTPS uses exact Kubernetes Ingress host rules and Cloudflare DNS-01 certificates.
+- HTTPS uses exact `Host` rules from file-provider routes and Cloudflare DNS-01 certificates.
+- Each routed service publishes its route as a `traefik-route-<service>` ConfigMap in `edge`.
+- A projected volume merges `traefik-dynamic` and the route ConfigMaps into `/etc/traefik/dynamic`.
+- Traefik watches that directory and reloads routes when kubelet updates the volume.
+- Routes target backend Services by cluster DNS name and port.
+- DNS-01 uses the explicit public resolvers `1.1.1.1:53` and `1.0.0.1:53`.
+- Traefik may query public addresses on UDP and TCP `53` so lego can verify propagation at the authoritative nameservers.
+- Traefik has no Kubernetes API access.
+- No ClusterRole, Role, or binding references its ServiceAccount.
+- Its ServiceAccount and pod do not mount a service-account token.
+- Its NetworkPolicy has no egress to the Kubernetes API server.
+- Cloudflare is the only credential Secret it receives, through an environment variable.
+- Cloudflare token rotation restarts Traefik through a Secret revision annotation.
 - Unknown HTTPS hosts have no matching route.
+- The `strip-forwarded` file middleware removes client-supplied `Forwarded` headers on the Stalwart route.
+- The Zabbix route ConfigMap is applied only after the installer sets the Zabbix administrator password.
 - The dashboard is disabled.
 - Application services are ClusterIP-only.
 - Zabbix server TCP `31051` is the only retained NodePort.
@@ -56,20 +70,33 @@ Public DNS resolves enabled application names to the home WAN address. Split DNS
 
 OpenCloud uses its configured HTTPS URL as the issuer. LAN clients and pods must resolve that hostname to the Traefik address so the issuer matches for browsers and services.
 
-OpenObserve is published through its configured exact HTTPS hostname. Alloy has no public route. When notifications are enabled, OpenObserve and Zabbix may reach only the SMTP relay IP addresses resolved during the last apply; reapply after a relay address change.
+OpenObserve is published through its configured exact HTTPS hostname. Alloy has no public route. When notifications are enabled, OpenObserve and Zabbix send alerts directly to Stalwart's internal SMTP listener on TCP `2525`.
 
-## OpenCloud and Grist ForwardAuth
+### Pod access to the public hostname
 
-OpenCloud runs its built-in provider in `private-cloud` and publishes `https://<opencloud-hostname>` through Traefik. Applications and the Grist helper reach the issuer through the Traefik internal address on TCP `443`.
+Pods that need the public hostname connect to the Traefik host address on TCP `443`. HostPort translation rewrites that destination to the Traefik pod on TCP `8443` before NetworkPolicy evaluation.
 
-The stateless `forward-auth` helper in `edge` performs Grist's OIDC login and uses the confidential client `grist-forward-auth`.
+- OpenCloud, OnlyOffice, AFFiNE, Immich, and the oauth2-proxy helper may reach the Traefik pod on TCP `8443`.
+- Grist does not reach Traefik because oauth2-proxy performs the OIDC exchange.
+- AmneziaWG uses the same pod-port rule.
+- Application policies do not allow the untranslated host address on TCP `443`.
 
-- Traefik applies the `strip-identity-headers@file` and `forward-auth@file` middlewares to the Grist router.
-- The helper serves OIDC callbacks and logins on `/_oauth`.
-- Grist receives the authenticated email as `X-Forwarded-User`.
+## OpenCloud and Grist authentication
+
+OpenCloud runs its built-in provider in `private-cloud` and publishes `https://<opencloud-hostname>` through Traefik. Applications and the Grist helper reach the issuer through the Traefik pod on TCP `8443` after hostPort translation.
+
+The stateless `forward-auth` Deployment in `edge` runs oauth2-proxy v7.15.5 for Grist and uses the confidential client `grist-forward-auth`.
+
+- Traefik applies the `strip-identity-headers` and `forward-auth` middlewares to the Grist router.
+- The `forward-auth` middleware calls oauth2-proxy on TCP `4180` and passes the verified email as `X-Forwarded-User`.
+- Unauthenticated browsers are redirected to OpenCloud sign-in.
+- A router in the Grist route ConfigMap sends `/oauth2/` on the Grist host to oauth2-proxy without ForwardAuth.
+- oauth2-proxy serves the OIDC callback at `/oauth2/callback`.
 - The helper has no email or domain login allowlist.
-- Grist starts login at `/auth/login` and uses `/_oauth/logout` as its logout path.
-- Logout clears the helper cookie and returns to `/signed-out`.
+- Grist trusts `X-Forwarded-User` on every request through `GRIST_IGNORE_SESSION=true`.
+- Access is browser-only and Grist API keys do not work.
+- Logout calls `/oauth2/sign_out`, which redirects to the OpenCloud end-session endpoint and then to the OpenCloud sign-in page.
+- There is no `/signed-out` route on the Grist host.
 - Every enabled OpenCloud user can authenticate without a separate login allowlist.
 
 ## Inbound mail and Stalwart TLS
@@ -82,7 +109,7 @@ Port `25` is required for the forwarding service's server-to-server SMTP deliver
 
 JMAP, web access, and administration use the mail hostname on Traefik HTTPS TCP `443`. Stalwart relays non-local outbound messages through the configured external `inbox.eu` SMTP service.
 
-Stalwart accepts STARTTLS on SMTP TCP `25`, trusts Proxy Protocol only from the configured pod network, and performs its own message filtering. The host firewall therefore does not restrict SMTP to forwarding-service CIDRs.
+Stalwart accepts STARTTLS on SMTP TCP `25`, trusts Proxy Protocol only from the configured pod network, and performs its own message filtering. Its HTTP listener trusts forwarded headers from any source, so a network policy limits TCP `8080` to Traefik and the Stalwart configuration Job. The host firewall therefore does not restrict SMTP to forwarding-service CIDRs.
 
 Stalwart owns its mail certificate lifecycle. It uses a dedicated Cloudflare DNS token to complete Let's Encrypt DNS-01 challenges, install the certificate for the configured mail hostname, and renew it before expiry. Traefik neither terminates SMTP TLS nor supplies Stalwart's certificate.
 
@@ -97,20 +124,20 @@ The operator must still publish and verify PTR, SPF, DKIM, and DMARC records app
 
 ## Guarded media egress
 
-The [arr stack templates](../k0s-services/arr/README.md) own the guarded applications, OpenVPN gateway, and shared library storage. The media installer stage renders them separately from [Jellyfin](../k0s-services/jellyfin/README.md).
+The [arr stack templates](../k0s-services/arr/README.md) own the guarded applications, WireGuard gateway, and shared library storage. The media installer stage renders them separately from [Jellyfin](../k0s-services/jellyfin/README.md).
 
-Sonarr, Radarr, Prowlarr, and qBittorrent share one OpenVPN gateway pod. Each guarded application pod has a `tun2socks` helper and no direct Internet route permitted by NetworkPolicy.
+Sonarr, Radarr, Prowlarr, and qBittorrent share one AirVPN WireGuard gateway pod. Each guarded application pod has a `tun2socks` helper and no direct Internet route permitted by NetworkPolicy.
 
 - The helper sends external TCP and UDP through the gateway's Shadowsocks listener.
-- The gateway may reach only the pinned OpenVPN endpoint outside the tunnel.
-- Gateway CoreDNS sends external lookups through the OpenVPN route.
+- The gateway may reach only the pinned endpoint IP on its UDP port outside the tunnel.
+- Gateway CoreDNS sends external lookups to the AirVPN in-tunnel resolver `10.128.0.1`.
 - Cluster-local DNS is forwarded to the configured cluster DNS address.
 - Guarded apps may reach only gateway DNS/proxy ports and declared media APIs.
 - IPv6 is disabled until equivalent capture and filtering exist.
 - VPN failure leaves guarded Internet traffic blocked.
 - qBittorrent binds to `tun0`, disables UPnP, and enables anonymous mode.
 
-Sonarr and Radarr can reach Prowlarr and qBittorrent on their API ports. Prowlarr can reach Sonarr and Radarr for synchronization. These paths use cluster networking rather than OpenVPN.
+Sonarr and Radarr can reach Prowlarr and qBittorrent on their API ports. Prowlarr can reach Sonarr and Radarr for synchronization. These paths use cluster networking rather than the VPN.
 
 The arr dashboards, qBittorrent UI, peer port, discovery protocols, and UPnP are not published.
 
@@ -141,6 +168,8 @@ The tunnel subnet must not overlap local, pod, service, or common client network
 
 A CronJob in `dns-system` discovers the current public IPv4 address and updates only the configured Cloudflare A records. It uses a token distinct from both Traefik ACME and Stalwart ACME.
 
+Each run corrects the record content, sets `proxied` to false, and sets the TTL to 300 seconds. It refuses any discovered address that is not a public IPv4 address.
+
 DDNS changes DNS records only. It does not configure the router, create NAT rules, bypass CGNAT, or make an ISP-blocked TCP `25` reachable.
 
 ## Allowed connection matrix
@@ -155,18 +184,22 @@ Everything omitted is denied. Each entry permits connection initiation in the st
 | LAN / AmneziaWG client | Traefik | TCP `443`. |
 | Traefik | Approved web backends / Jellyfin | Declared backend ports only. |
 | Jellyfin | metadata and artwork providers | TCP `443` after cluster DNS. |
-| OIDC-enabled applications / ForwardAuth helper | OpenCloud issuer | TCP `443` to the Traefik internal address. |
+| OIDC-enabled applications / oauth2-proxy helper | OpenCloud issuer | TCP `8443` to the Traefik pod after hostPort translation. |
+| Traefik | oauth2-proxy helper | TCP `4180`. |
+| Traefik | Stalwart HTTP | TCP `8080`. |
 | Immich machine learning | Model download endpoints | TCP `443` to public addresses. |
 | Traefik | Stalwart | TCP `25` with Proxy Protocol v2. |
 | Guarded media pod | Media VPN gateway | Proxy and DNS ports only. |
-| Media VPN gateway | OpenVPN provider | Pinned endpoint IP, protocol, and port. |
+| Media VPN gateway | AirVPN WireGuard endpoint | Pinned endpoint IP and UDP port. |
 | Media integrations | Declared arr / qBittorrent APIs | Required API ports only. |
 | AmneziaWG peer | Approved LAN target | Per-peer destination IPs and ports. |
 | AmneziaWG peer | Public Internet | Full-tunnel forwarding after private-range denials. |
 | Declared application | PostgreSQL and internal dependency | Service-specific ports only. |
 | Stalwart | Cloudflare, Let's Encrypt, DNS, relay, and mail lookups | Required service ports only. |
-| Traefik / DDNS | Cloudflare, Let's Encrypt, DNS, and IP discovery | Required service ports only. |
-| OpenObserve / Zabbix | Configured inbox.eu SMTP relay | Resolved relay addresses and configured SMTP port only. |
+| Traefik | Cloudflare and Let's Encrypt | TCP `443` to public addresses. |
+| Traefik | Public DNS and authoritative nameservers | UDP and TCP `53` to public addresses. |
+| DDNS | Cloudflare and IP discovery | TCP `443` to public addresses after cluster DNS. |
+| OpenObserve / Zabbix | Stalwart internal SMTP listener | TCP `2525`. |
 
 ## Storage
 
@@ -182,12 +215,14 @@ Repository implementation is not evidence of live enforcement. Before exposure:
 - Test every hostname from WAN, LAN, and AmneziaWG.
 - Verify split DNS resolves the OpenCloud hostname to the Traefik address for LAN and pod clients.
 - Verify OpenCloud, Grist, AFFiNE, and Immich complete an OpenCloud OIDC login.
-- Verify Grist login, OIDC callback, and logout through the ForwardAuth helper.
-- Validate Traefik and Stalwart certificate issuance and renewal paths.
+- Verify Grist login, the `/oauth2/callback` exchange, and logout through oauth2-proxy and the OpenCloud end-session endpoint.
+- Verify Grist rejects forged `X-Forwarded-User` headers from clients.
+- Validate Traefik and Stalwart certificate issuance and renewal paths against the real Let's Encrypt service.
+- Confirm Immich, AFFiNE, and Jellyfin answer with the installer-claimed administrators once published.
 - Send a message to the external inbox and confirm its SMTP forward reaches Stalwart.
 - Confirm Proxy Protocol preserves the sender address in Stalwart.
 - Verify Stalwart filtering and outbound relay behavior.
-- Interrupt OpenVPN and confirm guarded apps lose Internet and external DNS.
+- Interrupt the AirVPN WireGuard tunnel and confirm guarded apps lose Internet and external DNS.
 - Confirm Immich machine learning downloads models over TCP `443`.
 - Confirm Jellyfin downloads metadata over IPv4 and cannot initiate IPv6 connections.
 - Confirm Jellyfin streaming and local scanning continue during media VPN failure.

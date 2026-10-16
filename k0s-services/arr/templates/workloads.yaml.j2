@@ -13,7 +13,7 @@ data:
     .:53 {
         errors
         cache 30
-        forward . 1.1.1.1 1.0.0.1
+        forward . 10.128.0.1
     }
 ---
 apiVersion: apps/v1
@@ -29,21 +29,28 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: media-vpn}
       annotations:
-        checksum/vpn-credentials: {{ private_cloud_secrets.media | to_json | hash('sha256') }}
+        private-cloud.example/vpn-secret-revision: "{{ media_vpn_secret_revision }}"
     spec:
       automountServiceAccountToken: false
       containers:
-        - name: openvpn
-          image: {{ media_openvpn_image }}
+        - name: wireguard
+          image: {{ media_vpn_gateway_image }}
           env:
             - {name: VPN_SERVICE_PROVIDER, value: custom}
-            - {name: VPN_TYPE, value: openvpn}
+            - {name: VPN_TYPE, value: wireguard}
+            - {name: VPN_INTERFACE, value: wg0}
             - {name: DNS_SERVER, value: 'off'}
-            - {name: OPENVPN_CUSTOM_CONFIG, value: /run/media-vpn/custom.conf}
-            - name: OPENVPN_USER
-              valueFrom: {secretKeyRef: {name: media-vpn, key: username}}
-            - name: OPENVPN_PASSWORD
-              valueFrom: {secretKeyRef: {name: media-vpn, key: password}}
+            - {name: WIREGUARD_IMPLEMENTATION, value: kernelspace}
+            - {name: WIREGUARD_ENDPOINT_IP, value: {{ private_cloud.media.vpn.endpoint_ip | to_json }}}
+            - {name: WIREGUARD_ENDPOINT_PORT, value: {{ private_cloud.media.vpn.endpoint_port | string | to_json }}}
+            - {name: WIREGUARD_PUBLIC_KEY, value: {{ private_cloud.media.vpn.peer_public_key | to_json }}}
+            - {name: WIREGUARD_ADDRESSES, value: {{ private_cloud.media.vpn.address | to_json }}}
+            - {name: WIREGUARD_ALLOWED_IPS, value: 0.0.0.0/0}
+            - {name: WIREGUARD_PERSISTENT_KEEPALIVE_INTERVAL, value: 15s}
+            - name: WIREGUARD_PRIVATE_KEY
+              valueFrom: {secretKeyRef: {name: media-vpn, key: wireguard-private-key}}
+            - name: WIREGUARD_PRESHARED_KEY
+              valueFrom: {secretKeyRef: {name: media-vpn, key: wireguard-preshared-key}}
             - {name: FIREWALL, value: 'on'}
             - {name: FIREWALL_INPUT_PORTS, value: '53,8388'}
             - {name: FIREWALL_OUTBOUND_SUBNETS, value: {{ private_cloud.networking.service_cidr | to_json }}}
@@ -68,15 +75,14 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 6
           resources:
-            requests: {cpu: 100m, memory: {{ private_cloud_memory_requests.openvpn | private_cloud_memory_request(private_cloud.media.max_ram.openvpn) }}}
-            limits: {memory: {{ private_cloud.media.max_ram.openvpn }}}
+            requests: {cpu: 100m, memory: {{ private_cloud_memory_requests.vpn_gateway | private_cloud_memory_request(private_cloud.media.max_ram.vpn_gateway) }}}
+            limits: {memory: {{ private_cloud.media.max_ram.vpn_gateway }}}
           securityContext:
             allowPrivilegeEscalation: false
-            capabilities: {drop: [ALL], add: [NET_ADMIN, CHOWN, DAC_OVERRIDE, SETUID, SETGID, KILL]}
+            capabilities: {drop: [ALL], add: [NET_ADMIN, CHOWN]}
             seccompProfile: {type: RuntimeDefault}
           volumeMounts:
             - {name: tun, mountPath: /dev/net/tun}
-            - {name: config, mountPath: /run/media-vpn, readOnly: true}
         - name: dns
           image: {{ media_coredns_image }}
           args: [-conf, /etc/coredns/Corefile]
@@ -100,7 +106,6 @@ spec:
             - {name: dns-config, mountPath: /etc/coredns, readOnly: true}
       volumes:
         - {name: tun, hostPath: {path: /dev/net/tun, type: CharDevice}}
-        - {name: config, secret: {secretName: media-vpn, defaultMode: 0400}}
         - {name: dns-config, configMap: {name: media-vpn-dns, defaultMode: 0444}}
 ---
 apiVersion: v1
@@ -109,7 +114,7 @@ metadata:
   name: media-vpn
   namespace: media
 spec:
-  clusterIP: {{ private_cloud.media.openvpn.gateway_cluster_ip }}
+  clusterIP: {{ private_cloud.media.vpn.gateway_cluster_ip }}
   selector: {app.kubernetes.io/name: media-vpn}
   ports:
     - {name: proxy-tcp, port: 8388, targetPort: proxy-tcp, protocol: TCP}
@@ -131,20 +136,18 @@ metadata:
   namespace: media
 spec:
   replicas: 1
-{% if app.name == 'qbittorrent' %}
   strategy: {type: Recreate}
-{% endif %}
   selector:
     matchLabels: {app.kubernetes.io/name: {{ app.name }}}
   template:
     metadata:
       labels:
         app.kubernetes.io/name: {{ app.name }}
-        private-cloud.example/openvpn-guarded: 'true'
+        private-cloud.example/vpn-guarded: 'true'
 {% if app.name == 'qbittorrent' %}
       annotations:
         checksum/logging-settings: {{ (lookup('file', role_path ~ '/files/configure_qbittorrent.py') ~ lookup('file', role_path ~ '/files/qbittorrent_helpers.py')) | hash('sha256') }}
-        checksum/qbittorrent-credentials: {{ private_cloud_secrets.media.qbittorrent_password | hash('sha256') }}
+        private-cloud.example/qbittorrent-secret-revision: "{{ media_qbittorrent_secret_revision }}"
         checksum/file-logs: {{ lookup('file', playbook_dir ~ '/../k0s-services/arr/files/file-logs.conf') | hash('sha256') }}
 {% endif %}
     spec:
@@ -210,7 +213,7 @@ spec:
 {% endif %}
       dnsPolicy: None
       dnsConfig:
-        nameservers: [{{ private_cloud.media.openvpn.gateway_cluster_ip }}]
+        nameservers: [{{ private_cloud.media.vpn.gateway_cluster_ip }}]
         searches: [media.svc.cluster.local, svc.cluster.local, cluster.local]
         options:
           - {name: ndots, value: '5'}
@@ -254,7 +257,7 @@ spec:
               else
                 original_gateway=$(ip route show default dev eth0 | awk '{print $3; exit}')
                 if [ -z "$original_gateway" ]; then
-                  original_gateway=$(ip route get {{ private_cloud.media.openvpn.gateway_cluster_ip }} | awk '{for (i = 1; i <= NF; i++) if ($i == "via") {print $(i + 1); exit}}')
+                  original_gateway=$(ip route get {{ private_cloud.media.vpn.gateway_cluster_ip }} | awk '{for (i = 1; i <= NF; i++) if ($i == "via") {print $(i + 1); exit}}')
                 fi
                 [ -n "$original_gateway" ]
                 printf '%s\n' "$original_gateway" > "$gateway_file"
@@ -262,13 +265,13 @@ spec:
               ip route del default dev tun0 2>/dev/null || true
               ip link set dev tun0 down 2>/dev/null || true
               ip tuntap del mode tun dev tun0 2>/dev/null || true
-              ip route replace {{ private_cloud.media.openvpn.gateway_cluster_ip }}/32 via "$original_gateway" dev eth0
+              ip route replace {{ private_cloud.media.vpn.gateway_cluster_ip }}/32 via "$original_gateway" dev eth0
               ip route replace {{ private_cloud.networking.service_cidr }} via "$original_gateway" dev eth0
               ip tuntap add mode tun dev tun0
               ip address add 198.18.0.1/15 dev tun0
               ip link set tun0 up
               ip route replace default dev tun0
-              exec tun2socks --device tun://tun0 --proxy "ss://aes-256-gcm:${PROXY_PASSWORD}@{{ private_cloud.media.openvpn.gateway_cluster_ip }}:8388"
+              exec tun2socks --device tun://tun0 --proxy "ss://aes-256-gcm:${PROXY_PASSWORD}@{{ private_cloud.media.vpn.gateway_cluster_ip }}:8388"
           env:
             - name: PROXY_PASSWORD
               valueFrom: {secretKeyRef: {name: media-vpn, key: proxy-password}}

@@ -40,6 +40,9 @@
         'smtp_host': private_cloud.stalwart.hostname if private_cloud.stages.stalwart else none
       } | to_json }}
   register: validation_edge_routes
+  until: validation_edge_routes.rc == 0
+  retries: 18
+  delay: 10
   changed_when: false
   when: private_cloud.stages.networking | bool
 

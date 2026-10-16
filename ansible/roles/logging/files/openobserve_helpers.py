@@ -5,13 +5,16 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+HEARTBEAT_SERVICE = "private-cloud-log-heartbeat.service"
+ROW_TEMPLATE = "[{severity}] {namespace}/{service}: {message}"
+
 
 def alert_definitions(enabled):
     definitions = []
     for level in ("warn", "error", "critical"):
         definitions.append(alert_definition(
             "private_cloud_" + level,
-            severity_filter(level),
+            custom_query(severity_filter(level)),
             ">=",
             1,
             1,
@@ -20,12 +23,13 @@ def alert_definitions(enabled):
         ))
     definitions.append(alert_definition(
         "private_cloud_heartbeat_missing",
-        conditions(("service", "=", "private-cloud-log-heartbeat.service")),
-        "<",
+        heartbeat_query(),
+        ">=",
         1,
         1,
         "Notify when the host logging heartbeat is absent.",
         enabled,
+        "No host logging heartbeat arrived in the evaluation window (heartbeat_count={heartbeat_count}).",
     ))
     return definitions
 
@@ -48,14 +52,14 @@ def destination_definition(recipient):
     }
 
 
-def alert_definition(name, filters, operator, threshold, frequency, description, enabled):
+def alert_definition(name, query_condition, operator, threshold, frequency, description, enabled, row_template=ROW_TEMPLATE):
     return {
         "name": name,
         "org_id": "default",
         "stream_type": "logs",
         "stream_name": "logs",
         "is_real_time": False,
-        "query_condition": {"type": "custom", "conditions": filters},
+        "query_condition": query_condition,
         "trigger_condition": {
             "period": 5,
             "operator": operator,
@@ -65,11 +69,24 @@ def alert_definition(name, filters, operator, threshold, frequency, description,
             "silence": 60,
         },
         "destinations": ["private-cloud-email"],
-        "row_template": "[{severity}] {namespace}/{service}: {message}",
+        "row_template": row_template,
         "description": description,
         "enabled": enabled,
         "tz_offset": 0,
     }
+
+
+def custom_query(filters):
+    return {"type": "custom", "conditions": filters}
+
+
+def heartbeat_count_sql():
+    return f"SELECT count(*) AS heartbeat_count FROM \"logs\" WHERE service = '{HEARTBEAT_SERVICE}'"
+
+
+def heartbeat_query():
+    # OpenObserve notifies only when a query returns rows, so the aggregate returns its single row only while the count is zero.
+    return {"type": "sql", "sql": heartbeat_count_sql() + " HAVING count(*) < 1"}
 
 
 def severity_filter(level):

@@ -21,3 +21,28 @@
     label: "{{ item.namespace }}/{{ item.name }}"
   changed_when: false
   when: private_cloud.stages[item.stage] | bool
+
+- name: Read the Traefik route ConfigMaps
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ private_cloud_kubeconfig }}"
+    api_version: v1
+    kind: ConfigMap
+    namespace: edge
+    label_selectors:
+      - private-cloud.example/traefik-route=true
+  register: services_validation_traefik_routes
+  changed_when: false
+
+- name: Require a Traefik route ConfigMap for every enabled routed service
+  ansible.builtin.assert:
+    that: >-
+      (services_validation_traefik_routes.resources | map(attribute='metadata.name') | sort | list)
+      == (services_validation_traefik_routes_expected | map('regex_replace', '^', 'traefik-route-') | sort | list)
+    fail_msg: The Traefik route ConfigMaps in edge do not match the enabled routed services.
+  vars:
+    services_validation_traefik_routes_expected: >-
+      {{ [['opencloud', 'opencloud'], ['onlyoffice', 'onlyoffice'], ['grist', 'grist'], ['affine', 'affine'],
+          ['immich', 'immich'], ['stalwart', 'stalwart'], ['zabbix_server', 'zabbix'], ['logging', 'openobserve'],
+          ['media', 'jellyfin']]
+         | selectattr(0, 'in', private_cloud.stages | dict2items | selectattr('value') | map(attribute='key') | list)
+         | map(attribute=1) | list }}

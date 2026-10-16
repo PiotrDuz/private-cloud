@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-route-jellyfin
+  namespace: edge
+  labels: {private-cloud.example/traefik-route: "true"}
+data:
+  jellyfin.yaml: |
+    http:
+      routers:
+        jellyfin:
+          entryPoints: [websecure]
+          rule: Host(`{{ private_cloud.media.hostname }}`)
+          service: jellyfin
+          tls:
+            certResolver: cloudflare
+      services:
+        jellyfin:
+          loadBalancer:
+            servers:
+              - url: http://jellyfin.media.svc.cluster.local:8096

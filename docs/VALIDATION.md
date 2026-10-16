@@ -36,7 +36,7 @@ Validators trust only the distribution's Mozilla root store in `/usr/share/ca-ce
 ## Grist
 
 - The validator checks the pinned `/status` health route.
-- The global network and identity checks cover the configured route and ForwardAuth client.
+- The global network and identity checks cover the configured route and the oauth2-proxy client.
 - Creating a document with forwarded-header identity remains an operator acceptance check.
 
 ## Manticore Search
@@ -61,26 +61,36 @@ Validators trust only the distribution's Mozilla root store in `/usr/share/ca-ce
 
 - The logging validator checks both Deployments, ready endpoints, OpenObserve `/healthz`, and Alloy health, readiness, and metrics routes.
 - It verifies the OpenObserve hostname, internal SMTP endpoint, disabled SMTP authentication and TLS, recipient, and managed alert rules.
+- It requires separate administrator and ingestion Secrets, with Alloy mounting only the ingestion Secret.
+- The missing-heartbeat rule is an SQL aggregate that returns a row only when the count is zero.
 - It waits for the host heartbeat and delivers a temporary alert to the configured Stalwart mailbox when notifications are enabled.
 - The Zabbix server validator checks API access, the monitored host, templates, the storage dashboard, and notification settings.
-- The Zabbix Agent validator checks the service, listener, item keys, collectors, SMART wrapper, Alloy endpoint, and certificates.
+- It requires the monitored host to use PSK for agent connections.
+- The Zabbix Agent validator checks the service, listener, item keys, collectors, SMART wrapper, PSK file, and certificates.
+- It checks the Alloy endpoint only when the logging stage is enabled.
+- Certificate probes run whenever the Zabbix Agent stage is enabled.
 - Global validation checks internal SMTP relay rejection and delivers a test message plus Zabbix problem and recovery notifications.
 
 ## Storage and cluster
 
 - ZFS validation checks the online pool, unlocked encryption root, dataset properties, native mount units, and boot ordering.
 - k0s validation checks the controller, ready node, storage paths, bound volumes, and forwarding sysctl allowlist.
-- The integrity check rejects local trust anchors, `/etc/hosts` overrides, CoreDNS host overrides, and injected Traefik certificates.
+- The integrity check rejects local trust anchors, `/etc/hosts` overrides, CoreDNS host overrides, and injected Traefik certificates in its file configuration.
 - It rejects workload `hostAliases`, CA environment overrides, trust-store mounts, TLS Secrets, and NetworkPolicies absent from the repository templates.
+- It renders the enabled stages' NetworkPolicies and requires each live policy to match its rendered pod selector, policy types, ingress, and egress.
+- It requires a default-deny policy for ingress and egress in every managed namespace.
 
 ## Networking and media
 
 - Networking validation checks Traefik, AmneziaWG, the VPN interface, firewall rules, and routes.
 - It requires the production Let's Encrypt and Cloudflare endpoints in Traefik and DDNS.
+- It requires Traefik to use only the file provider, with no RBAC binding and no service-account token.
+- Service validation requires a Traefik route ConfigMap in `edge` for every enabled routed service.
+- Edge and identity checks retry while kubelet propagates route ConfigMaps.
 - The edge check requires host split DNS to resolve each hostname to the Traefik address.
 - It requires publicly trusted HTTPS and SMTP certificates with more than 14 days remaining.
 - The public DNS check queries `1.1.1.1` and `8.8.8.8` for managed A records, mail MX, SPF, DMARC, and PTR.
-- The media validator checks workloads, ARR APIs, download-client configuration, qBittorrent tunnel binding, and VPN health.
+- The media validator checks workloads, ARR APIs, download-client configuration, qBittorrent tunnel binding, the gateway `wg0` interface, and its minimal capabilities.
 - It requires guarded media traffic to exit through the VPN with an address different from the home WAN address.
 - Jellyfin validation checks its public information API and runs a short CPU transcoding probe.
 - Intel GPU validation requires a real render device.

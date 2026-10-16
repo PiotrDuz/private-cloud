@@ -13,11 +13,17 @@ The Grist service is managed by `ansible/roles/grist`.
 - The service listens inside the cluster on port `8484`.
 - A ClusterIP service exposes TCP `8484` only inside the cluster.
 - Traefik publishes the configured hostname through HTTPS.
-- The Ingress preserves WebSocket connections.
-- Traefik authenticates Grist through the edge ForwardAuth helper and OpenCloud.
+- The route ConfigMap preserves WebSocket connections.
+- Traefik authenticates every Grist request through the edge oauth2-proxy helper and OpenCloud.
+- The helper redirects unauthenticated browsers to OpenCloud sign-in.
 - Traefik strips client identity headers before authentication.
-- Grist trusts `X-Forwarded-User` for the single team site.
-- The logout path clears the helper cookie and returns to `/signed-out`.
+- Traefik routes `/oauth2/` on the Grist host to the helper without ForwardAuth.
+- The helper returns the verified OpenCloud email as `X-Forwarded-User`.
+- Grist trusts `X-Forwarded-User` on every request through `GRIST_IGNORE_SESSION`.
+- Grist identity follows the helper cookie, which expires after eight hours.
+- Grist access requires a browser session.
+- Grist API keys do not work from outside the browser session.
+- Logout calls `/oauth2/sign_out`, which ends the OpenCloud session and returns to OpenCloud.
 - Use the boot key for initial administrator setup.
 
 ## Manifest review

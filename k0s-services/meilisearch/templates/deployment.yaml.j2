@@ -28,7 +28,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: meilisearch
-          image: getmeili/meilisearch:v1.53.1
+          image: getmeili/meilisearch:v1.53.1@sha256:8d6643d86d71fad6ad3cba92cde7ccfce9e4d6c384bda67598eb553571c32431
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true

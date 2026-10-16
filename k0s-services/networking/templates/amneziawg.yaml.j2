@@ -14,7 +14,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: amneziawg}
       annotations:
-        checksum/config: {{ lookup('template', 'amneziawg-secret.yml.j2') | hash('sha256') }}
+        private-cloud.example/config-secret-revision: "{{ networking_amneziawg_secret_revision }}"
     spec:
       hostNetwork: false
       automountServiceAccountToken: false

@@ -52,52 +52,43 @@
       - networking_validation_traefik_endpoint.resources[0].subsets | default([]) | selectattr('addresses', 'defined') | list | length > 0
     fail_msg: Traefik has no ready service endpoint.
 
-- name: Read Traefik's cluster-scoped RBAC
+- name: Read cluster RBAC bindings
   kubernetes.core.k8s_info:
     kubeconfig: "{{ networking_kubeconfig }}"
     api_version: rbac.authorization.k8s.io/v1
-    kind: ClusterRole
-    name: private-cloud-traefik
-  register: networking_validation_traefik_rbac
+    kind: "{{ item }}"
+  loop: [ClusterRoleBinding, RoleBinding]
+  register: networking_validation_bindings
   changed_when: false
+  no_log: true
 
-- name: Require Traefik's informer permissions
+- name: Require that no RBAC binding references the Traefik ServiceAccount
   ansible.builtin.assert:
-    that:
-      - networking_validation_traefik_rbac.resources | length == 1
-      - >-
-        (networking_validation_traefik_rbac.resources[0].rules
-        | selectattr('resources', 'equalto', ['nodes']) | list | length == 1)
-        and
-        ((networking_validation_traefik_rbac.resources[0].rules
-        | selectattr('resources', 'equalto', ['nodes']) | first).verbs | sort
-        == ['get', 'list', 'watch'])
-      - networking_validation_traefik_rbac.resources[0].rules | selectattr('resources', 'equalto', ['ingresses', 'ingressclasses']) | list | length == 1
-    fail_msg: Traefik cannot synchronize its cluster-scoped ingress and node informers.
+    that: >-
+      networking_validation_bindings.results | map(attribute='resources') | flatten
+      | selectattr('subjects', 'defined') | map(attribute='subjects') | flatten
+      | selectattr('kind', 'equalto', 'ServiceAccount') | selectattr('name', 'equalto', 'traefik')
+      | selectattr('namespace', 'equalto', 'edge') | list | length == 0
+    fail_msg: Traefik's ServiceAccount must have no Kubernetes API permissions.
 
-- name: Read the Kubernetes API server EndpointSlices
+- name: Read the Traefik pod
   kubernetes.core.k8s_info:
     kubeconfig: "{{ networking_kubeconfig }}"
-    api_version: discovery.k8s.io/v1
-    kind: EndpointSlice
-    namespace: default
+    api_version: v1
+    kind: Pod
+    namespace: edge
     label_selectors:
-      - kubernetes.io/service-name=kubernetes
-  register: networking_validation_api_endpoint_slices
+      - app.kubernetes.io/name=traefik
+  register: networking_validation_traefik_pods
   changed_when: false
 
-- name: Build the expected Kubernetes API endpoint addresses and ports
-  ansible.builtin.set_fact:
-    networking_validation_api_addresses: "{{ networking_validation_api_endpoint_slices.resources | map(attribute='endpoints') | flatten | selectattr('conditions.ready', 'defined') | selectattr('conditions.ready', 'equalto', true) | map(attribute='addresses') | flatten | unique | list }}"
-    networking_validation_api_tcp_ports: "{{ networking_validation_api_endpoint_slices.resources | map(attribute='ports') | flatten | selectattr('protocol', 'equalto', 'TCP') | map(attribute='port') | unique | list }}"
-  changed_when: false
-
-- name: Require the discovered Kubernetes API endpoint data
+- name: Require a Traefik pod without a service-account token
   ansible.builtin.assert:
     that:
-      - networking_validation_api_addresses | length > 0
-      - networking_validation_api_tcp_ports | length == 1
-    fail_msg: The Kubernetes API service has no ready TCP endpoint for Traefik.
+      - networking_validation_traefik_pods.resources | length > 0
+      - networking_validation_traefik_pods.resources | map(attribute='spec.volumes') | flatten | selectattr('name', 'match', '^kube-api-access-') | list | length == 0
+      - networking_validation_traefik_pods.resources | map(attribute='spec.automountServiceAccountToken') | unique | list == [false]
+    fail_msg: The Traefik pod has a Kubernetes API credential.
 
 - name: Read Traefik's egress NetworkPolicy
   kubernetes.core.k8s_info:
@@ -242,3 +233,98 @@
       - (networking_validation_traefik.resources[0].spec.template.spec.containers | selectattr('name', 'equalto', 'traefik') | map(attribute='args') | first | select('search', 'acme[.]caserver') | list) == []
       - (networking_validation_traefik.resources[0].spec.template.spec.containers | selectattr('name', 'equalto', 'traefik') | map(attribute='env') | first | map(attribute='name') | select('search', '^CLOUDFLARE_BASE_URL$|^CF_API_URL$|^LEGO_CA') | list) == []
     fail_msg: Traefik overrides the production Let's Encrypt or Cloudflare endpoint.
+
+- name: Require Traefik to use only the file provider
+  ansible.builtin.assert:
+    that:
+      - networking_validation_traefik.resources[0].spec.template.spec.containers | selectattr('name', 'equalto', 'traefik') | map(attribute='args') | first | select('search', '^--providers[.]kubernetes') | list == []
+      - '"--providers.file.directory=/etc/traefik/dynamic" in (networking_validation_traefik.resources[0].spec.template.spec.containers | selectattr("name", "equalto", "traefik") | map(attribute="args") | first)'
+      - networking_validation_traefik.resources[0].spec.template.spec.volumes | selectattr('name', 'equalto', 'dynamic') | map(attribute='projected.sources') | flatten | selectattr('configMap.name', 'equalto', 'traefik-dynamic') | list | length == 1
+    fail_msg: Traefik must read routes only from the file provider directory.
+
+- name: Require Traefik's explicit public ACME resolvers and revision annotation
+  ansible.builtin.assert:
+    that:
+      - >-
+        '--certificatesresolvers.cloudflare.acme.dnschallenge.resolvers=1.1.1.1:53,1.0.0.1:53'
+        in (networking_validation_traefik.resources[0].spec.template.spec.containers | selectattr('name', 'equalto', 'traefik') | map(attribute='args') | first)
+      - networking_validation_traefik.resources[0].spec.template.metadata.annotations['private-cloud.example/cloudflare-secret-revision'] | length > 0
+    fail_msg: Traefik's Cloudflare DNS challenge or Secret revision annotation is missing.
+
+- name: Require Traefik egress to public DNS for ACME propagation checks
+  ansible.builtin.assert:
+    that:
+      - >-
+        networking_validation_traefik_networkpolicy.resources[0].spec.egress
+        | selectattr('ports.0.port', 'equalto', 53) | map(attribute='to') | flatten
+        | selectattr('ipBlock', 'defined') | list | length == 1
+    fail_msg: Traefik cannot reach public authoritative nameservers on port 53.
+
+- name: Read the application Traefik egress NetworkPolicy
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    api_version: networking.k8s.io/v1
+    kind: NetworkPolicy
+    namespace: private-cloud
+    name: application-traefik-egress
+  register: networking_validation_application_traefik_egress
+  changed_when: false
+
+- name: Require application egress to Traefik's pod port
+  ansible.builtin.assert:
+    that:
+      - networking_validation_application_traefik_egress.resources | length == 1
+      - networking_validation_application_traefik_egress.resources[0].spec.egress | length == 1
+      - networking_validation_application_traefik_egress.resources[0].spec.egress[0].to == networking_validation_amneziawg_traefik_egress_to
+      - networking_validation_application_traefik_egress.resources[0].spec.egress[0].ports == networking_validation_amneziawg_traefik_egress_ports
+    fail_msg: Applications cannot reach Traefik's HTTPS pod endpoint through hostPort DNAT.
+
+- name: Read the Traefik dynamic configuration
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    api_version: v1
+    kind: ConfigMap
+    namespace: edge
+    name: traefik-dynamic
+  register: networking_validation_traefik_dynamic
+  changed_when: false
+
+- name: Require the Traefik header and forward-auth middlewares
+  ansible.builtin.assert:
+    that:
+      - networking_validation_traefik_dynamic.resources | length == 1
+      - (networking_validation_traefik_dynamic.resources[0].data['tcp.yaml'] | from_yaml).http.middlewares.keys() | list | sort == ['forward-auth', 'strip-forwarded', 'strip-identity-headers']
+      - (networking_validation_traefik_dynamic.resources[0].data['tcp.yaml'] | from_yaml).http.routers is not defined
+    fail_msg: Traefik's dynamic configuration does not define the expected middlewares.
+
+- name: Read the forward-auth helper resources
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    namespace: edge
+    name: "{{ item.name }}"
+  loop:
+    - {api_version: apps/v1, kind: Deployment, name: forward-auth}
+    - {api_version: v1, kind: Secret, name: forward-auth}
+    - {api_version: networking.k8s.io/v1, kind: NetworkPolicy, name: forward-auth}
+  register: networking_validation_forward_auth
+  changed_when: false
+  when: private_cloud.stages.grist | bool
+  no_log: true
+
+- name: Require the oauth2-proxy helper, forward-auth middleware, and credential rollout
+  vars:
+    networking_validation_forward_auth_dynamic: "{{ networking_validation_traefik_dynamic.resources[0].data['tcp.yaml'] | from_yaml }}"
+    networking_validation_forward_auth_pod: "{{ networking_validation_forward_auth.results[0].resources[0].spec.template }}"
+  ansible.builtin.assert:
+    that:
+      - networking_validation_forward_auth.results | map(attribute='resources') | map('length') | select('equalto', 1) | list | length == 3
+      - networking_validation_forward_auth_pod.spec.containers[0].image == networking_forward_auth_image
+      - networking_validation_forward_auth_pod.metadata.annotations['private-cloud.example/secret-revision'] == networking_validation_forward_auth.results[1].resources[0].metadata.resourceVersion
+      - networking_validation_forward_auth_dynamic.http.middlewares['forward-auth'].forwardAuth.address == 'http://forward-auth.edge.svc.cluster.local:4180/'
+      - networking_validation_forward_auth_dynamic.http.middlewares['forward-auth'].forwardAuth.authResponseHeaders == ['X-Forwarded-User']
+      - networking_validation_forward_auth.results[2].resources[0].spec.egress | map(attribute='ports') | flatten | selectattr('port', 'equalto', 8443) | list | length == 1
+    fail_msg: The oauth2-proxy helper, its forward-auth middleware, its Traefik egress, or its credential rollout revision are not as configured.
+  when: private_cloud.stages.grist | bool
+  no_log: true

@@ -20,8 +20,8 @@ spec:
         private-cloud.example/apps-config-checksum: "{{ lookup('template', manifest_template_dir ~ '/apps-configmap.yaml.j2') | hash('sha256') }}"
         private-cloud.example/app-registry-config-checksum: "{{ lookup('template', manifest_template_dir ~ '/app-registry-configmap.yaml.j2') | hash('sha256') }}"
         private-cloud.example/csp-config-checksum: "{{ lookup('template', manifest_template_dir ~ '/csp-configmap.yaml.j2') | hash('sha256') }}"
-        private-cloud.example/identity-checksum: "{{ opencloud_identity_checksum }}"
-        private-cloud.example/wopi-secret-checksum: "{{ opencloud_wopi_secret_checksum }}"
+        private-cloud.example/identity-secret-revision: "{{ opencloud_identity_secret_revision }}"
+        private-cloud.example/wopi-secret-revision: "{{ opencloud_wopi_secret_revision }}"
     spec:
       serviceAccountName: opencloud
       automountServiceAccountToken: false
@@ -34,7 +34,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       initContainers:
         - name: install-drawio
-          image: alpine:3.22.1
+          image: alpine:3.22.1@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1
           imagePullPolicy: IfNotPresent
           command: [/bin/sh, -c]
           args:
@@ -65,7 +65,7 @@ spec:
             - {name: identity, mountPath: /identity, readOnly: true}
       containers:
         - name: opencloud
-          image: opencloudeu/opencloud-rolling:7.5.0
+          image: opencloudeu/opencloud:7.2.4@sha256:6d992ccc5f1cbc7b2a9b272ba25f879b1b159c2d7ed7f5527e09059f16295697
           imagePullPolicy: IfNotPresent
           command: [/bin/sh, -c]
           args:
@@ -109,10 +109,10 @@ spec:
             - {name: COLLABORATION_APP_ADDR, value: {{ ("https://" ~ private_cloud.onlyoffice.hostname) | to_json }}}
             - {name: COLLABORATION_APP_ICON, value: {{ ("https://" ~ private_cloud.onlyoffice.hostname ~ "/web-apps/apps/documenteditor/main/resources/img/favicon.ico") | to_json }}}
             - {name: COLLABORATION_APP_INSECURE, value: "false"}
-            - {name: COLLABORATION_APP_PROOF_DISABLE, value: "true"}
+            - {name: COLLABORATION_APP_PROOF_DISABLE, value: "false"}
             - {name: COLLABORATION_WOPI_SRC, value: {{ ("https://" ~ private_cloud.opencloud.hostname) | to_json }}}
             - name: COLLABORATION_WOPI_SECRET
-              valueFrom: {secretKeyRef: {name: onlyoffice-credentials, key: JWT_SECRET}}
+              valueFrom: {secretKeyRef: {name: opencloud-wopi, key: COLLABORATION_WOPI_SECRET}}
             - {name: COLLABORATION_CS3API_DATAGATEWAY_INSECURE, value: "false"}
           ports:
             - {name: http, containerPort: 9200, protocol: TCP}

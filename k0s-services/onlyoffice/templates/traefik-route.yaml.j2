@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-route-onlyoffice
+  namespace: edge
+  labels: {private-cloud.example/traefik-route: "true"}
+data:
+  onlyoffice.yaml: |
+    http:
+      routers:
+        onlyoffice:
+          entryPoints: [websecure]
+          rule: Host(`{{ private_cloud.onlyoffice.hostname }}`)
+          service: onlyoffice
+          tls:
+            certResolver: cloudflare
+      services:
+        onlyoffice:
+          loadBalancer:
+            servers:
+              - url: http://onlyoffice.private-cloud.svc.cluster.local:80

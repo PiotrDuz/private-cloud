@@ -9,6 +9,8 @@
       - affine_database_username is match('^[A-Za-z_][A-Za-z0-9_]*$')
       - private_cloud.affine.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
       - private_cloud_secrets.affine.database_password | length >= 16
+      - private_cloud_secrets.affine.admin_password | length >= 16
+      - private_cloud_secrets.affine.admin_password | length <= 32
     fail_msg: AFFiNE configuration is invalid.
   no_log: true
 
@@ -66,6 +68,24 @@
     private_cloud_service_dataset: "{{ affine_dataset }}"
     private_cloud_service_storage_size: "{{ private_cloud.affine.storage_size }}"
 
+- name: Inspect existing AFFiNE credentials
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: v1
+    kind: Secret
+    name: "{{ affine_secret_name }}"
+    namespace: "{{ affine_namespace }}"
+  register: affine_existing_credentials
+  changed_when: false
+  no_log: true
+
+- name: Classify the existing AFFiNE database password
+  ansible.builtin.set_fact:
+    affine_database_password_matches: >-
+      {{ affine_existing_credentials.resources | length > 0 and
+         affine_existing_credentials.resources[0].data.AFFINE_DB_PASSWORD is defined and
+         (affine_existing_credentials.resources[0].data.AFFINE_DB_PASSWORD | b64decode == private_cloud_secrets.affine.database_password) }}
+  no_log: true
 
 - name: Locate the shared PostgreSQL pod for AFFiNE database bootstrap
   kubernetes.core.k8s_info:
@@ -104,6 +124,20 @@
       sh -c 'printf %s {{ lookup('template', 'create-role.sql.j2') | b64encode }} |
       base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
   when: affine_role_exists.stdout | trim == ''
+  changed_when: true
+  no_log: true
+
+- name: Update the AFFiNE PostgreSQL login role
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    namespace: "{{ affine_namespace }}"
+    pod: "{{ affine_postgres_pods.resources[0].metadata.name }}"
+    command: >-
+      sh -c 'printf %s {{ lookup('template', 'alter-role.sql.j2') | b64encode }} |
+      base64 -d | psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres'
+  when:
+    - affine_role_exists.stdout | trim != ''
+    - affine_role_exists.stdout | trim == 'f' or not affine_database_password_matches | bool
   changed_when: true
   no_log: true
 
@@ -147,6 +181,22 @@
     definition: "{{ lookup('template', 'secret.yml.j2') | from_yaml }}"
   no_log: true
 
+- name: Read the applied AFFiNE credentials revision
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    api_version: v1
+    kind: Secret
+    namespace: "{{ affine_namespace }}"
+    name: "{{ affine_secret_name }}"
+  register: affine_applied_secret
+  changed_when: false
+  no_log: true
+
+- name: Record the AFFiNE credentials revision for its pod template
+  ansible.builtin.set_fact:
+    affine_secret_revision: "{{ affine_applied_secret.resources[0].metadata.resourceVersion }}"
+  no_log: true
+
 - name: Render AFFiNE manifests from Jinja templates
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
   vars:
@@ -161,9 +211,11 @@
     affine_preparation_manifests: >-
       {{ private_cloud_rendered_manifests | selectattr('kind', 'equalto', 'Job') | list }}
     affine_workload_manifests: >-
-      {{ private_cloud_rendered_manifests
+      {{ private_cloud_service_manifests
          | rejectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim', 'Job'])
          | list }}
+    affine_route_manifests: >-
+      {{ private_cloud_route_manifests }}
     affine_preparation_job_name: affine-database-preparation
 
 - name: Apply AFFiNE storage
@@ -285,6 +337,31 @@
   retries: 90
   delay: 5
   changed_when: false
+
+- name: Claim the AFFiNE administrator before publishing the route
+  ansible.builtin.command:
+    argv: [python3, "{{ role_path }}/files/claim_admin.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': affine_kubeconfig,
+        'namespace': affine_namespace,
+        'service': affine_service_name,
+        'port': 3010,
+        'email': private_cloud.affine.admin_email,
+        'password': private_cloud_secrets.affine.admin_password
+      } | to_json }}
+  register: affine_admin_claim
+  until: affine_admin_claim.rc == 0
+  retries: 5
+  delay: 10
+  changed_when: (affine_admin_claim.stdout | from_json).changed
+  no_log: true
+
+- name: Publish the AFFiNE route after the administrator exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ affine_kubeconfig }}"
+    state: present
+    definition: "{{ affine_route_manifests }}"
 
 - name: Validate AFFiNE after installation
   ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

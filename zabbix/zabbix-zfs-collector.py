@@ -52,9 +52,12 @@ def main():
 def load_inventory(path):
     with open(path, encoding="utf-8") as handle:
         document = json.load(handle)
-    entries = document.get("datasets") if isinstance(document, dict) else None
+    if not isinstance(document, dict):
+        raise ValueError("dataset inventory must be an object")
+    entries = document.get("datasets")
     if not isinstance(entries, list):
         raise ValueError("dataset inventory must contain a datasets list")
+    exact, prefixes = load_allowed_paths(document.get("allowed"))
 
     inventory = []
     names = set()
@@ -67,8 +70,10 @@ def load_inventory(path):
         required = entry.get("required")
         if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", name):
             raise ValueError("dataset inventory contains an invalid name")
-        if not isinstance(dataset, str) or not re.fullmatch(
-            r"tank/secure/(?:backup|no-backup)/k0s/[a-z0-9/-]+", dataset
+        if (
+            not isinstance(dataset, str)
+            or not re.fullmatch(r"tank/secure/[a-z0-9/-]+", dataset)
+            or not (dataset in exact or dataset.startswith(prefixes))
         ):
             raise ValueError("dataset inventory contains an invalid dataset path")
         if not isinstance(required, bool):
@@ -79,6 +84,26 @@ def load_inventory(path):
         datasets.add(dataset)
         inventory.append({"name": name, "dataset": dataset, "required": required})
     return inventory
+
+
+def load_allowed_paths(allowed):
+    if not isinstance(allowed, dict):
+        raise ValueError("dataset inventory must contain allowed dataset paths")
+    exact = allowed.get("exact")
+    prefixes = allowed.get("prefixes")
+    if not isinstance(exact, list) or not isinstance(prefixes, list):
+        raise ValueError("allowed dataset paths must contain exact and prefixes lists")
+    if any(
+        not isinstance(value, str) or not re.fullmatch(r"tank/secure/[a-z0-9/-]+", value)
+        for value in exact
+    ):
+        raise ValueError("allowed exact datasets are invalid")
+    if any(
+        not isinstance(value, str) or not re.fullmatch(r"tank/secure/[a-z0-9/-]+/", value)
+        for value in prefixes
+    ):
+        raise ValueError("allowed dataset prefixes are invalid")
+    return set(exact), tuple(prefixes)
 
 
 class Collector:

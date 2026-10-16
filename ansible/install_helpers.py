@@ -43,22 +43,22 @@ KUBECONFIG_FILE = RUNTIME_DIRECTORY / "kubeconfig"
 INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
 SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate", "validate")
-CURRENT_SCHEMA_VERSION = 11
-CURRENT_SECRETS_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 13
+CURRENT_SECRETS_SCHEMA_VERSION = 8
 SECRET_SCHEMAS = {
     "storage": {"encryption_passphrase"},
     "postgres": {"admin_password"},
     "meilisearch": {"master_key"},
     "stalwart": {"database_password", "admin_password", "mailbox_password", "relay_password", "certificate_dns_api_token"},
-    "zabbix": {"database_password", "admin_password"},
+    "zabbix": {"database_password", "admin_password", "agent_psk"},
     "onlyoffice": {"jwt_secret"},
-    "opencloud": {"admin_password"},
+    "opencloud": {"admin_password", "wopi_secret"},
     "grist": {"database_password", "session_secret", "boot_key", "oidc_client_secret", "oidc_cookie_secret"},
-    "affine": {"database_password", "oidc_client_secret"},
-    "immich": {"database_password", "oidc_client_secret"},
+    "affine": {"database_password", "oidc_client_secret", "admin_password"},
+    "immich": {"database_password", "oidc_client_secret", "admin_password"},
     "networking": {"cloudflare_api_token", "cloudflare_ddns_api_token", "amneziawg_private_key"},
     "logging": {"admin_password"},
-    "media": {"openvpn_configuration", "openvpn_username", "openvpn_password", "proxy_password", "qbittorrent_password"},
+    "media": {"wireguard_private_key", "wireguard_preshared_key", "proxy_password", "qbittorrent_password", "jellyfin_admin_password"},
 }
 SECRET_STAGES = {
     "storage": "zfs",
@@ -75,10 +75,53 @@ SECRET_STAGES = {
     "media": "media",
     "logging": "logging",
 }
+ADMIN_PASSWORDS = {
+    ("postgres", "admin_password"),
+    ("stalwart", "admin_password"),
+    ("stalwart", "mailbox_password"),
+    ("opencloud", "admin_password"),
+    ("zabbix", "admin_password"),
+    ("logging", "admin_password"),
+    ("media", "qbittorrent_password"),
+    ("media", "jellyfin_admin_password"),
+    ("immich", "admin_password"),
+    ("affine", "admin_password"),
+}
+MACHINE_SECRETS = {
+    ("meilisearch", "master_key"),
+    ("onlyoffice", "jwt_secret"),
+    ("opencloud", "wopi_secret"),
+    ("grist", "database_password"),
+    ("grist", "session_secret"),
+    ("grist", "boot_key"),
+    ("grist", "oidc_client_secret"),
+    ("grist", "oidc_cookie_secret"),
+    ("affine", "database_password"),
+    ("affine", "oidc_client_secret"),
+    ("immich", "database_password"),
+    ("immich", "oidc_client_secret"),
+    ("stalwart", "database_password"),
+    ("zabbix", "database_password"),
+    ("zabbix", "agent_psk"),
+    ("media", "proxy_password"),
+}
+WIREGUARD_KEY_PATTERN = re.compile(r"[A-Za-z0-9+/]{43}=")
+AIRVPN_DNS_ADDRESS = ipaddress.ip_address("10.128.0.1")
+ADMIN_PASSWORD_MINIMUM_LENGTH = 16
+AFFINE_PASSWORD_MAXIMUM_LENGTH = 32
+VENDOR_DEFAULT_PASSWORDS = {
+    "admin", "administrator", "adminadmin", "adminpassword", "password", "passwordpassword", "changeme",
+    "secret", "letmein", "welcome", "default", "root", "zabbix", "opencloud", "owncloud", "stalwart",
+    "postgres", "postgresql", "qbittorrent", "openobserve",
+}
+CREATE_INTENT_FILE = Path("/var/lib/private-cloud/installer-create-intent.json")
+STORAGE_CHECKS = Path(__file__).resolve().parent / "storage_checks.py"
+IMMUTABLE_NETWORK_KEYS = ("pod_cidr", "service_cidr", "cluster_dns_ip")
 QUOTA_PATTERN = re.compile(r"[1-9][0-9]*[KMGTPE]")
 RAM_PATTERN = re.compile(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)")
 DOMAIN_PATTERN = re.compile(r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}")
 EMAIL_PATTERN = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}")
+USERNAME_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]{0,30}[A-Za-z0-9])?")
 MAILBOX_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._+-]{0,62}[A-Za-z0-9])?")
 
 
@@ -201,9 +244,22 @@ def prompt_int(prompt: str, default: int) -> int:
             print("Enter a whole number.", file=__import__("sys").stderr)
 
 
-def prompt_secret(prompt: str, *, confirm: bool = True) -> str:
+def generate_secret(section: str, key: str) -> str | None:
+    if (section, key) == ("zabbix", "agent_psk"):
+        return secrets.token_hex(32)
+    if (section, key) in ADMIN_PASSWORDS | MACHINE_SECRETS:
+        return secrets.token_urlsafe(24)
+    return None
+
+
+def prompt_secret(prompt: str, *, confirm: bool = True, generated: str | None = None, reveal: bool = False) -> str:
+    suffix = " (press Enter to generate)" if generated is not None else ""
     while True:
-        value = getpass.getpass(f"{prompt}: ")
+        value = getpass.getpass(f"{prompt}{suffix}: ")
+        if not value and generated is not None:
+            if reveal:
+                print(f"Generated {prompt}: {generated}")
+            return generated
         if not value:
             print("Value cannot be empty.", file=__import__("sys").stderr)
             continue
@@ -213,17 +269,6 @@ def prompt_secret(prompt: str, *, confirm: bool = True) -> str:
                 print("Values do not match.", file=__import__("sys").stderr)
                 continue
         return value
-
-
-def prompt_secret_file(prompt: str) -> str:
-    path = Path(prompt_line(f"{prompt} file path"))
-    try:
-        value = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise InstallerError(f"Cannot read {prompt.lower()} file: {path}") from error
-    if not value.strip():
-        raise InstallerError(f"{prompt} file is empty")
-    return value
 
 
 def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
@@ -240,6 +285,8 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Stage configuration is incomplete")
     if any(type(value) is not bool for value in stages.values()):
         raise InstallerError("Every stage flag must be Boolean")
+    if stages["k0s"] and not stages["networking"]:
+        raise InstallerError("Networking is mandatory whenever k0s is enabled")
     dependencies = load_yaml(SERVICE_CATALOG).get("private_cloud_stage_dependencies")
     if not isinstance(dependencies, dict) or set(dependencies) != set(stages) - {"zfs"}:
         raise InstallerError("Service catalog stage dependencies are incomplete")
@@ -302,6 +349,9 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Networking currently requires IPv4 addresses")
     if cluster_dns_address not in service_network:
         raise InstallerError("The cluster DNS address must belong to the service CIDR")
+    dns_offset = 10 if service_network.max_prefixlen - service_network.prefixlen > 3 else 2
+    if cluster_dns_address != service_network.network_address + dns_offset:
+        raise InstallerError("The cluster DNS address must be the address k0s derives from the service CIDR")
     if pod_network.overlaps(service_network) or any(network.overlaps(pod_network) or network.overlaps(service_network) for network in local_networks):
         raise InstallerError("Pod, service, and local network ranges must not overlap")
     if not any(traefik_address in network for network in local_networks):
@@ -344,16 +394,18 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
             if rule["protocol"] not in {"TCP", "UDP"} or type(rule["port"]) is not int or not 1 <= rule["port"] <= 65535:
                 raise InstallerError("Invalid AmneziaWG LAN protocol or port")
     media = cloud["media"]
-    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "timezone", "quality_profiles", "openvpn", "max_ram"}:
+    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "timezone", "quality_profiles", "vpn", "max_ram", "jellyfin_admin_username"}:
         raise InstallerError("Media configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(media.get("storage_size", ""))) or not DOMAIN_PATTERN.fullmatch(str(media.get("hostname", ""))):
         raise InstallerError("Invalid media storage size or hostname")
+    if not isinstance(media["jellyfin_admin_username"], str) or not USERNAME_PATTERN.fullmatch(media["jellyfin_admin_username"]):
+        raise InstallerError("Invalid media.jellyfin_admin_username")
     if quota_to_bytes(media["storage_size"]) <= 2 * 1024 ** 3:
         raise InstallerError("Media dataset quota must exceed 2GiB for Jellyfin startup")
     if not isinstance(media.get("timezone"), str) or not re.fullmatch(r"[A-Za-z_+-]+/[A-Za-z_+/-]+", media["timezone"]):
         raise InstallerError("Invalid media.timezone")
     media_memory = media.get("max_ram")
-    if not isinstance(media_memory, dict) or set(media_memory) != {"sonarr", "radarr", "prowlarr", "qbittorrent", "jellyfin", "openvpn", "vpn_route", "dns", "file_logs"}:
+    if not isinstance(media_memory, dict) or set(media_memory) != {"sonarr", "radarr", "prowlarr", "qbittorrent", "jellyfin", "vpn_gateway", "vpn_route", "dns", "file_logs"}:
         raise InstallerError("Media memory configuration is incomplete")
     if any(not RAM_PATTERN.fullmatch(str(value)) or ram_to_bytes(value) < 33554432 for value in media_memory.values()):
         raise InstallerError("Every media memory limit must be at least 32Mi")
@@ -362,20 +414,26 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Media quality profile configuration is incomplete")
     if any(value not in {"720p", "1080p", "2160p"} for value in quality_profiles.values()):
         raise InstallerError("Media quality profiles must be 720p, 1080p, or 2160p")
-    openvpn = media.get("openvpn")
-    if not isinstance(openvpn, dict) or set(openvpn) != {"gateway_cluster_ip", "endpoint_ip", "endpoint_port", "endpoint_protocol"}:
-        raise InstallerError("OpenVPN configuration has missing or unknown keys")
+    vpn = media.get("vpn")
+    if not isinstance(vpn, dict) or set(vpn) != {"gateway_cluster_ip", "endpoint_ip", "endpoint_port", "peer_public_key", "address"}:
+        raise InstallerError("Media VPN configuration has missing or unknown keys")
     try:
-        gateway_address = ipaddress.ip_address(openvpn["gateway_cluster_ip"])
-        endpoint_address = ipaddress.ip_address(openvpn["endpoint_ip"])
+        gateway_address = ipaddress.ip_address(vpn["gateway_cluster_ip"])
+        endpoint_address = ipaddress.ip_address(vpn["endpoint_ip"])
+        tunnel_address = ipaddress.IPv4Interface(vpn["address"])
     except (TypeError, ValueError) as error:
-        raise InstallerError("Invalid OpenVPN address") from error
+        raise InstallerError("Invalid media VPN address") from error
     if gateway_address not in service_network or endpoint_address.version != 4 or not endpoint_address.is_global:
-        raise InstallerError("The OpenVPN gateway must use the service CIDR and its endpoint must be a public IPv4 address")
-    if type(openvpn.get("endpoint_port")) is not int or not 1 <= openvpn["endpoint_port"] <= 65535:
-        raise InstallerError("Invalid OpenVPN endpoint port")
-    if openvpn.get("endpoint_protocol") not in {"TCP", "UDP"}:
-        raise InstallerError("Invalid OpenVPN endpoint protocol")
+        raise InstallerError("The media VPN gateway must use the service CIDR and its endpoint must be a public IPv4 address")
+    if "/" not in vpn["address"] or not tunnel_address.ip.is_private:
+        raise InstallerError("The media VPN address must be a private IPv4 interface address with a prefix length")
+    reserved_vpn_networks = [pod_network, service_network, tunnel_network, *local_networks]
+    if any(address in network for address in (tunnel_address.ip, AIRVPN_DNS_ADDRESS) for network in reserved_vpn_networks):
+        raise InstallerError("The media VPN address and the AirVPN resolver must not overlap cluster, local, or AmneziaWG networks")
+    if type(vpn.get("endpoint_port")) is not int or not 1 <= vpn["endpoint_port"] <= 65535:
+        raise InstallerError("Invalid media VPN endpoint port")
+    if not isinstance(vpn.get("peer_public_key"), str) or not WIREGUARD_KEY_PATTERN.fullmatch(vpn["peer_public_key"]):
+        raise InstallerError("Invalid media VPN peer public key")
     if media["hostname"] in {networking["zabbix_hostname"], configuration["private_cloud"]["stalwart"]["hostname"]}:
         raise InstallerError("Media hostname must be unique")
     postgres = cloud["postgres"]
@@ -441,7 +499,7 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if not RAM_PATTERN.fullmatch(str(redis_affine.get("max_ram", ""))) or ram_to_bytes(redis_affine["max_ram"]) < 134217728:
         raise InstallerError("Invalid redis_affine.max_ram")
     affine = cloud["affine"]
-    expected_affine = {"storage_size", "max_ram", "hostname"}
+    expected_affine = {"storage_size", "max_ram", "hostname", "admin_email"}
     if not isinstance(affine, dict) or set(affine) != expected_affine:
         raise InstallerError("AFFiNE configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(affine.get("storage_size", ""))):
@@ -453,8 +511,10 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("AFFiNE memory limit is too small")
     if not isinstance(affine.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(affine["hostname"]):
         raise InstallerError("Invalid affine.hostname")
+    if not EMAIL_PATTERN.fullmatch(str(affine["admin_email"])):
+        raise InstallerError("Invalid affine.admin_email")
     immich = cloud["immich"]
-    expected_immich = {"storage_size", "hostname", "timezone", "max_ram", "machine_learning_max_ram", "machine_learning_accelerator", "valkey_max_ram"}
+    expected_immich = {"storage_size", "hostname", "timezone", "max_ram", "machine_learning_max_ram", "machine_learning_accelerator", "valkey_max_ram", "admin_email"}
     if not isinstance(immich, dict) or set(immich) != expected_immich:
         raise InstallerError("Immich configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(immich.get("storage_size", ""))):
@@ -472,6 +532,8 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Invalid immich.timezone")
     if not isinstance(immich.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(immich["hostname"]):
         raise InstallerError("Invalid immich.hostname")
+    if not EMAIL_PATTERN.fullmatch(str(immich["admin_email"])):
+        raise InstallerError("Invalid immich.admin_email")
     public_hostnames = [onlyoffice["hostname"], opencloud["hostname"], grist["hostname"], affine["hostname"], immich["hostname"]]
     if len(public_hostnames) != len(set(public_hostnames)):
         raise InstallerError("Every public application hostname must be unique")
@@ -578,8 +640,26 @@ def validate_secrets_configuration(configuration: Mapping[str, Any], stages: Map
         raise InstallerError("The Grist boot key must contain at least 16 characters")
     if "grist" in secrets_root and "oidc_client_secret" in secrets_root["grist"] and len(secrets_root["grist"]["oidc_client_secret"]) < 16:
         raise InstallerError("The Grist OIDC client secret must contain at least 16 characters")
-    if "grist" in secrets_root and "oidc_cookie_secret" in secrets_root["grist"] and len(secrets_root["grist"]["oidc_cookie_secret"]) < 32:
-        raise InstallerError("The Grist OIDC cookie secret must contain at least 32 characters")
+    cookie_secret = secrets_root.get("grist", {}).get("oidc_cookie_secret")
+    if cookie_secret is not None and (len(cookie_secret) != 32 or not cookie_secret.isascii()):
+        raise InstallerError("The Grist OIDC cookie secret must contain exactly 32 ASCII characters")
+    wopi_secret = secrets_root.get("opencloud", {}).get("wopi_secret")
+    if wopi_secret is not None and len(wopi_secret) < 32:
+        raise InstallerError("The OpenCloud WOPI secret must contain at least 32 characters")
+    agent_psk = secrets_root.get("zabbix", {}).get("agent_psk")
+    if agent_psk is not None and not re.fullmatch(r"[0-9a-f]{64}", agent_psk):
+        raise InstallerError("The Zabbix agent PSK must be 64 lowercase hexadecimal characters")
+    for section, key in sorted(ADMIN_PASSWORDS):
+        password = secrets_root.get(section, {}).get(key)
+        if password is None:
+            continue
+        if len(password) < ADMIN_PASSWORD_MINIMUM_LENGTH:
+            raise InstallerError(f"The {section}.{key} value must contain at least {ADMIN_PASSWORD_MINIMUM_LENGTH} characters")
+        if re.sub(r"[^a-z]", "", password.lower()) in VENDOR_DEFAULT_PASSWORDS:
+            raise InstallerError(f"The {section}.{key} value must not be a known vendor default")
+    affine_admin_password = secrets_root.get("affine", {}).get("admin_password")
+    if affine_admin_password is not None and len(affine_admin_password) > AFFINE_PASSWORD_MAXIMUM_LENGTH:
+        raise InstallerError(f"The affine.admin_password value must contain at most {AFFINE_PASSWORD_MAXIMUM_LENGTH} characters")
     if "affine" in secrets_root and "database_password" in secrets_root["affine"] and len(secrets_root["affine"]["database_password"]) < 16:
         raise InstallerError("The AFFiNE database password must contain at least 16 characters")
     if "affine" in secrets_root and "oidc_client_secret" in secrets_root["affine"] and len(secrets_root["affine"]["oidc_client_secret"]) < 16:
@@ -588,27 +668,32 @@ def validate_secrets_configuration(configuration: Mapping[str, Any], stages: Map
         raise InstallerError("The Immich database password must contain at least 16 characters")
     if "immich" in secrets_root and "oidc_client_secret" in secrets_root["immich"] and len(secrets_root["immich"]["oidc_client_secret"]) < 16:
         raise InstallerError("The Immich OIDC client secret must contain at least 16 characters")
-    if "networking" in secrets_root:
-        api_token = secrets_root["networking"].get("cloudflare_api_token", "")
-        ddns_api_token = secrets_root["networking"].get("cloudflare_ddns_api_token", "")
-        private_key = secrets_root["networking"].get("amneziawg_private_key", "")
-        if min(len(api_token), len(ddns_api_token)) < 20:
-            raise InstallerError("Each Cloudflare API token must contain at least 20 characters")
-        if not re.fullmatch(r"[A-Za-z0-9+/]{43}=", private_key):
-            raise InstallerError("The AmneziaWG private key is invalid")
-    if "media" in secrets_root and not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", secrets_root["media"].get("proxy_password", "")):
+    networking_secrets = secrets_root.get("networking", {})
+    if any(len(networking_secrets.get(key, "x" * 20)) < 20 for key in ("cloudflare_api_token", "cloudflare_ddns_api_token")):
+        raise InstallerError("Each Cloudflare API token must contain at least 20 characters")
+    if "amneziawg_private_key" in networking_secrets and not WIREGUARD_KEY_PATTERN.fullmatch(networking_secrets["amneziawg_private_key"]):
+        raise InstallerError("The AmneziaWG private key is invalid")
+    media_secrets = secrets_root.get("media", {})
+    if any(key in media_secrets and not WIREGUARD_KEY_PATTERN.fullmatch(media_secrets[key]) for key in ("wireguard_private_key", "wireguard_preshared_key")):
+        raise InstallerError("The media WireGuard private and preshared keys must be base64 WireGuard keys")
+    proxy_password = secrets_root.get("media", {}).get("proxy_password")
+    if proxy_password is not None and not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", proxy_password):
         raise InstallerError("The media VPN proxy password must contain 16 to 64 URL-safe characters")
-    if "media" in secrets_root and len(secrets_root["media"].get("qbittorrent_password", "")) < 16:
-        raise InstallerError("The qBittorrent WebUI password must contain at least 16 characters")
-    if "stalwart" in secrets_root and len(secrets_root["stalwart"].get("certificate_dns_api_token", "")) < 20:
+    certificate_token = secrets_root.get("stalwart", {}).get("certificate_dns_api_token")
+    if certificate_token is not None and len(certificate_token) < 20:
         raise InstallerError("The Stalwart certificate DNS API token must contain at least 20 characters")
-    if "logging" in secrets_root:
-        admin_password = secrets_root["logging"].get("admin_password", "")
-        if not isinstance(admin_password, str) or len(admin_password) < 32:
-            raise InstallerError("OpenObserve administrator password must contain at least 32 characters")
+    admin_password = secrets_root.get("logging", {}).get("admin_password")
+    if admin_password is not None and len(admin_password) < 32:
+        raise InstallerError("OpenObserve administrator password must contain at least 32 characters")
     passphrase = secrets_root.get("storage", {}).get("encryption_passphrase")
     if passphrase is not None and not 8 <= len(passphrase.encode()) <= 512:
         raise InstallerError("The storage passphrase must contain 8 to 512 bytes")
+
+
+def validate_secret_value(section: str, key: str, value: str) -> None:
+    validate_secrets_configuration(
+        {"secrets_schema_version": CURRENT_SECRETS_SCHEMA_VERSION, "private_cloud_secrets": {section: {key: value}}}, {}
+    )
 
 
 def require_commands(commands: Sequence[str]) -> None:
@@ -659,6 +744,59 @@ def pool_exists() -> bool:
         return False
     result = subprocess.run(["zpool", "list", "-H", "-o", "name", POOL_NAME], check=False, capture_output=True, text=True)
     return result.returncode == 0 and POOL_NAME in result.stdout.split()
+
+
+def reject_immutable_changes(stored: Mapping[str, Any], candidate: Mapping[str, Any]) -> None:
+    previous = stored["private_cloud"]
+    current = candidate["private_cloud"]
+    disabled = sorted(stage for stage, enabled in previous["stages"].items() if enabled and not current["stages"][stage])
+    if disabled:
+        raise InstallerError(f"Stages enabled in the stored configuration cannot be disabled: {', '.join(disabled)}")
+    changed = [key for key in IMMUTABLE_NETWORK_KEYS if previous["networking"][key] != current["networking"][key]]
+    if changed:
+        raise InstallerError(f"Cluster network values cannot change after installation: {', '.join(changed)}")
+
+
+def load_create_intent() -> dict[str, Any] | None:
+    if not CREATE_INTENT_FILE.exists() and not CREATE_INTENT_FILE.is_symlink():
+        return None
+    details = CREATE_INTENT_FILE.lstat()
+    if not stat.S_ISREG(details.st_mode) or details.st_uid != 0 or stat.S_IMODE(details.st_mode) != 0o600:
+        raise InstallerError(f"Create intent must be a root-owned regular file with mode 0600: {CREATE_INTENT_FILE}")
+    try:
+        intent = json.loads(CREATE_INTENT_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise InstallerError(f"Cannot read create intent: {CREATE_INTENT_FILE}") from error
+    if not isinstance(intent, dict) or set(intent) != {"pool", "topology", "disks"} or intent["pool"] != POOL_NAME or intent["topology"] != "raidz1":
+        raise InstallerError(f"Invalid create intent: {CREATE_INTENT_FILE}")
+    if not isinstance(intent["disks"], list) or any(not isinstance(disk, str) for disk in intent["disks"]):
+        raise InstallerError(f"Invalid create intent: {CREATE_INTENT_FILE}")
+    return intent
+
+
+def record_create_intent(disks: Sequence[str]) -> None:
+    intent = {"pool": POOL_NAME, "topology": "raidz1", "disks": list(disks)}
+    atomic_write(CREATE_INTENT_FILE, json.dumps(intent, sort_keys=True) + "\n", 0o600)
+
+
+def clear_create_intent() -> None:
+    CREATE_INTENT_FILE.unlink(missing_ok=True)
+
+
+def resumable_create_intent() -> dict[str, Any] | None:
+    intent = load_create_intent()
+    if intent is None or not pool_exists() or PUBLIC_CONFIGURATION.is_file():
+        return None
+    return intent
+
+
+def require_resumable_pool(intent: Mapping[str, Any], disks: Sequence[str]) -> None:
+    if list(intent["disks"]) != list(disks):
+        raise InstallerError("Selected disks do not match the recorded create intent")
+    run_command(["python3", str(STORAGE_CHECKS), "pool-layout", "--pool", POOL_NAME, "--disks", *disks])
+    secure = subprocess.run(["zfs", "get", "-H", "-o", "value", "keystatus", f"{POOL_NAME}/secure"], check=False, capture_output=True, text=True)
+    if secure.returncode == 0 and secure.stdout.strip() != "available":
+        raise InstallerError(f"Load the {POOL_NAME}/secure key before resuming the interrupted installation")
 
 
 def encrypt_secrets(plaintext: Path, encrypted: Path, password_file: Path) -> None:

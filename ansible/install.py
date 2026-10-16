@@ -22,6 +22,8 @@ from install_helpers import (
     OLD_VAULT_PASSWORD_FILE,
     PLAYBOOK,
     POOL_NAME,
+    ADMIN_PASSWORDS,
+    IMMUTABLE_NETWORK_KEYS,
     PUBLIC_CONFIGURATION,
     RUNTIME_DIRECTORY,
     SECRETS_CONFIGURATION,
@@ -35,27 +37,33 @@ from install_helpers import (
     VAULT_PASSWORD_FILE,
     InstallerError,
     atomic_write,
+    clear_create_intent,
     decrypt_secrets,
     dump_yaml,
     encrypt_secrets,
     ensure_runtime_directory,
+    generate_secret,
     load_yaml,
     pool_exists,
     prompt_choice,
     prompt_int,
     prompt_line,
     prompt_secret,
-    prompt_secret_file,
+    record_create_intent,
     redact_secrets,
+    reject_immutable_changes,
     rekey_secrets,
     remove_stale_runtime_files,
     require_interactive_terminal,
     require_commands,
     require_configuration_dataset,
     require_kubernetes_readiness,
+    require_resumable_pool,
     require_root,
+    resumable_create_intent,
     run_command,
     validate_public_configuration,
+    validate_secret_value,
     validate_secrets_configuration,
     validate_vault_ciphertext,
     write_password_file,
@@ -84,7 +92,8 @@ def run_installation() -> dict[str, Any]:
         remove_stale_runtime_files()
         require_commands(["ansible-playbook", "ansible-vault"])
         require_kubernetes_readiness()
-        if pool_exists():
+        resume_intent = resumable_create_intent()
+        if pool_exists() and resume_intent is None:
             require_configuration_dataset()
         stored_public = load_yaml(PUBLIC_CONFIGURATION) if PUBLIC_CONFIGURATION.is_file() else None
         existing_public = None
@@ -108,7 +117,7 @@ def run_installation() -> dict[str, Any]:
             return {"status": "completed", "mode": "validate", "playbook": str(VALIDATION_PLAYBOOK)}
         if mode == "create" and existing_public is not None:
             raise InstallerError("A public configuration already exists; choose update, reapply, or rotate")
-        if mode == "create" and pool_exists():
+        if mode == "create" and pool_exists() and resume_intent is None:
             raise InstallerError("An existing tank pool cannot be adopted during initial installation")
         if mode == "create":
             require_commands(["lsblk"])
@@ -118,6 +127,8 @@ def run_installation() -> dict[str, Any]:
         stages = public["private_cloud"]["stages"]
         if mode == "create" and not stages["zfs"]:
             raise InstallerError("Initial installation requires ZFS to persist the installer configuration")
+        if mode == "create" and resume_intent is not None:
+            require_resumable_pool(resume_intent, public["private_cloud"]["storage"]["disks"])
 
         old_password: str | None = None
         original_secrets: dict[str, Any] | None = None
@@ -161,6 +172,8 @@ def run_installation() -> dict[str, Any]:
         atomic_write(TEMP_RUNTIME_FILE, dump_yaml(runtime), 0o600)
         if not prompt_bool("Allow Ansible to start", True):
             raise InstallerError("Ansible run was not confirmed")
+        if mode == "create" and resume_intent is None:
+            record_create_intent(public["private_cloud"]["storage"]["disks"])
         atomic_write(TEMP_PUBLIC_FILE, dump_yaml(public), 0o600)
         if secrets_changed:
             write_secret_file(secrets_configuration, stages)
@@ -175,6 +188,7 @@ def run_installation() -> dict[str, Any]:
             atomic_write(SECRETS_CONFIGURATION, TEMP_ENCRYPTED_FILE.read_text(), 0o600)
         run_playbook()
         run_validation_playbook()
+        clear_create_intent()
         return {"status": "completed", "mode": mode, "playbook": str(PLAYBOOK)}
 
 
@@ -226,7 +240,8 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
     stages = result["private_cloud"]["stages"]
     if "stages" in sections:
         for stage in stages:
-            stages[stage] = prompt_bool(f"Enable {stage}", stages[stage])
+            if existing is None or not stages[stage]:
+                stages[stage] = prompt_bool(f"Enable {stage}", stages[stage])
     cloud = result["private_cloud"]
     if "storage" in sections and cloud["stages"]["zfs"]:
         if mode == "create":
@@ -240,6 +255,8 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
     if "networking" in sections:
         networking = cloud["networking"]
         for key in ("storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "pod_cidr", "service_cidr", "cluster_dns_ip", "traefik_internal_ip", "zabbix_hostname"):
+            if existing is not None and key in IMMUTABLE_NETWORK_KEYS:
+                continue
             networking[key] = prompt_line(f"Networking {key}", networking[key])
         networking["local_network_cidrs"] = prompt_line(
             "Local network CIDRs separated by spaces", " ".join(networking["local_network_cidrs"])
@@ -283,11 +300,11 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
                 ("720p", "1080p", "2160p"),
                 media["quality_profiles"][service],
             )
-        openvpn = media["openvpn"]
-        for key in ("gateway_cluster_ip", "endpoint_ip"):
-            openvpn[key] = prompt_line(f"OpenVPN {key}", openvpn[key])
-        openvpn["endpoint_port"] = prompt_int("OpenVPN endpoint_port", openvpn["endpoint_port"])
-        openvpn["endpoint_protocol"] = prompt_choice("OpenVPN endpoint_protocol", ("TCP", "UDP"), openvpn["endpoint_protocol"])
+        vpn = media["vpn"]
+        for key in ("gateway_cluster_ip", "endpoint_ip", "peer_public_key", "address"):
+            vpn[key] = prompt_line(f"Media VPN {key}", vpn[key])
+        vpn["endpoint_port"] = prompt_int("Media VPN endpoint_port", vpn["endpoint_port"])
+        media["jellyfin_admin_username"] = prompt_line("Jellyfin administrator username", media["jellyfin_admin_username"])
     if "postgres" in sections:
         for key in ("volume_size", "max_ram"):
             cloud["postgres"][key] = prompt_line(f"PostgreSQL {key}", cloud["postgres"][key])
@@ -316,9 +333,11 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
     if "affine" in sections:
         for key in ("storage_size", "max_ram", "hostname"):
             cloud["affine"][key] = prompt_line(f"AFFiNE {key}", cloud["affine"][key])
+        cloud["affine"]["admin_email"] = prompt_line("AFFiNE administrator email", cloud["affine"]["admin_email"])
     if "immich" in sections:
         for key in ("storage_size", "hostname", "timezone", "max_ram", "machine_learning_max_ram", "machine_learning_accelerator", "valkey_max_ram"):
             cloud["immich"][key] = prompt_line(f"Immich {key}", cloud["immich"][key])
+        cloud["immich"]["admin_email"] = prompt_line("Immich administrator email", cloud["immich"]["admin_email"])
     if "stalwart" in sections:
         for key in ("storage_size", "max_ram", "domain", "forwarding_domain", "hostname", "acme_contact", "admin_username", "mailbox_username", "relay_host", "relay_username"):
             cloud["stalwart"][key] = prompt_line(f"Stalwart {key}", cloud["stalwart"][key])
@@ -341,6 +360,8 @@ def collect_valid_public_configuration(existing: dict[str, Any] | None, mode: st
         candidate = collect_public_configuration(existing, mode)
         try:
             validate_public_configuration(candidate)
+            if existing is not None:
+                reject_immutable_changes(existing, candidate)
             return candidate
         except InstallerError as error:
             print(f"Invalid configuration: {error}", file=sys.stderr)
@@ -369,10 +390,11 @@ def collect_missing_secrets(configuration: dict[str, Any], public: dict[str, Any
     stages = public["private_cloud"]["stages"]
     prompts = {
         ("storage", "encryption_passphrase"): "ZFS encryption passphrase",
-        ("postgres", "admin_password"): "PostgreSQL administrator password",
+        ("postgres", "admin_password"): "PostgreSQL administrator password (at least 16 characters)",
         ("meilisearch", "master_key"): "Meilisearch master key",
         ("onlyoffice", "jwt_secret"): "OnlyOffice JWT secret",
-        ("opencloud", "admin_password"): "OpenCloud administrator password",
+        ("opencloud", "admin_password"): "OpenCloud administrator password (at least 16 characters)",
+        ("opencloud", "wopi_secret"): "OpenCloud WOPI secret",
         ("grist", "database_password"): "Grist database password",
         ("grist", "session_secret"): "Grist session secret",
         ("grist", "boot_key"): "Grist boot key",
@@ -380,24 +402,27 @@ def collect_missing_secrets(configuration: dict[str, Any], public: dict[str, Any
         ("grist", "oidc_cookie_secret"): "Grist OIDC cookie secret",
         ("affine", "database_password"): "AFFiNE database password",
         ("affine", "oidc_client_secret"): "AFFiNE OIDC client secret",
+        ("affine", "admin_password"): "AFFiNE administrator password (16 to 32 characters)",
         ("immich", "database_password"): "Immich database password",
         ("immich", "oidc_client_secret"): "Immich OIDC client secret",
+        ("immich", "admin_password"): "Immich administrator password (at least 16 characters)",
         ("stalwart", "database_password"): "Stalwart database password",
-        ("stalwart", "admin_password"): "Stalwart administrator password",
-        ("stalwart", "mailbox_password"): "Stalwart mailbox password",
+        ("stalwart", "admin_password"): "Stalwart administrator password (at least 16 characters)",
+        ("stalwart", "mailbox_password"): "Stalwart mailbox password (at least 16 characters)",
         ("stalwart", "relay_password"): "inbox.eu SMTP password",
         ("stalwart", "certificate_dns_api_token"): "Stalwart Cloudflare certificate DNS API token",
         ("logging", "admin_password"): "OpenObserve administrator password (at least 32 characters)",
         ("zabbix", "database_password"): "Zabbix database password",
-        ("zabbix", "admin_password"): "Zabbix administrator password",
+        ("zabbix", "admin_password"): "Zabbix administrator password (at least 16 characters)",
+        ("zabbix", "agent_psk"): "Zabbix agent PSK (64 lowercase hexadecimal characters)",
         ("networking", "cloudflare_api_token"): "Cloudflare ACME DNS API token",
         ("networking", "cloudflare_ddns_api_token"): "Cloudflare DDNS API token",
         ("networking", "amneziawg_private_key"): "AmneziaWG server private key",
-        ("media", "openvpn_configuration"): "OpenVPN configuration",
-        ("media", "openvpn_username"): "OpenVPN username",
-        ("media", "openvpn_password"): "OpenVPN password",
+        ("media", "wireguard_private_key"): "AirVPN WireGuard private key",
+        ("media", "wireguard_preshared_key"): "AirVPN WireGuard preshared key",
         ("media", "proxy_password"): "Media VPN proxy password",
-        ("media", "qbittorrent_password"): "qBittorrent WebUI password",
+        ("media", "qbittorrent_password"): "qBittorrent WebUI password (at least 16 characters)",
+        ("media", "jellyfin_admin_password"): "Jellyfin administrator password (at least 16 characters)",
     }
     for section, keys in SECRET_SCHEMAS.items():
         if not stages[SECRET_STAGES[section]]:
@@ -405,11 +430,7 @@ def collect_missing_secrets(configuration: dict[str, Any], public: dict[str, Any
         section_values = secrets_root.setdefault(section, {})
         for key in sorted(keys):
             if key not in section_values:
-                section_values[key] = (
-                    prompt_secret_file(prompts[(section, key)])
-                    if (section, key) == ("media", "openvpn_configuration")
-                    else prompt_secret(prompts[(section, key)])
-                )
+                section_values[key] = prompt_new_secret(section, key, prompts[(section, key)])
     return result
 
 
@@ -423,6 +444,7 @@ def update_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         ("stalwart", "relay_password"),
         ("stalwart", "certificate_dns_api_token"),
         ("onlyoffice", "jwt_secret"),
+        ("opencloud", "wopi_secret"),
         ("grist", "database_password"),
         ("grist", "session_secret"),
         ("grist", "boot_key"),
@@ -430,27 +452,23 @@ def update_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         ("affine", "database_password"),
         ("immich", "database_password"),
         ("zabbix", "database_password"),
+        ("zabbix", "agent_psk"),
         ("networking", "cloudflare_api_token"),
         ("networking", "cloudflare_ddns_api_token"),
         ("networking", "amneziawg_private_key"),
-        ("media", "openvpn_configuration"),
-        ("media", "openvpn_username"),
-        ("media", "openvpn_password"),
+        ("media", "wireguard_private_key"),
+        ("media", "wireguard_preshared_key"),
         ("media", "proxy_password"),
         ("media", "qbittorrent_password"),
     ):
         if stages[SECRET_STAGES[section]] and prompt_bool(f"Change {section}.{key}", False):
-            result["private_cloud_secrets"][section][key] = (
-                prompt_secret_file(f"New {section}.{key}")
-                if (section, key) == ("media", "openvpn_configuration")
-                else prompt_secret(f"New {section}.{key}")
-            )
+            result["private_cloud_secrets"][section][key] = prompt_new_secret(section, key, f"New {section}.{key}")
     return result
 
 
 def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> dict[str, Any]:
     result = _copy_mapping(configuration)
-    names = "meilisearch stalwart_database stalwart_admin mailbox relay stalwart_dns onlyoffice grist_database grist_session grist_boot grist_oidc_cookie affine_database immich_database zabbix_database cloudflare_acme cloudflare_ddns amneziawg openvpn_configuration openvpn_username openvpn_password media_proxy qbittorrent"
+    names = "meilisearch stalwart_database stalwart_admin mailbox relay stalwart_dns onlyoffice opencloud_wopi grist_database grist_session grist_boot grist_oidc_cookie affine_database immich_database zabbix_database zabbix_agent_psk cloudflare_acme cloudflare_ddns amneziawg wireguard_private_key wireguard_preshared_key media_proxy qbittorrent"
     selected = prompt_line(f"Secrets to rotate ({names})", "all").split()
     supported = {"all", *names.split()}
     if set(selected) - supported:
@@ -465,7 +483,9 @@ def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         "relay": ("stalwart", "relay_password"),
         "stalwart_dns": ("stalwart", "certificate_dns_api_token"),
         "zabbix_database": ("zabbix", "database_password"),
+        "zabbix_agent_psk": ("zabbix", "agent_psk"),
         "onlyoffice": ("onlyoffice", "jwt_secret"),
+        "opencloud_wopi": ("opencloud", "wopi_secret"),
         "grist_database": ("grist", "database_password"),
         "grist_session": ("grist", "session_secret"),
         "grist_boot": ("grist", "boot_key"),
@@ -475,9 +495,8 @@ def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         "cloudflare_acme": ("networking", "cloudflare_api_token"),
         "cloudflare_ddns": ("networking", "cloudflare_ddns_api_token"),
         "amneziawg": ("networking", "amneziawg_private_key"),
-        "openvpn_configuration": ("media", "openvpn_configuration"),
-        "openvpn_username": ("media", "openvpn_username"),
-        "openvpn_password": ("media", "openvpn_password"),
+        "wireguard_private_key": ("media", "wireguard_private_key"),
+        "wireguard_preshared_key": ("media", "wireguard_preshared_key"),
         "media_proxy": ("media", "proxy_password"),
         "qbittorrent": ("media", "qbittorrent_password"),
     }
@@ -485,22 +504,33 @@ def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         if name in mapping:
             section, key = mapping[name]
             if stages[SECRET_STAGES[section]]:
-                result["private_cloud_secrets"][section][key] = (
-                    prompt_secret_file(f"New {section}.{key}")
-                    if (section, key) == ("media", "openvpn_configuration")
-                    else prompt_secret(f"New {section}.{key}")
-                )
+                result["private_cloud_secrets"][section][key] = prompt_new_secret(section, key, f"New {section}.{key}")
     return result
+
+
+def prompt_new_secret(section: str, key: str, label: str) -> str:
+    generated = generate_secret(section, key)
+    while True:
+        value = prompt_secret(label, generated=generated, reveal=(section, key) in ADMIN_PASSWORDS)
+        try:
+            validate_secret_value(section, key, value)
+            return value
+        except InstallerError as error:
+            print(f"Invalid value: {error}", file=sys.stderr)
 
 
 def reject_unsupported_secret_rotations(previous: dict[str, Any], candidate: dict[str, Any]) -> None:
     unsupported = (
         ("logging", "admin_password"),
-        ("storage", "encryption_passphrase"),        ("postgres", "admin_password"),
+        ("storage", "encryption_passphrase"),
+        ("postgres", "admin_password"),
         ("zabbix", "admin_password"),
         ("grist", "oidc_client_secret"),
         ("affine", "oidc_client_secret"),
         ("immich", "oidc_client_secret"),
+        ("immich", "admin_password"),
+        ("affine", "admin_password"),
+        ("media", "jellyfin_admin_password"),
     )
     changed = [
         f"{section}.{key}"

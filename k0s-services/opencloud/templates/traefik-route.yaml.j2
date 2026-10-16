@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-route-opencloud
+  namespace: edge
+  labels: {private-cloud.example/traefik-route: "true"}
+data:
+  opencloud.yaml: |
+    http:
+      routers:
+        opencloud:
+          entryPoints: [websecure]
+          rule: Host(`{{ private_cloud.opencloud.hostname }}`)
+          service: opencloud
+          tls:
+            certResolver: cloudflare
+      services:
+        opencloud:
+          loadBalancer:
+            servers:
+              - url: http://opencloud.private-cloud.svc.cluster.local:9200

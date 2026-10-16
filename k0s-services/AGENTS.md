@@ -6,6 +6,7 @@
 - Do not add Kustomize bases, overlays, or Python manifest overrides.
 - Keep public configuration and encrypted secrets separate.
 - Prefer ClusterIP services behind the shared Traefik edge.
+- Publish HTTP routes as Traefik route ConfigMaps in edge; do not emit Ingress resources.
 - Keep an approved NodePort literal in its owning service template.
 - Keep the k0s release version and checksum in `ansible/roles/k0s/defaults/main.yml`.
 - Keep Zabbix host settings in `ansible/service_catalog.yml`.

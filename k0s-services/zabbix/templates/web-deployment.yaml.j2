@@ -25,7 +25,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       initContainers:
         - name: wait-for-postgres
-          image: postgres:18.4-bookworm
+          image: postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
@@ -58,7 +58,7 @@ spec:
                   key: POSTGRES_USER
       containers:
         - name: web
-          image: zabbix/zabbix-web-nginx-pgsql:ubuntu-7.4.12
+          image: zabbix/zabbix-web-nginx-pgsql:ubuntu-7.4.12@sha256:8e731b5f7e83811e2dfb189d7c33f521aa20d3afed9cb7bb5265f4c1c94c3386
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true

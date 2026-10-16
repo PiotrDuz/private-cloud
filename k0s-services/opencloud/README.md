@@ -5,7 +5,7 @@ The OpenCloud service is managed by `ansible/roles/opencloud`.
 - Ansible renders the `templates/*.yaml.j2` workload files during deployment.
 
 - Configure `private_cloud.opencloud` in the public configuration.
-- Store the administrator password in the encrypted configuration.
+- Store the administrator password and the WOPI secret in the encrypted configuration.
 - Change the initialized administrator password through OpenCloud UI or CLI.
 - Run `sudo python3 ansible/install.py` from the repository root.
 - The service dataset is `tank/secure/backup/k0s/services/opencloud`.
@@ -16,7 +16,7 @@ The OpenCloud service is managed by `ansible/roles/opencloud`.
 - Apache Tika provides full-text content extraction.
 - OnlyOffice uses the embedded OpenCloud collaboration service.
 - The OpenCloud and OnlyOffice hostnames must resolve from the pods with trusted certificate chains.
-- WOPI proof checks are disabled for current OnlyOffice compatibility.
+- WOPI proof-key verification is enabled against the OnlyOffice discovery document.
 - The app registry maps supported office formats to OnlyOffice.
 - The official Draw.io extension embeds `https://embed.diagrams.net`.
 - The first Draw.io installation requires outbound access to its pinned GitHub release.
@@ -24,8 +24,11 @@ The OpenCloud service is managed by `ansible/roles/opencloud`.
 - The POSIX user storage driver requires the built-in NATS JetStream key-value cache for file IDs.
 - A ClusterIP service exposes TCP `9200` only inside the cluster.
 - Traefik publishes the configured hostname, including `/wopi` and `/collaboration`, through HTTPS.
-- The collaboration service shares the OnlyOffice `JWT_SECRET` from `onlyoffice-credentials`.
-- An OnlyOffice JWT secret rotation triggers an OpenCloud rollout through a rendered checksum.
+- The collaboration service reads its WOPI signing secret only from the `opencloud-wopi` Secret.
+- OnlyOffice never receives the WOPI secret, and OpenCloud never receives the OnlyOffice JWT secret.
+- A WOPI secret rotation restarts OpenCloud through the Secret `resourceVersion` pod annotation.
+- The image is the stable channel `opencloudeu/opencloud` pinned by tag and digest.
+- The Draw.io installer image is pinned by tag and digest.
 
 ## Shared identity
 

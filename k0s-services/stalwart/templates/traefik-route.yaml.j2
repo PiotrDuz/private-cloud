@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-route-stalwart
+  namespace: edge
+  labels: {private-cloud.example/traefik-route: "true"}
+data:
+  stalwart.yaml: |
+    http:
+      routers:
+        stalwart:
+          entryPoints: [websecure]
+          rule: Host(`{{ private_cloud.stalwart.hostname }}`)
+          middlewares: [strip-forwarded]
+          service: stalwart
+          tls:
+            certResolver: cloudflare
+      services:
+        stalwart:
+          loadBalancer:
+            servers:
+              - url: http://stalwart.private-cloud.svc.cluster.local:8080

@@ -11,7 +11,7 @@
 
 - Install collections: `sudo ansible-galaxy collection install -r ansible/requirements.yml`
 - Install or reapply: `sudo python3 ansible/install.py`; requires root, an interactive TTY, PyYAML, and the Python Kubernetes client.
-- Modes: `create`, `update`, `reapply`, `rotate`; only `create` erases disks and requires typing `CREATE tank`.
+- Modes: `create`, `update`, `reapply`, `rotate`, `validate`; only `create` erases disks and requires typing `CREATE tank`.
 - Debian hosts must disable the `zabbix_agent` stage; use Ubuntu for all stages.
 - No tests, linter, or CI. Verification is the playbook's preflight and verify tasks on a live host, so changes cannot be fully validated locally.
 - Do not run `ansible-playbook` directly; the installer writes runtime values and the Vault password under `/run/private-cloud`.
@@ -23,6 +23,8 @@
 - Bump every schema site together: `CURRENT_SCHEMA_VERSION` and `CURRENT_SECRETS_SCHEMA_VERSION` in `ansible/install_helpers.py`, the asserts in `ansible/roles/preflight/tasks/main.yml`, and the example file.
 - Adding a stage touches `ansible/install.py` prompts, `ansible/install_helpers.py`, preflight asserts, the example config, `ansible/service_catalog.yml`, and `ansible/site.yml`.
 - `ansible/service_catalog.yml` also owns the stage dependency chain and the Zabbix dataset inventory; preflight validates both.
+- The installer refuses to disable a stored stage and to change `pod_cidr`, `service_cidr`, or `cluster_dns_ip` after install.
+- Networking is mandatory whenever k0s is enabled.
 
 ## Layout
 

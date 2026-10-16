@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-route-openobserve
+  namespace: edge
+  labels: {private-cloud.example/traefik-route: "true"}
+data:
+  openobserve.yaml: |
+    http:
+      routers:
+        openobserve:
+          entryPoints: [websecure]
+          rule: Host(`{{ private_cloud.logging.hostname }}`)
+          service: openobserve
+          tls:
+            certResolver: cloudflare
+      services:
+        openobserve:
+          loadBalancer:
+            servers:
+              - url: http://openobserve.observability.svc.cluster.local:5080

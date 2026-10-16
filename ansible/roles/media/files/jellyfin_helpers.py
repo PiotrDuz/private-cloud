@@ -10,6 +10,14 @@ def configure_server(path):
     return write_xml(path, root)
 
 
+def configure_network(path, known_proxies):
+    root = read_xml(path, 'NetworkConfiguration')
+    proxies = clear_element(root, 'KnownProxies')
+    for proxy in known_proxies:
+        ET.SubElement(proxies, 'string').text = proxy
+    return write_xml(path, root)
+
+
 def configure_library(path, location=None):
     root = read_xml(path, 'LibraryOptions')
     if location and root.find('PathInfos') is None:

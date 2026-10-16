@@ -9,6 +9,13 @@ The Jellyfin templates are managed by `ansible/roles/media` through the `media` 
 - Mount the shared `media-library-data` claim read-only at `/media`.
 - Request one shared `gpu.intel.com/i915` allocation for transcoding.
 - Publish the configured hostname through Traefik HTTPS.
+- Apply the route ConfigMap only after the installer completes the startup wizard.
+- The installer creates the administrator named by `private_cloud.media.jellyfin_admin_username` with `private_cloud_secrets.media.jellyfin_admin_password`.
+- The startup wizard is skipped when Jellyfin already reports it completed.
+- The installer skips the wizard's configuration step so the managed settings stay unchanged.
+- Set `fsGroupChangePolicy: OnRootMismatch` so starts do not re-own volumes.
+- Mount the shared library claim read-only at the volume and the mount.
+- Trust forwarded headers only from the cluster pod network through `KnownProxies`.
 - Accept TCP `8096` only from Traefik.
 - Allow cluster DNS and Internet HTTPS egress.
 - Keep online metadata and image downloads enabled.
@@ -21,6 +28,8 @@ The [arr stack](../arr/README.md) provisions the shared library and downloads me
 - A Python init container applies managed settings before the server starts.
 - Initial libraries use `/media/movies` and `/media/tv` from the shared read-only mount.
 - Existing library options retain their paths and keep metadata writes off the read-only mount.
+- The init container writes `KnownProxies` in `network.xml` from `private_cloud.networking.pod_cidr`.
+- The Jellyfin NetworkPolicy admits only Traefik, so the pod network can only be Traefik.
 - Automatic subtitle downloads and writes alongside media remain disabled.
 - The server runs as UID 1000 with the host render-device group.
 - Disable local metadata and artwork saving on newly added libraries because the mount is read-only.

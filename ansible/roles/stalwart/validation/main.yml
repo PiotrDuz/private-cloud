@@ -38,3 +38,33 @@
         'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
       } | to_json }}
   changed_when: false
+
+- name: Read the Stalwart search key
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    api_version: v1
+    kind: Secret
+    name: "{{ stalwart_runtime_secret_name }}"
+    namespace: "{{ stalwart_namespace }}"
+  register: stalwart_runtime_secret
+  changed_when: false
+  no_log: true
+
+- name: Validate the scoped Stalwart search key reaches only its indexes
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': stalwart_kubeconfig,
+        'namespace': stalwart_namespace,
+        'service': stalwart_meilisearch_service,
+        'remote_port': stalwart_meilisearch_port,
+        'path': item.path,
+        'headers': {'Authorization': 'Bearer ' ~ (stalwart_runtime_secret.resources[0].data.STALWART_MEILISEARCH_API_KEY | b64decode)},
+        'status_codes': [item.status]
+      } | to_json }}
+  loop:
+    - {path: '/indexes?limit=1', status: 200}
+    - {path: '/keys', status: 403}
+  changed_when: false
+  no_log: true

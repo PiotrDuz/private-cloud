@@ -38,18 +38,18 @@
   loop_control:
     label: "{{ item.item }}"
 
-- name: Verify the OpenVPN tunnel is active
+- name: Verify the WireGuard tunnel is active
   ansible.builtin.command:
-    argv: [k0s, kubectl, exec, -n, media, deployment/media-vpn, -c, openvpn, --, ip, link, show, tun0]
-  register: media_validation_openvpn_tunnel
+    argv: [k0s, kubectl, exec, -n, media, deployment/media-vpn, -c, wireguard, --, ip, -4, address, show, dev, wg0]
+  register: media_validation_wireguard_tunnel
   changed_when: false
 
-- name: Require the OpenVPN tun0 interface
+- name: Require the WireGuard wg0 interface address
   ansible.builtin.assert:
-    that: media_validation_openvpn_tunnel.stdout is search('tun0')
-    fail_msg: The media VPN container has no active tun0 interface.
+    that: media_validation_wireguard_tunnel.stdout is search('inet ' ~ private_cloud.media.vpn.address | regex_escape)
+    fail_msg: The media VPN container has no wg0 interface with the configured address.
 
-- name: Read media gateway process capabilities
+- name: Read the media gateway pod specification
   kubernetes.core.k8s_info:
     kubeconfig: "{{ media_kubeconfig }}"
     api_version: apps/v1
@@ -59,16 +59,15 @@
   register: media_validation_gateway
   changed_when: false
 
-- name: Require Gluetun to signal its nonroot OpenVPN process
+- name: Require the media gateway to hold only its WireGuard capabilities
   ansible.builtin.assert:
     that:
       - media_validation_gateway.resources | length == 1
       - >-
-        'KILL' in
         (media_validation_gateway.resources[0].spec.template.spec.containers
-        | selectattr('name', 'equalto', 'openvpn')
-        | map(attribute='securityContext.capabilities.add') | first)
-    fail_msg: The media gateway cannot signal its nonroot OpenVPN process during recovery.
+        | selectattr('name', 'equalto', 'wireguard')
+        | map(attribute='securityContext.capabilities.add') | first | sort) == ['CHOWN', 'NET_ADMIN']
+    fail_msg: The media gateway capabilities differ from the WireGuard minimum.
 
 - name: Verify each ARR tun2socks process is attached to its only TUN device
   ansible.builtin.command:
@@ -194,7 +193,8 @@
     stdin: >-
       {{ {'kubeconfig': media_kubeconfig, 'namespace': 'media', 'service': 'jellyfin',
           'remote_port': 8096, 'path': '/System/Info/Public',
-          'json_keys': ['Version', 'ProductName', 'ServerName']} | to_json }}
+          'json_keys': ['Version', 'ProductName', 'ServerName'],
+          'json_equal': {'StartupWizardCompleted': true}} | to_json }}
   changed_when: false
 
 - name: Verify Jellyfin can encode a short CPU video frame

@@ -17,7 +17,7 @@ def main():
             if action["status"] != "1":
                 api.call("action.update", {"actionid": action["actionid"], "status": 1})
                 api.changed = True
-    if configuration["logging"]:
+    if configuration["health"]:
         configure_health(api, configuration)
     print(json.dumps({"changed": api.changed, "status": "configured"}))
 

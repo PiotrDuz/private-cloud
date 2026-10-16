@@ -15,6 +15,7 @@ data:
     RECORDS = {{ private_cloud.networking.managed_records | to_json }}
     ADDRESS_URL = {{ private_cloud.networking.public_ip_url | to_json }}
     API_ROOT = "https://api.cloudflare.com/client/v4"
+    TTL = 300
 
 
     def main():
@@ -26,7 +27,7 @@ data:
             if record is None:
                 create_record(token, hostname, address)
                 changed.append(hostname)
-            elif record["content"] != address:
+            elif not matches(record, address):
                 update_record(token, record["id"], hostname, address)
                 changed.append(hostname)
         print(json.dumps({"address": address, "updated": changed}))
@@ -35,7 +36,18 @@ data:
     def discover_address():
         with urllib.request.urlopen(ADDRESS_URL, timeout=10) as response:
             value = response.read(64).decode().strip()
-        return str(ipaddress.IPv4Address(value))
+        address = ipaddress.IPv4Address(value)
+        if not is_public(address):
+            raise RuntimeError(f"Discovered address {address} is not a public IPv4 address")
+        return str(address)
+
+
+    def is_public(address):
+        return address.is_global and not (address.is_multicast or address.is_reserved or address.is_unspecified)
+
+
+    def matches(record, address):
+        return record["content"] == address and record["proxied"] is False and record["ttl"] == TTL
 
 
     def request(token, url, method="GET", body=None):
@@ -58,13 +70,13 @@ data:
 
     def create_record(token, hostname, address):
         request(token, f"{API_ROOT}/zones/{ZONE_ID}/dns_records", "POST", {
-            "type": "A", "name": hostname, "content": address, "ttl": 300, "proxied": False,
+            "type": "A", "name": hostname, "content": address, "ttl": TTL, "proxied": False,
         })
 
 
     def update_record(token, record_id, hostname, address):
         request(token, f"{API_ROOT}/zones/{ZONE_ID}/dns_records/{record_id}", "PUT", {
-            "type": "A", "name": hostname, "content": address, "ttl": 300, "proxied": False,
+            "type": "A", "name": hostname, "content": address, "ttl": TTL, "proxied": False,
         })
 
 

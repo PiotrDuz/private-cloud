@@ -1,6 +1,7 @@
 ---
 # Commit Zabbix host endpoint changes here.
 private_cloud_zabbix_hostname: private-cloud-zabbix
+private_cloud_zabbix_psk_identity: private-cloud-zabbix-agent
 private_cloud_zabbix_agent_server_active: 127.0.0.1:31051
 private_cloud_alert_smtp_host: stalwart.private-cloud.svc.cluster.local
 private_cloud_alert_smtp_port: 2525
@@ -34,10 +35,18 @@ private_cloud_memory_requests:
   radarr: 192Mi
   prowlarr: 192Mi
   qbittorrent: 64Mi
-  openvpn: 64Mi
+  vpn_gateway: 64Mi
   dns: 32Mi
   vpn_route: 16Mi
   file_logs: 16Mi
+
+# Allowed monitored dataset paths; preflight and the ZFS collector both enforce them.
+private_cloud_allowed_datasets:
+  exact:
+    - tank/secure/backup/private-cloud-config
+  prefixes:
+    - tank/secure/backup/k0s/
+    - tank/secure/no-backup/k0s/
 
 private_cloud_dataset_catalog:
   - {name: installer-config, stage: zfs, dataset: tank/secure/backup/private-cloud-config, color: 42A5F5}
@@ -66,8 +75,9 @@ private_cloud_dataset_catalog:
   - {name: stalwart, stage: stalwart, dataset: tank/secure/backup/k0s/services/stalwart, color: 5C6BC0}
   - {name: zabbix, stage: zabbix_server, dataset: tank/secure/backup/k0s/services/zabbix, color: EF5350}
 
+# k0s and networking require each other; networking owns the default-deny baseline.
 private_cloud_stage_dependencies:
-  k0s: [zfs]
+  k0s: [zfs, networking]
   networking: [k0s]
   media: [networking]
   intel_gpu: [k0s]

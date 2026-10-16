@@ -13,7 +13,7 @@
 - name: Configure host log retention and heartbeat
   ansible.builtin.import_tasks: host.yml
 
-- name: Apply OpenObserve credentials
+- name: Apply OpenObserve administrator credentials
   kubernetes.core.k8s:
     kubeconfig: "{{ logging_kubeconfig }}"
     state: present
@@ -79,15 +79,20 @@
   register: logging_ingestion_token
   no_log: true
 
-- name: Apply the OpenObserve ingestion token
+- name: Apply the OpenObserve ingestion credentials
   kubernetes.core.k8s:
     kubeconfig: "{{ logging_kubeconfig }}"
-    state: patched
+    state: present
     definition:
       apiVersion: v1
       kind: Secret
-      metadata: {name: openobserve-ingest, namespace: observability}
+      metadata:
+        name: openobserve-ingest
+        namespace: observability
+        annotations: {private-cloud.example/managed-by: ansible}
+      type: Opaque
       stringData:
+        username: "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain }}"
         ingest-password: "{{ logging_ingestion_token.json.data.passcode }}"
   register: logging_ingestion_secret_apply
   no_log: true

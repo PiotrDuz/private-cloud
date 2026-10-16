@@ -34,8 +34,8 @@ def check_pool_layout(pool: str, disks: list[str]) -> None:
         for fields in (line.split() for line in status.splitlines())
         if len(fields) >= 2 and fields[0].startswith("/dev/") and fields[1] == "ONLINE"
     ]
-    actual = sorted(str(Path(member).resolve(strict=True)) for member in members)
-    expected = sorted(str(Path(disk).resolve(strict=True)) for disk in disks)
+    actual = sorted(_parent_disk(member) for member in members)
+    expected = sorted(_parent_disk(disk) for disk in disks)
     if not actual or actual != expected:
         raise CheckError("pool members do not match selected disks")
 
@@ -115,17 +115,25 @@ def _is_active_swap(device: str, resolve_swap: bool) -> bool:
     return any(str(Path(swap).resolve(strict=True)) == resolved for swap in swaps)
 
 
+def _parent_disk(device: str) -> str:
+    resolved = Path(device).resolve(strict=True)
+    sysfs = (Path("/sys/class/block") / resolved.name).resolve(strict=True)
+    if (sysfs / "partition").exists():
+        return str((Path("/dev") / sysfs.parent.name).resolve(strict=True))
+    return str(resolved)
+
+
 def _pool_members() -> set[str]:
-    
     try:
         result = subprocess.run(["zpool", "status", "-L", "-P"], capture_output=True, text=True, check=False)
     except FileNotFoundError:
         return set()
-    return {
+    devices = {
         str(Path(line.split()[0]).resolve(strict=True))
         for line in result.stdout.splitlines()
         if line.split() and line.split()[0].startswith("/dev/")
     }
+    return devices | {_parent_disk(device) for device in devices}
 
 
 def output(*command: str) -> str:

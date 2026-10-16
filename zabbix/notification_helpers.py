@@ -1,4 +1,4 @@
-"""Managed notification actions and Alloy and certificate health items."""
+"""Managed notification actions and Certificate and Alloy health items."""
 from api_helpers import same
 
 
@@ -42,9 +42,24 @@ def configure_email(api, config):
 def configure_health(api, config):
     host_id = config["host_id"]
     host = config["host"]
-    master = {"hostid": host_id, "name": "Alloy and certificate health", "key_": "observability.health", "type": 7, "value_type": 4, "delay": "1m", "history": "1d", "status": 0}
+    master = {"hostid": host_id, "name": "Certificate and Alloy health", "key_": "observability.health", "type": 7, "value_type": 4, "delay": "1m", "history": "1d", "status": 0}
     master_id = ensure_item(api, master)
-    ensure_trigger(api, host_id, "Alloy and certificate health collector stopped", 'nodata(/' + host + '/observability.health,5m)=1', 4)
+    ensure_trigger(api, host_id, "Certificate and Alloy health collector stopped", 'nodata(/' + host + '/observability.health,5m)=1', 4)
+    if config["alloy"]:
+        configure_alloy_health(api, host_id, host, master_id)
+    for certificate in config["certificates"]:
+        name = certificate["name"]
+        for metric in ("valid", "days"):
+            key = 'observability.certificate.' + metric + '["' + name + '"]'
+            dependent(api, host_id, master_id, key, name + " certificate " + metric, '$.certificates["' + name + '"]["' + metric + '"]')
+        valid_key = 'observability.certificate.valid["' + name + '"]'
+        days_key = 'observability.certificate.days["' + name + '"]'
+        ensure_trigger(api, host_id, name + " certificate invalid or unreachable", 'max(/' + host + '/' + valid_key + ',2m)=0', 4)
+        for days, severity in ((21, 2), (7, 4)):
+            ensure_trigger(api, host_id, name + " certificate expires within " + str(days) + " days", 'last(/' + host + '/' + days_key + ')<' + str(days) + ' and last(/' + host + '/' + valid_key + ')=1', severity)
+
+
+def configure_alloy_health(api, host_id, host, master_id):
     gauges = [
         ("alloy_up", "Alloy unhealthy"),
         ("metrics_up", "Alloy metrics collection failed"),
@@ -57,16 +72,6 @@ def configure_health(api, config):
         key = "observability." + field
         dependent(api, host_id, master_id, key, field.replace("_", " "), "$." + field, rate=True)
         ensure_trigger(api, host_id, field.replace("_", " ") + " increased", 'max(/' + host + '/' + key + ',5m)>0', 2)
-    for certificate in config["certificates"]:
-        name = certificate["name"]
-        for metric in ("valid", "days"):
-            key = 'observability.certificate.' + metric + '["' + name + '"]'
-            dependent(api, host_id, master_id, key, name + " certificate " + metric, '$.certificates["' + name + '"]["' + metric + '"]')
-        valid_key = 'observability.certificate.valid["' + name + '"]'
-        days_key = 'observability.certificate.days["' + name + '"]'
-        ensure_trigger(api, host_id, name + " certificate invalid or unreachable", 'max(/' + host + '/' + valid_key + ',2m)=0', 4)
-        for days, severity in ((21, 2), (7, 4)):
-            ensure_trigger(api, host_id, name + " certificate expires within " + str(days) + " days", 'last(/' + host + '/' + days_key + ')<' + str(days) + ' and last(/' + host + '/' + valid_key + ')=1', severity)
 
 
 def dependent(api, host_id, master_id, key, name, path, rate=False):

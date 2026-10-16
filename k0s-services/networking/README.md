@@ -3,9 +3,14 @@
 The networking services are managed by `ansible/roles/networking`.
 
 - Traefik binds host TCP `443` for HTTPS and TCP `25` for SMTP.
-- Application Ingress resources use exact configured hostnames.
-- Traefik uses Cloudflare DNS-01 for web certificates.
-- The Cloudflare DDNS CronJob maintains configured public A records.
+- Application route ConfigMaps in `edge` use exact configured hostnames.
+- Traefik reads routes only through the Grist route ConfigMap.
+- Traefik uses Cloudflare DNS-01 for web certificates with explicit public resolvers.
+- Traefik has no Kubernetes API access, RBAC, or service-account token.
+- The `forward-auth` Deployment in `edge` runs oauth2-proxy for Grist.
+- Traefik routes `/oauth2/` on the Grist host to oauth2-proxy through the file provider.
+- Pods reach the public hostname through the Traefik pod port.
+- The Cloudflare DDNS CronJob maintains configured public A records, proxy status, and TTL.
 - AmneziaWG binds one configured UDP hostPort.
 - The AmneziaWG kernel module is installed on the host.
 - AmneziaWG routes and firewall rules remain inside its pod network namespace.

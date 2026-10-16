@@ -16,12 +16,30 @@
           {'stage': 'opencloud', 'id': 'OpenCloudDesktop', 'redirect': 'http://localhost'},
           {'stage': 'opencloud', 'id': 'OpenCloudAndroid', 'redirect': 'oc://android.opencloud.eu'},
           {'stage': 'opencloud', 'id': 'OpenCloudIOS', 'redirect': 'oc://ios.opencloud.eu'},
-          {'stage': 'grist', 'id': 'grist-forward-auth', 'redirect': 'https://' ~ private_cloud.grist.hostname ~ '/_oauth'},
-          {'stage': 'affine', 'id': 'affine', 'redirect': 'https://' ~ private_cloud.affine.hostname ~ '/oauth/callback'},
-          {'stage': 'immich', 'id': 'immich', 'redirect': 'https://' ~ private_cloud.immich.hostname ~ '/auth/login'},
-          {'stage': 'immich', 'id': 'immich', 'redirect': 'https://' ~ private_cloud.immich.hostname ~ '/user-settings'},
-          {'stage': 'immich', 'id': 'immich', 'redirect': 'app.immich:///oauth-callback'}
-        ] | selectattr('stage', 'in', private_cloud.stages | dict2items | selectattr('value', 'equalto', true) | map(attribute='key') | list) | list
+          {'stage': 'grist', 'id': 'grist-forward-auth', 'redirect': 'https://' ~ private_cloud.grist.hostname ~ '/oauth2/callback', 'secret': (private_cloud_secrets.grist | default({})).oidc_client_secret | default('')},
+          {'stage': 'affine', 'id': 'affine', 'redirect': 'https://' ~ private_cloud.affine.hostname ~ '/oauth/callback', 'secret': (private_cloud_secrets.affine | default({})).oidc_client_secret | default('')},
+          {'stage': 'immich', 'id': 'immich', 'redirect': 'https://' ~ private_cloud.immich.hostname ~ '/auth/login', 'secret': (private_cloud_secrets.immich | default({})).oidc_client_secret | default('')},
+          {'stage': 'immich', 'id': 'immich', 'redirect': 'https://' ~ private_cloud.immich.hostname ~ '/user-settings', 'secret': (private_cloud_secrets.immich | default({})).oidc_client_secret | default('')},
+          {'stage': 'immich', 'id': 'immich', 'redirect': 'app.immich:///oauth-callback', 'secret': (private_cloud_secrets.immich | default({})).oidc_client_secret | default('')}
+        ] | selectattr('stage', 'in', private_cloud.stages | dict2items | selectattr('value', 'equalto', true) | map(attribute='key') | list) | list,
+        'end_session_path': grist_opencloud_end_session_path | default('/signin/v1/identifier/_/endsession') if private_cloud.stages.grist | bool else '',
+        'forward_auth': {
+          'hostname': private_cloud.grist.hostname,
+          'client_id': 'grist-forward-auth',
+          'redirect': 'https://' ~ private_cloud.grist.hostname ~ '/oauth2/callback'
+        } if private_cloud.stages.grist | bool else {}
       } | to_json }}
+  register: identity_check
+  until: identity_check.rc == 0
+  retries: 18
+  delay: 10
   changed_when: false
+  failed_when: false
+  when: private_cloud.stages.opencloud | bool
+  no_log: true
+
+- name: Require the OpenCloud provider and OIDC clients to be correct
+  ansible.builtin.assert:
+    that: identity_check.rc | default(0) == 0
+    fail_msg: "{{ identity_check.stderr | default('') }}"
   when: private_cloud.stages.opencloud | bool

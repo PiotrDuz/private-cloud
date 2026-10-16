@@ -65,25 +65,40 @@
     argv: [runuser, -u, zabbix, --, sudo, -n, "{{ zabbix_smart_wrapper }}", -j, -V]
   changed_when: false
 
-- name: Validate configured Alloy and certificate probes
+- name: Validate configured certificate and Alloy probes
   ansible.builtin.command:
     argv: [runuser, -u, zabbix, --, python3, /usr/local/libexec/zabbix/health.py, /etc/zabbix/private-cloud-observability.json]
   register: zabbix_agent_validation_health
   changed_when: false
-  when: private_cloud.stages.logging | bool
 
-- name: Require healthy Alloy endpoints and configured certificates
+- name: Require healthy Alloy endpoints when logging is enabled
   ansible.builtin.assert:
     that:
       - (zabbix_agent_validation_health.stdout | from_json).alloy_up | int == 1
       - (zabbix_agent_validation_health.stdout | from_json).metrics_up | int == 1
-      - (zabbix_agent_validation_health.stdout | from_json).certificates | dict2items | length > 0
-    fail_msg: Alloy or a configured TLS certificate probe is unhealthy.
+    fail_msg: Alloy is unhealthy.
   when: private_cloud.stages.logging | bool
+
+- name: Require at least one configured certificate probe
+  ansible.builtin.assert:
+    that: (zabbix_agent_validation_health.stdout | from_json).certificates | dict2items | length > 0
+    fail_msg: No TLS certificate probe is configured.
 
 - name: Require each configured TLS certificate probe to be valid
   ansible.builtin.assert:
     that: item.value.valid | int == 1
     fail_msg: "The configured {{ item.key }} certificate probe failed."
-  loop: "{{ ((zabbix_agent_validation_health.stdout | default('{\"certificates\": {}}')) | from_json).certificates | dict2items }}"
-  when: private_cloud.stages.logging | bool
+  loop: "{{ (zabbix_agent_validation_health.stdout | from_json).certificates | dict2items }}"
+
+- name: Inspect the Zabbix Agent pre-shared key file
+  ansible.builtin.stat:
+    path: "{{ zabbix_agent_psk_file }}"
+  register: zabbix_agent_validation_psk
+
+- name: Require a private Zabbix Agent pre-shared key file
+  ansible.builtin.assert:
+    that:
+      - zabbix_agent_validation_psk.stat.exists
+      - zabbix_agent_validation_psk.stat.pw_name == 'zabbix'
+      - zabbix_agent_validation_psk.stat.mode == '0600'
+    fail_msg: The Zabbix Agent pre-shared key file is missing or not private.

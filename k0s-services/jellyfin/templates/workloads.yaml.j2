@@ -20,6 +20,7 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
 {% if private_cloud.stages.intel_gpu | bool %}
         supplementalGroups: [{{ intel_gpu_render_group_id | int }}]
 {% endif %}
@@ -29,6 +30,7 @@ spec:
           command: [python3, /scripts/configure_jellyfin.py]
           env:
             - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
+            - {name: KNOWN_PROXIES, value: {{ private_cloud.networking.pod_cidr | to_json }}}
           resources:
             requests: {cpu: 10m, memory: 32Mi}
             limits: {memory: 64Mi}
@@ -84,7 +86,7 @@ spec:
       volumes:
         - {name: settings, configMap: {name: jellyfin-settings}}
         - {name: config, persistentVolumeClaim: {claimName: jellyfin-data}}
-        - {name: library, persistentVolumeClaim: {claimName: media-library-data}}
+        - {name: library, persistentVolumeClaim: {claimName: media-library-data, readOnly: true}}
 ---
 apiVersion: v1
 kind: Service
@@ -94,27 +96,4 @@ metadata:
 spec:
   selector: {app.kubernetes.io/name: jellyfin}
   ports: [{name: http, port: 8096, targetPort: http, protocol: TCP}]
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: jellyfin
-  namespace: media
-  annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.tls.certresolver: cloudflare
-spec:
-  ingressClassName: traefik
-  tls:
-    - hosts: [{{ private_cloud.media.hostname }}]
-  rules:
-    - host: {{ private_cloud.media.hostname }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: jellyfin
-                port: {number: 8096}
 ---

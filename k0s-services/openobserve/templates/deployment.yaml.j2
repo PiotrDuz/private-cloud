@@ -43,8 +43,8 @@ spec:
             - {name: ZO_TELEMETRY, value: "false"}
             - {name: ZO_USAGE_REPORTING_ENABLED, value: "false"}
             - {name: ZO_MMDB_DISABLE_DOWNLOAD, value: "true"}
-            - {name: ZO_ROOT_USER_EMAIL, valueFrom: {secretKeyRef: {name: openobserve-ingest, key: username}}}
-            - {name: ZO_ROOT_USER_PASSWORD, valueFrom: {secretKeyRef: {name: openobserve-ingest, key: admin-password}}}
+            - {name: ZO_ROOT_USER_EMAIL, valueFrom: {secretKeyRef: {name: openobserve-admin, key: username}}}
+            - {name: ZO_ROOT_USER_PASSWORD, valueFrom: {secretKeyRef: {name: openobserve-admin, key: admin-password}}}
             - {name: ZO_SMTP_ENABLED, value: {{ (private_cloud.stages.notifications | bool | lower) | to_json }}}
 {% if private_cloud.stages.notifications %}
             - {name: ZO_SMTP_HOST, value: {{ private_cloud_alert_smtp_host | to_json }}}

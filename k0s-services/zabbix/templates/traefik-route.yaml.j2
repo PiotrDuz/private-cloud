@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-route-zabbix
+  namespace: edge
+  labels: {private-cloud.example/traefik-route: "true"}
+data:
+  zabbix.yaml: |
+    http:
+      routers:
+        zabbix:
+          entryPoints: [websecure]
+          rule: Host(`{{ private_cloud.networking.zabbix_hostname }}`)
+          service: zabbix
+          tls:
+            certResolver: cloudflare
+      services:
+        zabbix:
+          loadBalancer:
+            servers:
+              - url: http://zabbix-web.private-cloud.svc.cluster.local:80

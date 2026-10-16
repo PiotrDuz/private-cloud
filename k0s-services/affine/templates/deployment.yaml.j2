@@ -12,6 +12,8 @@ spec:
   template:
     metadata:
       labels: {app.kubernetes.io/name: affine}
+      annotations:
+        private-cloud.example/secret-revision: "{{ affine_secret_revision }}"
     spec:
       serviceAccountName: affine
       automountServiceAccountToken: false
@@ -27,7 +29,10 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: false
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
           env:
+            - {name: AFFINE_SERVER_EXTERNAL_URL, value: {{ ('https://' ~ private_cloud.affine.hostname) | to_json }}}
             - {name: REDIS_SERVER_HOST, value: redis-affine}
             - {name: AFFINE_INDEXER_ENABLED, value: "true"}
             - {name: AFFINE_INDEXER_SEARCH_PROVIDER, value: manticoresearch}

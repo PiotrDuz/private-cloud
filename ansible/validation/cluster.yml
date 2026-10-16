@@ -52,6 +52,9 @@
     argv: [python3, "{{ playbook_dir }}/validation/check_production_integrity.py"]
     stdin: >-
       {{ {
+        'private_cloud': private_cloud,
+        'alert_smtp_host': private_cloud_alert_smtp_host,
+        'alert_smtp_port': private_cloud_alert_smtp_port,
         'hostnames': (
           private_cloud.networking.managed_records
           + [private_cloud.networking.zabbix_hostname, private_cloud.networking.amneziawg.hostname]

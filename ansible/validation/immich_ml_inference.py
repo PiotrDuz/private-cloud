@@ -7,8 +7,11 @@ import secrets
 import socket
 import subprocess
 import sys
+from pathlib import Path
 
-from application_helpers import find_free_port, wait_for_forward
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from kube_forward_helpers import find_free_port, wait_for_forward  # noqa: E402
 
 
 def main():

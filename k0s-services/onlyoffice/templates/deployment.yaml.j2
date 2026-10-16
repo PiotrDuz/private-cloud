@@ -16,6 +16,8 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: onlyoffice
+      annotations:
+        private-cloud.example/config-checksum: "{{ lookup('template', manifest_template_dir ~ '/configmap.yaml.j2') | hash('sha256') }}"
     spec:
       serviceAccountName: onlyoffice
       automountServiceAccountToken: false
@@ -27,10 +29,14 @@ spec:
       terminationGracePeriodSeconds: 300
       containers:
         - name: onlyoffice
-          image: onlyoffice/documentserver:9.4.0.1
+          image: onlyoffice/documentserver:9.4.0.1@sha256:3ab6ebc7c605e5a32b7ae3ff19daed4925090245acc8100ce2230bd766c88212
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, DAC_OVERRIDE, FOWNER, KILL, NET_BIND_SERVICE, SETGID, SETUID]
           env:
             - {name: WOPI_ENABLED, value: "true"}
             - {name: USE_UNAUTHORIZED_STORAGE, value: "false"}
@@ -72,7 +78,10 @@ spec:
             - {name: data, mountPath: /var/www/onlyoffice/Data, subPath: data}
             - {name: data, mountPath: /var/lib/onlyoffice, subPath: lib}
             - {name: data, mountPath: /var/lib/postgresql, subPath: postgresql}
+            - {name: config, mountPath: /etc/onlyoffice/documentserver/local-production-linux.json, subPath: local-production-linux.json, readOnly: true}
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: onlyoffice-data
+        - name: config
+          configMap: {name: onlyoffice-config}

@@ -77,7 +77,7 @@ data:
       rule {
         source_labels = ["__journal__systemd_unit", "__journal__transport", "__journal_syslog_identifier"]
         separator = ";"
-        regex = "(k0s.*|zfs.*|zabbix.*|ssh.*|systemd.*|private-cloud-log-heartbeat.service);.*;.*|.*;kernel;.*|.*;.*;private-cloud-zabbix-.*"
+        regex = "(k0s.*|zfs.*|zabbix.*|ssh.*|systemd.*|private-cloud-firewall.service|private-cloud-log-heartbeat.service);.*;.*|.*;kernel;.*|.*;.*;(private-cloud-zabbix-.*|sudo|su|login|sshd|sshd-session|systemd-logind)"
         action = "keep"
       }
       rule {
@@ -93,6 +93,12 @@ data:
         source_labels = ["__journal_syslog_identifier"]
         regex = "(private-cloud-zabbix-.+)"
         target_label = "service"
+      }
+      rule {
+        source_labels = ["__journal_syslog_identifier"]
+        regex = "(sudo|su|login|sshd|sshd-session|systemd-logind)"
+        target_label = "service"
+        replacement = "host-auth"
       }
       rule {
         source_labels = ["__journal_priority"]

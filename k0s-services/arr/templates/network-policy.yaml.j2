@@ -10,7 +10,7 @@ spec:
   ingress:
     - from:
         - podSelector:
-            matchLabels: {private-cloud.example/openvpn-guarded: 'true'}
+            matchLabels: {private-cloud.example/vpn-guarded: 'true'}
       ports:
         - {protocol: TCP, port: 8388}
         - {protocol: UDP, port: 8388}
@@ -28,10 +28,9 @@ spec:
   policyTypes: [Egress]
   egress:
     - to:
-        - ipBlock: {cidr: {{ private_cloud.media.openvpn.endpoint_ip }}/32}
+        - ipBlock: {cidr: {{ private_cloud.media.vpn.endpoint_ip }}/32}
       ports:
-        - protocol: {{ private_cloud.media.openvpn.endpoint_protocol }}
-          port: {{ private_cloud.media.openvpn.endpoint_port }}
+        - {protocol: UDP, port: {{ private_cloud.media.vpn.endpoint_port }}}
     - to:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: kube-system}
@@ -48,7 +47,7 @@ metadata:
   namespace: media
 spec:
   podSelector:
-    matchLabels: {private-cloud.example/openvpn-guarded: 'true'}
+    matchLabels: {private-cloud.example/vpn-guarded: 'true'}
   policyTypes: [Egress]
   egress:
     - to:

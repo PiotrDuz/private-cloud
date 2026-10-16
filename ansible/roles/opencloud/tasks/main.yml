@@ -7,6 +7,8 @@
       - private_cloud.opencloud.hostname | length > 0
       - private_cloud.onlyoffice.hostname | length > 0
       - private_cloud_secrets.opencloud.admin_password | length > 0
+      - private_cloud_secrets.opencloud.wopi_secret | length >= 32
+      - private_cloud_secrets.opencloud.wopi_secret != private_cloud_secrets.onlyoffice.jwt_secret
     fail_msg: OpenCloud configuration is invalid.
   no_log: true
 
@@ -133,33 +135,43 @@
     definition: "{{ lookup('template', 'identity-secret.yml.j2') | from_yaml }}"
   no_log: true
 
-- name: Record the OpenCloud identity configuration checksum
-  ansible.builtin.set_fact:
-    opencloud_identity_checksum: "{{ lookup('template', 'idp.yaml.j2') | hash('sha256') }}"
-  no_log: true
-
-- name: Inspect the OnlyOffice WOPI secret
+- name: Read the applied OpenCloud identity secret revision
   kubernetes.core.k8s_info:
     kubeconfig: "{{ opencloud_kubeconfig }}"
     api_version: v1
     kind: Secret
-    name: onlyoffice-credentials
+    name: opencloud-identity
+    namespace: "{{ opencloud_namespace }}"
+  register: opencloud_identity_secret
+  changed_when: false
+  no_log: true
+
+- name: Record the OpenCloud identity secret revision for the pod template
+  ansible.builtin.set_fact:
+    opencloud_identity_secret_revision: "{{ opencloud_identity_secret.resources[0].metadata.resourceVersion }}"
+  no_log: true
+
+- name: Apply the OpenCloud WOPI secret
+  kubernetes.core.k8s:
+    kubeconfig: "{{ opencloud_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'wopi-secret.yml.j2') | from_yaml }}"
+  no_log: true
+
+- name: Read the applied OpenCloud WOPI secret revision
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ opencloud_kubeconfig }}"
+    api_version: v1
+    kind: Secret
+    name: "{{ opencloud_wopi_secret_name }}"
     namespace: "{{ opencloud_namespace }}"
   register: opencloud_wopi_secret
   changed_when: false
   no_log: true
 
-- name: Require the OnlyOffice WOPI secret
-  ansible.builtin.assert:
-    that:
-      - opencloud_wopi_secret.resources | length == 1
-      - opencloud_wopi_secret.resources[0].data.JWT_SECRET is defined
-    fail_msg: The OnlyOffice WOPI secret is required for the OpenCloud collaboration service.
-  no_log: true
-
-- name: Record the OnlyOffice WOPI secret checksum
+- name: Record the OpenCloud WOPI secret revision for the pod template
   ansible.builtin.set_fact:
-    opencloud_wopi_secret_checksum: "{{ opencloud_wopi_secret.resources[0].data.JWT_SECRET | hash('sha256') }}"
+    opencloud_wopi_secret_revision: "{{ opencloud_wopi_secret.resources[0].metadata.resourceVersion }}"
   no_log: true
 
 - name: Render OpenCloud manifests from Jinja templates

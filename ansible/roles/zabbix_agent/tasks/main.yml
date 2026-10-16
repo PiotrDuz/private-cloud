@@ -97,16 +97,15 @@
 
 - name: Install the monitored dataset inventory
   ansible.builtin.copy:
-    content: "{{ {'datasets': private_cloud_monitored_datasets} | to_nice_json }}\n"
+    content: "{{ {'datasets': private_cloud_monitored_datasets, 'allowed': private_cloud_allowed_datasets} | to_nice_json }}\n"
     dest: "{{ zabbix_dataset_inventory }}"
     owner: root
     group: root
     mode: '0644'
   notify: Restart Zabbix Agent 2
 
-- name: Install independent logging and certificate probes
+- name: Install certificate and optional Alloy probes
   ansible.builtin.include_tasks: observability.yml
-  when: private_cloud.stages.logging | bool
 
 - name: Install ZFS user parameters
   ansible.builtin.template:
@@ -144,6 +143,16 @@
     mode: '0440'
     validate: /usr/sbin/visudo -cf %s
   notify: Restart Zabbix Agent 2
+
+- name: Install the Zabbix Agent pre-shared key
+  ansible.builtin.copy:
+    content: "{{ private_cloud_secrets.zabbix.agent_psk }}\n"
+    dest: "{{ zabbix_agent_psk_file }}"
+    owner: zabbix
+    group: zabbix
+    mode: '0600'
+  notify: Restart Zabbix Agent 2
+  no_log: true
 
 - name: Inspect the packaged Agent configuration
   ansible.builtin.stat:

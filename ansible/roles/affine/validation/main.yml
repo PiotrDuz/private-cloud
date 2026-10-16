@@ -14,6 +14,23 @@
   register: affine_validation_site
   changed_when: false
 
+- name: Verify the AFFiNE instance has an administrator
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': affine_kubeconfig,
+        'namespace': affine_namespace,
+        'service': affine_service_name,
+        'remote_port': 3010,
+        'path': '/graphql',
+        'method': 'POST',
+        'headers': {'Content-Type': 'application/json'},
+        'body': '{"query":"{ serverConfig { initialized } }"}',
+        'json_equal': {'data': {'serverConfig': {'initialized': true}}}
+      } | to_json }}
+  changed_when: false
+
 - name: Find the AFFiNE database pod for extension validation
   kubernetes.core.k8s_info:
     kubeconfig: "{{ affine_kubeconfig }}"

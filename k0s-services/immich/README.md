@@ -20,7 +20,10 @@ The Immich service is managed by `ansible/roles/immich`.
 - OpenVINO requests one shared `gpu.intel.com/i915` resource.
 - A ClusterIP service exposes TCP `2283` only inside the cluster.
 - Traefik publishes the configured hostname through HTTPS.
-- The Ingress preserves WebSocket connections.
+- The installer creates the first administrator from `private_cloud.immich.admin_email` before applying the route ConfigMap.
+- The installer skips the claim when Immich reports `isInitialized`.
+- The pod annotation carries the credentials Secret revision to restart the pod on rotation.
+- The route ConfigMap preserves WebSocket connections.
 
 ## OpenCloud OIDC
 

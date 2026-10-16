@@ -18,6 +18,7 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - `collector_logging.py` sends ZFS, ECC, and SMART collector failures to the host journal.
 - Alloy forwards collector diagnostics to OpenObserve without changing Zabbix metric output.
 - Zabbix Agent uses system logging instead of a separate log file.
+- Zabbix Agent and the host object authenticate with a PSK stored in the encrypted configuration.
 - `zabbix-zfs-template.yaml` defines ZFS items, discovery, and alerts.
 - `zabbix-memory-ecc-template.yaml` defines ECC items, discovery, and alerts.
 

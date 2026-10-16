@@ -198,9 +198,12 @@
   changed_when: true
   when: not k0s_config_stat.stat.exists
 
-- name: Install the generated k0s configuration
+- name: Install the generated k0s configuration with the configured cluster networks
   ansible.builtin.copy:
-    content: "{{ k0s_generated_config.stdout }}"
+    content: >-
+      {{ k0s_generated_config.stdout | from_yaml | combine({'spec': {'network': {
+        'podCIDR': private_cloud.networking.pod_cidr,
+        'serviceCIDR': private_cloud.networking.service_cidr}}}, recursive=True) | to_nice_yaml }}
     dest: "{{ k0s_config_file }}"
     owner: root
     group: root
@@ -221,6 +224,15 @@
     that:
       - k0s_effective_config.spec.network.provider == 'kuberouter'
     fail_msg: The k0s network provider must be kube-router before isolation policies are applied.
+
+- name: Require the cluster networks to match the immutable configured values
+  ansible.builtin.assert:
+    that:
+      - k0s_effective_config.spec.network.podCIDR == private_cloud.networking.pod_cidr
+      - k0s_effective_config.spec.network.serviceCIDR == private_cloud.networking.service_cidr
+    fail_msg: >-
+      The installed k0s pod and service networks differ from the configured values.
+      Cluster networks cannot change after installation.
 
 - name: Select the default worker profile
   ansible.builtin.set_fact:

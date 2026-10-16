@@ -25,7 +25,7 @@ This file is the source of truth for the desired system state and its major deci
     * [Radarr](#radarr)
     * [Prowlarr](#prowlarr)
     * [qBittorrent](#qbittorrent)
-    * [OpenVPN](#openvpn)
+    * [AirVPN WireGuard gateway](#airvpn-wireguard-gateway)
 - [Jellyfin](#jellyfin)
 - [Security](#security)
 - [Networking](#networking)
@@ -194,9 +194,10 @@ This file is the source of truth for the desired system state and its major deci
 - Persist Grist documents on its PV and isolate formulas with Pyodide
 - Use [Grist forwarded-header authentication](https://support.getgrist.com/install/forwarded-headers/) through Traefik and an OpenCloud OIDC ForwardAuth helper
     * Set `GRIST_FORWARD_AUTH_HEADER=X-Forwarded-User` to receive the authenticated user's email
-    * Route Grist `/auth/login`, the OIDC callback, and configured logout path through the authentication helper
+    * Authenticate every Grist request through the helper and route its sign-in, callback, and logout endpoints on the Grist hostname
 - Use administrator-controlled OpenCloud email identities for Grist accounts and keep document permissions in Grist
 - Use a single Grist team site for the supported forwarded-header login flow
+- Limit Grist access to authenticated browser sessions without API-key access
 - Accept Grist user-facing traffic only from Traefik and discard client-supplied identity headers
 - Expose Grist for the user-provided domain through a valid TLS reverse proxy
 - Use native stdout/stderr logging for collection by Alloy
@@ -256,14 +257,14 @@ This file is the source of truth for the desired system state and its major deci
 
 ## ARR stack
 
-- Keep Sonarr, Radarr, Prowlarr, qBittorrent, and OpenVPN templates under k0s-services/arr
+- Keep Sonarr, Radarr, Prowlarr, qBittorrent, and VPN gateway templates under k0s-services/arr
 - Deploy the ARR stack in the media namespace through the media installer stage
 - Give Sonarr, Radarr, Prowlarr, and qBittorrent a dataset under tank/secure/no-backup/k0s/services/<service> with a quota and a dedicated 10Ti PV
-- Keep the OpenVPN gateway stateless without a dataset
+- Keep the VPN gateway stateless without a dataset
 - Create the shared media-library dataset under tank/secure/no-backup/k0s/services/media-library with a quota and a dedicated 10Ti PV
 - Keep dashboards, peer ports, and discovery protocols unpublished
 - Connect Prowlarr, Sonarr, Radarr, and qBittorrent automatically with native API keys and a Vault-managed qBittorrent password
-- Keep Sonarr, Radarr, Prowlarr, OpenVPN, and network helpers on native console output
+- Keep Sonarr, Radarr, Prowlarr, the VPN gateway, and network helpers on native console output
 - Use a Recreate deployment for qBittorrent to prevent overlapping log checkpoint writers
 - Apply the shared quality policy to Sonarr and Radarr
     * Create or update a `private-cloud` quality profile in each application during installation
@@ -298,11 +299,11 @@ This file is the source of truth for the desired system state and its major deci
 - Start the logging sidecar before qBittorrent and stop it after the application
 - Rotate source logs at 10MiB and remove them after seven days
 
-### OpenVPN
+### AirVPN WireGuard gateway
 
-- Route guarded media external traffic and DNS through OpenVPN with per-pod tun2socks helpers
+- Route guarded media external traffic and DNS through an AirVPN WireGuard tunnel with per-pod tun2socks helpers
 - Block direct Internet fallback when the VPN fails
-- Pin the OpenVPN endpoint to a literal IP and allow only its transport outside the tunnel
+- Pin the WireGuard endpoint to a literal IP and allow only its UDP transport outside the tunnel
 - Route external DNS through the VPN and cluster-local DNS through cluster DNS
 - Disable guarded media IPv6 through the IPv4-only cluster configuration until equivalent capture and filtering exist
 
@@ -326,6 +327,7 @@ This file is the source of truth for the desired system state and its major deci
 ## Security
 
 - Run ordinary application containers with fixed non-root UIDs and disabled privilege escalation
+- Claim Immich, AFFiNE, and Jellyfin administrators through the installer before publishing their routes
     * Run AFFiNE, Immich server, and OnlyOffice container root inside Kubernetes user namespaces
     * Map user-namespaced root to an unprivileged host UID
     * Preserve the container startup capabilities required by AFFiNE and OnlyOffice inside their user namespaces
@@ -353,12 +355,13 @@ This file is the source of truth for the desired system state and its major deci
 
 - Deploy Traefik with host TCP 443 for HTTPS and host TCP 25 for SMTP
 - Publish application services as ClusterIP endpoints behind exact Traefik host rules
+- Configure Traefik routes through the file provider without Kubernetes API access
 - Obtain Traefik HTTPS certificates with Cloudflare DNS-01
 - Proxy SMTP TCP 25 to Stalwart without terminating STARTTLS
 - Give Traefik a quota-controlled backup dataset and a dedicated 10Ti PV/PVC
 - Enable structured Traefik service and access logs on stdout
 - Disable the Traefik dashboard and leave unknown HTTPS hosts without a route
-- Run a stateless [traefik-forward-auth](https://github.com/thomseddon/traefik-forward-auth) helper in edge for Grist's OpenCloud OIDC login
+- Run a stateless [oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy) helper in edge for Grist's OpenCloud OIDC login
 - Keep the helper's OIDC client secret and cookie-signing secret in Kubernetes Secrets
 - Configure ForwardAuth to pass the authenticated email to Grist through `X-Forwarded-User`
 - Strip incoming identity headers before authentication and forward only the helper's verified identity
@@ -379,7 +382,7 @@ This file is the source of truth for the desired system state and its major deci
 ### Namespace and host placement
 
 - Place application services, their databases, search dependencies, and Zabbix in private-cloud
-- Place Sonarr, Radarr, Prowlarr, qBittorrent, the OpenVPN gateway, and Jellyfin in media
+- Place Sonarr, Radarr, Prowlarr, qBittorrent, the VPN gateway, and Jellyfin in media
 - Place Traefik in edge, AmneziaWG in network-access, and Cloudflare DDNS in dns-system
 - Place Alloy and OpenObserve in observability
 - Keep CNI, cluster DNS, and the GPU device plugin in kube-system
@@ -389,7 +392,7 @@ This file is the source of truth for the desired system state and its major deci
 
 - Install the AmneziaWG kernel module on the host
 - Keep AmneziaWG routing, NAT, and peer ACLs inside its pod network namespace
-- Route guarded media application egress through OpenVPN with fail-closed policies
+- Route guarded media application egress through the AirVPN WireGuard gateway with fail-closed policies
 - Keep Jellyfin ingress behind Traefik and allow direct Internet metadata egress
 - Restrict AmneziaWG peers to approved LAN destinations and public Internet forwarding
 - Deny AmneziaWG peer access to other peers, pod CIDRs, service CIDRs, and media APIs
@@ -407,8 +410,9 @@ This file is the source of truth for the desired system state and its major deci
 - Probe every workload container for readiness and liveness so unhealthy containers restart or leave service
     * Exempt init containers, Jobs, CronJobs, and host device plugins
 - Preserve unclassified messages as investigation evidence without assigning an alert level
-- Deduplicate and suppress repeated alerts while a problem stays open
-- Email every Warning-or-higher problem, recovery, and recurring reminder through the mail service
+- Track metric alerts as Zabbix problems with deduplication, recovery, and recurring reminders
+- Send log alerts as throttled event notifications without recovery or reminder emails
+- Email every Warning-or-higher alert through the mail service
 - Confirm alert delivery at the destination inbox instead of trusting relay acceptance
 - Treat missing telemetry as a failure state, not as all-clear
 

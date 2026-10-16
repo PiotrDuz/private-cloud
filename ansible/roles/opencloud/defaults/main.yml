@@ -3,6 +3,7 @@ opencloud_namespace: private-cloud
 opencloud_service_name: opencloud
 opencloud_admin_username: admin
 opencloud_secret_name: opencloud-credentials
+opencloud_wopi_secret_name: opencloud-wopi
 opencloud_dataset: tank/secure/backup/k0s/services/opencloud
 opencloud_dataset_mountpoint: /tank/secure/backup/k0s/services/opencloud
 opencloud_pv_name: opencloud-data

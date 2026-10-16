@@ -14,7 +14,7 @@
 
 - name: Determine whether the existing monitored host needs updates
   ansible.builtin.set_fact:
-    zabbix_host_needs_update: "{{ zabbix_host_get.json.result | length > 0 and (zabbix_host_get.json.result[0].status | string != '0' or zabbix_host_get.json.result[0].tls_accept | string != '1' or zabbix_host_get.json.result[0].tls_connect | string != '1') }}"
+    zabbix_host_needs_update: "{{ zabbix_host_get.json.result | length > 0 and (zabbix_host_get.json.result[0].status | string != '0' or zabbix_host_get.json.result[0].tls_accept | string != '2' or zabbix_host_get.json.result[0].tls_connect | string != '2') }}"
     zabbix_host_needs_link: "{{ zabbix_host_get.json.result | length > 0 and ((zabbix_host_get.json.result[0].hostgroups | default([]) | map(attribute='groupid') | list | map('string') | list | intersect([zabbix_group_id | string]) | length == 0) or (zabbix_template_ids | map('string') | list | difference(zabbix_host_get.json.result[0].parentTemplates | default([]) | map(attribute='templateid') | list | map('string') | list) | length > 0)) }}"
 
 - name: Create the monitored Zabbix host
@@ -32,8 +32,10 @@
         name: "{{ private_cloud_zabbix_hostname }}"
         status: 0
         templates: "{{ zabbix_template_objects }}"
-        tls_accept: 1
-        tls_connect: 1
+        tls_accept: 2
+        tls_connect: 2
+        tls_psk_identity: "{{ private_cloud_zabbix_psk_identity }}"
+        tls_psk: "{{ private_cloud_secrets.zabbix.agent_psk }}"
       id: 15
     status_code: 200
     return_content: true
@@ -48,7 +50,7 @@
     zabbix_host_id: "{{ zabbix_host_get.json.result[0].hostid if zabbix_host_get.json.result | length > 0 else zabbix_host_create.json.result.hostids[0] }}"
   no_log: true
 
-- name: Update an existing monitored Zabbix host
+- name: Update an existing monitored Zabbix host and its pre-shared key
   ansible.builtin.uri:
     url: "{{ zabbix_api_url }}"
     method: POST
@@ -62,12 +64,14 @@
         host: "{{ private_cloud_zabbix_hostname }}"
         name: "{{ private_cloud_zabbix_hostname }}"
         status: 0
-        tls_accept: 1
-        tls_connect: 1
+        tls_accept: 2
+        tls_connect: 2
+        tls_psk_identity: "{{ private_cloud_zabbix_psk_identity }}"
+        tls_psk: "{{ private_cloud_secrets.zabbix.agent_psk }}"
       id: 151
     status_code: 200
-  when: zabbix_host_needs_update | bool
-  changed_when: true
+  when: zabbix_host_get.json.result | length > 0
+  changed_when: zabbix_host_needs_update | bool
   no_log: true
   register: zabbix_host_update
   failed_when: zabbix_host_update.json.error is defined or zabbix_host_update.json.result is not defined

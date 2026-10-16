@@ -18,6 +18,7 @@
       - private_cloud.opencloud.hostname | length > 0
       - private_cloud_secrets.immich.database_password | length >= 16
       - private_cloud_secrets.immich.oidc_client_secret | length >= 16
+      - private_cloud_secrets.immich.admin_password | length >= 16
     fail_msg: Immich configuration is invalid.
   no_log: true
 
@@ -267,8 +268,23 @@
     kubeconfig: "{{ immich_kubeconfig }}"
     state: present
     definition: "{{ lookup('template', 'secret.yml.j2') | from_yaml }}"
-  register: immich_secret_apply
   when: not immich_secret_present | bool or not immich_database_password_matches | bool or not immich_oidc_client_secret_matches | bool
+  no_log: true
+
+- name: Read the applied Immich credentials revision
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    api_version: v1
+    kind: Secret
+    namespace: "{{ immich_namespace }}"
+    name: "{{ immich_secret_name }}"
+  register: immich_applied_secret
+  changed_when: false
+  no_log: true
+
+- name: Record the Immich credentials revision for its pod template
+  ansible.builtin.set_fact:
+    immich_secret_revision: "{{ immich_applied_secret.resources[0].metadata.resourceVersion }}"
   no_log: true
 
 - name: Render Immich manifests from Jinja templates
@@ -286,9 +302,11 @@
       {{ private_cloud_rendered_manifests
          | selectattr('metadata.name', 'equalto', immich_valkey_service_name) | list }}
     immich_workload_manifests: >-
-      {{ private_cloud_rendered_manifests
+      {{ private_cloud_service_manifests
          | rejectattr('kind', 'in', ['PersistentVolume', 'PersistentVolumeClaim'])
          | rejectattr('metadata.name', 'equalto', immich_valkey_service_name) | list }}
+    immich_route_manifests: >-
+      {{ private_cloud_route_manifests }}
 
 - name: Apply Immich storage and Valkey
   kubernetes.core.k8s:
@@ -320,24 +338,6 @@
     kubeconfig: "{{ immich_kubeconfig }}"
     state: present
     definition: "{{ immich_workload_manifests }}"
-  no_log: true
-
-- name: Restart Immich after a credentials change
-  kubernetes.core.k8s:
-    kubeconfig: "{{ immich_kubeconfig }}"
-    state: patched
-    definition:
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: "{{ immich_service_name }}"
-        namespace: "{{ immich_namespace }}"
-      spec:
-        template:
-          metadata:
-            annotations:
-              private-cloud.example/credentials-restarted-at: "{{ ansible_date_time.iso8601 }}"
-  when: immich_secret_apply.changed | default(false)
   no_log: true
 
 - name: Wait for Immich machine learning
@@ -388,6 +388,31 @@
   retries: 90
   delay: 5
   changed_when: false
+
+- name: Claim the Immich administrator before publishing the route
+  ansible.builtin.command:
+    argv: [python3, "{{ role_path }}/files/claim_admin.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': immich_kubeconfig,
+        'namespace': immich_namespace,
+        'service': immich_service_name,
+        'port': 2283,
+        'email': private_cloud.immich.admin_email,
+        'password': private_cloud_secrets.immich.admin_password
+      } | to_json }}
+  register: immich_admin_claim
+  until: immich_admin_claim.rc == 0
+  retries: 5
+  delay: 10
+  changed_when: (immich_admin_claim.stdout | from_json).changed
+  no_log: true
+
+- name: Publish the Immich route after the administrator exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    state: present
+    definition: "{{ immich_route_manifests }}"
 
 - name: Validate Immich after installation
   ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

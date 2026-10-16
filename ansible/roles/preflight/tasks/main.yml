@@ -2,7 +2,7 @@
 - name: Require the supported public schema version
   ansible.builtin.assert:
     that:
-      - schema_version == 11
+      - schema_version == 13
     fail_msg: Public configuration schema version is unsupported
 
 - name: Require supported Debian-family target
@@ -33,9 +33,9 @@
       - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'host_reserve_ram', 'images_quota']
       - (private_cloud.networking.keys() | list | sort) == ['acme_email', 'amneziawg', 'cloudflare_zone_id', 'cluster_dns_ip', 'local_network_cidrs', 'managed_records', 'pod_cidr', 'public_ip_url', 'service_cidr', 'storage_size', 'traefik_internal_ip', 'zabbix_hostname']
       - (private_cloud.networking.amneziawg.keys() | list | sort) == ['address', 'hostname', 'listen_port', 'peers', 'tunnel_cidr']
-      - (private_cloud.media.keys() | list | sort) == ['hostname', 'max_ram', 'openvpn', 'quality_profiles', 'storage_size', 'timezone']
+      - (private_cloud.media.keys() | list | sort) == ['hostname', 'jellyfin_admin_username', 'max_ram', 'quality_profiles', 'storage_size', 'timezone', 'vpn']
       - (private_cloud.media.quality_profiles.keys() | list | sort) == ['radarr', 'sonarr']
-      - (private_cloud.media.openvpn.keys() | list | sort) == ['endpoint_ip', 'endpoint_port', 'endpoint_protocol', 'gateway_cluster_ip']
+      - (private_cloud.media.vpn.keys() | list | sort) == ['address', 'endpoint_ip', 'endpoint_port', 'gateway_cluster_ip', 'peer_public_key']
       - (private_cloud.postgres.keys() | list | sort) == ['max_ram', 'volume_size']
       - (private_cloud.meilisearch.keys() | list | sort) == ['max_ram', 'storage_size']
       - (private_cloud.tika.keys() | list | sort) == ['max_ram', 'storage_size']
@@ -45,8 +45,8 @@
       - (private_cloud.grist.keys() | list | sort) == ['default_email', 'hostname', 'max_ram', 'storage_size']
       - (private_cloud.manticore.keys() | list | sort) == ['max_ram', 'storage_size']
       - (private_cloud.redis_affine.keys() | list) == ['max_ram']
-      - (private_cloud.affine.keys() | list | sort) == ['hostname', 'max_ram', 'storage_size']
-      - (private_cloud.immich.keys() | list | sort) == ['hostname', 'machine_learning_accelerator', 'machine_learning_max_ram', 'max_ram', 'storage_size', 'timezone', 'valkey_max_ram']
+      - (private_cloud.affine.keys() | list | sort) == ['admin_email', 'hostname', 'max_ram', 'storage_size']
+      - (private_cloud.immich.keys() | list | sort) == ['admin_email', 'hostname', 'machine_learning_accelerator', 'machine_learning_max_ram', 'max_ram', 'storage_size', 'timezone', 'valkey_max_ram']
       - (private_cloud.stalwart.keys() | list | sort) == ['acme_contact', 'admin_username', 'domain', 'forwarding_domain', 'hostname', 'mailbox_username', 'max_ram', 'relay_host', 'relay_implicit_tls', 'relay_port', 'relay_username', 'storage_size']
       - (private_cloud.zabbix.keys() | list | sort) == ['admin_username', 'storage_size']
       - (private_cloud.logging.keys() | list | sort) == ['alloy_max_ram', 'alloy_storage_size', 'hostname', 'openobserve_max_ram', 'openobserve_storage_size', 'retention_days']
@@ -58,14 +58,14 @@
     that:
       - private_cloud_dataset_catalog | map(attribute='name') | list | unique | length == private_cloud_dataset_catalog | length
       - item.stage in private_cloud.stages
-      - item.dataset == 'tank/secure/backup/private-cloud-config' or item.dataset is match('^tank/secure/(backup|no-backup)/k0s/(config|services|images|ephemeral)(/[A-Za-z0-9._-]+)*$')
+      - item.dataset in private_cloud_allowed_datasets.exact or item.dataset is match('^(' ~ (private_cloud_allowed_datasets.prefixes | map('regex_escape') | join('|')) ~ ')[a-z0-9/-]+$')
     fail_msg: The dataset catalog must use unique names, known stages, and managed dataset paths
   loop: "{{ private_cloud_dataset_catalog }}"
 
 - name: Require the supported encrypted schema version
   ansible.builtin.assert:
     that:
-      - secrets_schema_version == 6
+      - secrets_schema_version == 8
     fail_msg: Encrypted configuration schema version is unsupported
   no_log: true
 
@@ -88,15 +88,15 @@
     - {name: postgres, keys: [admin_password]}
     - {name: meilisearch, keys: [master_key]}
     - {name: stalwart, keys: [admin_password, certificate_dns_api_token, database_password, mailbox_password, relay_password]}
-    - {name: zabbix, keys: [admin_password, database_password]}
+    - {name: zabbix, keys: [admin_password, agent_psk, database_password]}
     - {name: logging, keys: [admin_password]}
     - {name: onlyoffice, keys: [jwt_secret]}
-    - {name: opencloud, keys: [admin_password]}
+    - {name: opencloud, keys: [admin_password, wopi_secret]}
     - {name: grist, keys: [boot_key, database_password, oidc_client_secret, oidc_cookie_secret, session_secret]}
-    - {name: affine, keys: [database_password, oidc_client_secret]}
-    - {name: immich, keys: [database_password, oidc_client_secret]}
+    - {name: affine, keys: [admin_password, database_password, oidc_client_secret]}
+    - {name: immich, keys: [admin_password, database_password, oidc_client_secret]}
     - {name: networking, keys: [amneziawg_private_key, cloudflare_api_token, cloudflare_ddns_api_token]}
-    - {name: media, keys: [openvpn_configuration, openvpn_password, openvpn_username, proxy_password, qbittorrent_password]}
+    - {name: media, keys: [jellyfin_admin_password, proxy_password, qbittorrent_password, wireguard_preshared_key, wireguard_private_key]}
   no_log: true
 
 - name: Validate logging and notification configuration
@@ -106,6 +106,21 @@
     stdin: "{{ {'schema_version': schema_version, 'private_cloud': private_cloud} | to_json }}"
   changed_when: false
 
+- name: Validate encrypted secret strength
+  ansible.builtin.command:
+    argv: [python3, -c, "import json,sys; from install_helpers import validate_secrets_configuration; d=json.load(sys.stdin); validate_secrets_configuration({'secrets_schema_version': d['version'], 'private_cloud_secrets': d['secrets']}, d['stages'])"]
+    chdir: "{{ playbook_dir }}"
+    stdin: "{{ {'version': secrets_schema_version, 'secrets': private_cloud_secrets, 'stages': private_cloud.stages} | to_json }}"
+  register: preflight_secret_strength
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Require strong encrypted secrets
+  ansible.builtin.assert:
+    that: preflight_secret_strength.rc == 0
+    fail_msg: "{{ preflight_secret_strength.stderr_lines | last | default('Encrypted secrets are invalid') }}"
+
 - name: Require OpenObserve credentials
   ansible.builtin.assert:
     that:
@@ -113,6 +128,30 @@
       - private_cloud_secrets.logging.admin_password | length >= 32
   when: private_cloud.stages.logging | bool
   no_log: true
+
+- name: Require first-administrator identities
+  ansible.builtin.assert:
+    that:
+      - private_cloud.immich.admin_email is match("^[^@\\s]+@[^@\\s]+\\.[A-Za-z]{2,63}$")
+      - private_cloud.affine.admin_email is match("^[^@\\s]+@[^@\\s]+\\.[A-Za-z]{2,63}$")
+      - private_cloud.media.jellyfin_admin_username is match('^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,30}[A-Za-z0-9])?$')
+    fail_msg: immich.admin_email, affine.admin_email, and media.jellyfin_admin_username must be valid
+
+- name: Require networking whenever k0s is enabled
+  ansible.builtin.assert:
+    that: private_cloud.stages.networking | bool or not private_cloud.stages.k0s | bool
+    fail_msg: Networking is mandatory whenever k0s is enabled
+
+- name: Require the shared dataset path and Zabbix PSK identity definitions
+  ansible.builtin.assert:
+    that:
+      - private_cloud_allowed_datasets.exact is sequence
+      - private_cloud_allowed_datasets.prefixes is sequence
+      - private_cloud_allowed_datasets.prefixes | length > 0
+      - private_cloud_allowed_datasets.prefixes | select('match', '^tank/secure/[a-z0-9/-]+/$') | list | length == private_cloud_allowed_datasets.prefixes | length
+      - private_cloud_allowed_datasets.exact | select('match', '^tank/secure/[a-z0-9/-]+$') | list | length == private_cloud_allowed_datasets.exact | length
+      - private_cloud_zabbix_psk_identity == 'private-cloud-zabbix-agent'
+    fail_msg: The service catalog dataset paths or Zabbix PSK identity are invalid
 
 - name: Require qBittorrent credentials
   ansible.builtin.assert:
@@ -172,9 +211,12 @@
       - private_cloud.media.timezone is match('^[A-Za-z_+-]+/[A-Za-z_+/-]+$')
       - private_cloud.media.quality_profiles.sonarr in ['720p', '1080p', '2160p']
       - private_cloud.media.quality_profiles.radarr in ['720p', '1080p', '2160p']
-      - private_cloud.media.openvpn.endpoint_protocol in ['TCP', 'UDP']
-      - private_cloud.media.openvpn.endpoint_port | int >= 1
-      - private_cloud.media.openvpn.endpoint_port | int <= 65535
+      - private_cloud.media.vpn.endpoint_ip is match('^([0-9]{1,3}\.){3}[0-9]{1,3}$')
+      - private_cloud.media.vpn.endpoint_port is integer
+      - private_cloud.media.vpn.endpoint_port >= 1
+      - private_cloud.media.vpn.endpoint_port <= 65535
+      - private_cloud.media.vpn.peer_public_key is match('^[A-Za-z0-9+/]{43}=$')
+      - private_cloud.media.vpn.address is match('^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$')
     fail_msg: Media configuration is invalid
 
 
@@ -375,7 +417,7 @@
   ansible.builtin.assert:
     that:
       - private_cloud_secrets.postgres.admin_password is string
-      - private_cloud_secrets.postgres.admin_password | length > 0
+      - private_cloud_secrets.postgres.admin_password | length >= 16
     fail_msg: Required encrypted secrets are missing
   when: private_cloud.stages.postgres | bool
   no_log: true
@@ -402,7 +444,9 @@
   ansible.builtin.assert:
     that:
       - private_cloud_secrets.opencloud.admin_password is string
-      - private_cloud_secrets.opencloud.admin_password | length > 0
+      - private_cloud_secrets.opencloud.admin_password | length >= 16
+      - private_cloud_secrets.opencloud.wopi_secret is string
+      - private_cloud_secrets.opencloud.wopi_secret | length >= 32
     fail_msg: Required encrypted secrets are missing
   when: private_cloud.stages.opencloud | bool
   no_log: true
@@ -419,7 +463,7 @@
       - private_cloud_secrets.grist.oidc_client_secret is string
       - private_cloud_secrets.grist.oidc_client_secret | length >= 16
       - private_cloud_secrets.grist.oidc_cookie_secret is string
-      - private_cloud_secrets.grist.oidc_cookie_secret | length >= 32
+      - private_cloud_secrets.grist.oidc_cookie_secret | length == 32
     fail_msg: Required encrypted secrets are missing
   when: private_cloud.stages.grist | bool
   no_log: true
@@ -452,9 +496,9 @@
       - private_cloud_secrets.stalwart.database_password is string
       - private_cloud_secrets.stalwart.database_password | length > 0
       - private_cloud_secrets.stalwart.admin_password is string
-      - private_cloud_secrets.stalwart.admin_password | length > 0
+      - private_cloud_secrets.stalwart.admin_password | length >= 16
       - private_cloud_secrets.stalwart.mailbox_password is string
-      - private_cloud_secrets.stalwart.mailbox_password | length > 0
+      - private_cloud_secrets.stalwart.mailbox_password | length >= 16
       - private_cloud_secrets.stalwart.relay_password is string
       - private_cloud_secrets.stalwart.relay_password | length > 0
       - private_cloud_secrets.stalwart.certificate_dns_api_token is string
@@ -478,26 +522,23 @@
 - name: Require media secrets when media is enabled
   ansible.builtin.assert:
     that:
-      - private_cloud_secrets.media.openvpn_configuration is string
-      - private_cloud_secrets.media.openvpn_configuration | length > 0
-      - private_cloud_secrets.media.openvpn_username is string
-      - private_cloud_secrets.media.openvpn_username | length > 0
-      - private_cloud_secrets.media.openvpn_password is string
-      - private_cloud_secrets.media.openvpn_password | length > 0
+      - private_cloud_secrets.media.wireguard_private_key is match('^[A-Za-z0-9+/]{43}=$')
+      - private_cloud_secrets.media.wireguard_preshared_key is match('^[A-Za-z0-9+/]{43}=$')
       - private_cloud_secrets.media.proxy_password is match('^[A-Za-z0-9_-]{16,64}$')
     fail_msg: Required encrypted media secrets are missing
   when: private_cloud.stages.media | bool
   no_log: true
 
-- name: Require Zabbix secrets when Zabbix server is enabled
+- name: Require Zabbix secrets when Zabbix server or agent is enabled
   ansible.builtin.assert:
     that:
       - private_cloud_secrets.zabbix.database_password is string
       - private_cloud_secrets.zabbix.database_password | length > 0
       - private_cloud_secrets.zabbix.admin_password is string
-      - private_cloud_secrets.zabbix.admin_password | length > 0
+      - private_cloud_secrets.zabbix.admin_password | length >= 16
+      - private_cloud_secrets.zabbix.agent_psk is match('^[0-9a-f]{64}$')
     fail_msg: Required encrypted secrets are missing
-  when: private_cloud.stages.zabbix_server | bool
+  when: private_cloud.stages.zabbix_server | bool or private_cloud.stages.zabbix_agent | bool
   no_log: true
 
 - name: Require a valid ZFS passphrase
@@ -855,7 +896,7 @@
         ['media', 'radarr', private_cloud.media.max_ram.radarr, 1],
         ['media', 'prowlarr', private_cloud.media.max_ram.prowlarr, 1],
         ['media', 'qbittorrent', private_cloud.media.max_ram.qbittorrent, 1],
-        ['media', 'openvpn', private_cloud.media.max_ram.openvpn, 1],
+        ['media', 'vpn_gateway', private_cloud.media.max_ram.vpn_gateway, 1],
         ['media', 'dns', private_cloud.media.max_ram.dns, 1],
         ['media', 'vpn_route', private_cloud.media.max_ram.vpn_route, 4],
         ['media', 'file_logs', private_cloud.media.max_ram.file_logs, 1]
@@ -927,6 +968,7 @@
         meilisearch_master_key: configured
         onlyoffice_jwt_secret: configured
         opencloud_admin_password: configured
+        opencloud_wopi_secret: configured
         grist_database_password: configured
         grist_session_secret: configured
         grist_boot_key: configured
@@ -944,10 +986,10 @@
         networking_cloudflare_api_token: configured
         networking_cloudflare_ddns_api_token: configured
         networking_amneziawg_private_key: configured
-        media_openvpn_configuration: configured
-        media_openvpn_username: configured
-        media_openvpn_password: configured
+        media_wireguard_private_key: configured
+        media_wireguard_preshared_key: configured
         media_proxy_password: configured
         zabbix_database_password: configured
         zabbix_admin_password: configured
+        zabbix_agent_psk: configured
       layout: "{{ private_cloud_layout }}"

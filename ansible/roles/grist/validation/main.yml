@@ -14,3 +14,25 @@
       } | to_json }}
   register: grist_validation_site
   changed_when: false
+
+- name: Read Grist's Traefik route ConfigMap
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ grist_kubeconfig }}"
+    api_version: v1
+    kind: ConfigMap
+    namespace: edge
+    name: traefik-route-grist
+  register: grist_validation_route
+  changed_when: false
+
+- name: Require Grist's identity-stripping, forward-auth, and OAuth callback routes
+  vars:
+    grist_validation_route_config: "{{ grist_validation_route.resources[0].data['grist.yaml'] | from_yaml }}"
+  ansible.builtin.assert:
+    that:
+      - grist_validation_route.resources | length == 1
+      - grist_validation_route_config.http.routers.grist.middlewares == ['strip-identity-headers', 'forward-auth']
+      - grist_validation_route_config.http.routers['grist-oauth2'].rule == 'Host(`' ~ private_cloud.grist.hostname ~ '`) && PathPrefix(`/oauth2/`)'
+      - grist_validation_route_config.http.routers['grist-oauth2'].middlewares == ['strip-identity-headers']
+      - grist_validation_route_config.http.services['grist-oauth2'].loadBalancer.servers[0].url == 'http://forward-auth.edge.svc.cluster.local:4180'
+    fail_msg: Grist's Traefik routes are not as configured.

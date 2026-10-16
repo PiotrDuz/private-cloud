@@ -25,6 +25,16 @@
     label: "{{ item | basename }}"
   no_log: true
 
+- name: Split Traefik route ConfigMaps from rendered {{ manifest_service }} manifests
+  ansible.builtin.set_fact:
+    private_cloud_route_manifests: >-
+      {% set routes = namespace(items=[]) %}{% for manifest in private_cloud_rendered_manifests
+      if manifest.kind == 'ConfigMap' and ((manifest.metadata.labels | default({}))['private-cloud.example/traefik-route'] | default('')) == 'true' %}{% set routes.items = routes.items + [manifest] %}{% endfor %}{{ routes.items }}
+    private_cloud_service_manifests: >-
+      {% set services = namespace(items=[]) %}{% for manifest in private_cloud_rendered_manifests
+      if not (manifest.kind == 'ConfigMap' and ((manifest.metadata.labels | default({}))['private-cloud.example/traefik-route'] | default('')) == 'true') %}{% set services.items = services.items + [manifest] %}{% endfor %}{{ services.items }}
+  no_log: true
+
 - name: Reject Secret resources in rendered {{ manifest_service }} manifests
   ansible.builtin.assert:
     that:

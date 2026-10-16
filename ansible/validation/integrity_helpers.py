@@ -1,7 +1,6 @@
 """Helpers that compare live host and cluster state with repository-managed resources."""
 
 import json
-import re
 import subprocess
 from pathlib import Path
 
@@ -17,19 +16,6 @@ def kubectl_items(kind, namespace=None, name=None):
         return [json.loads(kubectl(["get", kind, name, "-n", namespace, "-o", "json"]))]
     items = json.loads(kubectl(["get", kind, "--all-namespaces", "-o", "json"]))["items"]
     return [item for item in items if item["metadata"]["namespace"] in MANAGED_NAMESPACES]
-
-
-def repository_network_policies():
-    names = set()
-    for template in sorted(REPOSITORY.glob("k0s-services/*/templates/*.yaml.j2")):
-        for document in re.split(r"(?m)^---\s*$", template.read_text()):
-            if not re.search(r"(?m)^kind:\s*NetworkPolicy\s*$", document):
-                continue
-            match = re.search(r"(?m)^metadata:\s*(?:\{\s*name:\s*|\n\s+name:\s*)([A-Za-z0-9.-]+)", document)
-            if not match:
-                raise RuntimeError(f"{template} contains a NetworkPolicy without a literal name")
-            names.add(match.group(1))
-    return names
 
 
 def workload_overrides(kind, workloads):

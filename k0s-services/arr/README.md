@@ -3,9 +3,9 @@
 The arr stack templates are managed by `ansible/roles/media` through the `media` installer stage.
 
 - Configure `private_cloud.media` in the public configuration.
-- Store OpenVPN credentials and the proxy password in the encrypted configuration.
+- Store the AirVPN WireGuard keys and the proxy password in the encrypted configuration.
 - Deploy Sonarr, Radarr, Prowlarr, and qBittorrent in the `media` namespace.
-- Route external traffic and DNS through the shared OpenVPN gateway.
+- Route external traffic and DNS through the shared AirVPN WireGuard gateway.
 - Use per-pod `tun2socks` helpers for the guarded applications.
 - Block direct Internet fallback with NetworkPolicy.
 - Bind qBittorrent to `tun0` and disable UPnP.
@@ -15,7 +15,7 @@ The arr stack templates are managed by `ansible/roles/media` through the `media`
 - Provision the shared `media-library` dataset and claim in this folder.
 - Mount the shared library writable in Sonarr, Radarr, and qBittorrent.
 
-The OpenVPN endpoint must be a literal IP address so its transport exception stays exact. The media role connects the applications through their native APIs after deployment.
+The WireGuard endpoint must be a literal IP address so its UDP exception stays exact. AirVPN port forwarding cannot reach qBittorrent through the shadowsocks and `tun2socks` path, so qBittorrent stays unreachable for inbound peers. The media role connects the applications through their native APIs after deployment.
 
 [Jellyfin](../jellyfin/README.md) has its own templates and mounts the shared library read-only. The media role applies the arr stack and library storage before Jellyfin.
 
@@ -49,6 +49,8 @@ The pinned qBittorrent 5.1.2 application logger has no native stdout configurati
 - Persist read positions under `.log-forwarder` in the qBittorrent dataset.
 - Start the native sidecar before application containers and stop it after them.
 - Use Recreate deployments to prevent overlapping checkpoint writers.
+- Use Recreate deployments for Sonarr, Radarr, Prowlarr, and qBittorrent to prevent two writers on one database.
+- Pod annotations carry credential Secret revisions, never credential hashes.
 - Keep Sonarr, Radarr, and Prowlarr on their native console logging.
 
 The configuration is [file-logs.conf](files/file-logs.conf). It discovers new files every second, follows renamed files for 30 seconds, and resumes saved offsets after a restart. First collection reads the current file from the beginning. Rotated backups are excluded from discovery to prevent replay.

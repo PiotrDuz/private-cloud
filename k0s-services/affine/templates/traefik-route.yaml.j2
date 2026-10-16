@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-route-affine
+  namespace: edge
+  labels: {private-cloud.example/traefik-route: "true"}
+data:
+  affine.yaml: |
+    http:
+      routers:
+        affine:
+          entryPoints: [websecure]
+          rule: Host(`{{ private_cloud.affine.hostname }}`)
+          service: affine
+          tls:
+            certResolver: cloudflare
+      services:
+        affine:
+          loadBalancer:
+            servers:
+              - url: http://affine.private-cloud.svc.cluster.local:3010

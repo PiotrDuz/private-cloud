@@ -1,9 +1,9 @@
-apiVersion: networking.k8s.io/v1
-kind: IngressClass
+apiVersion: v1
+kind: ServiceAccount
 metadata:
   name: traefik
-spec:
-  controller: traefik.io/ingress-controller
+  namespace: edge
+automountServiceAccountToken: false
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -20,8 +20,11 @@ spec:
   template:
     metadata:
       labels: {app.kubernetes.io/name: traefik}
+      annotations:
+        private-cloud.example/cloudflare-secret-revision: "{{ networking_traefik_secret_revision }}"
     spec:
       serviceAccountName: traefik
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -40,15 +43,12 @@ spec:
             - --accesslog.fields.headers.defaultmode=drop
             - --accesslog.fields.names.RequestPath=drop
             - --accesslog.fields.names.RequestLine=drop
-            - --providers.kubernetesingress=true
-            - --providers.kubernetesingress.namespaces=private-cloud,media,observability
-            - --providers.kubernetesingress.ingressclass=traefik
-            - --providers.kubernetesingress.allowexternalnameservices=false
-            - --providers.file.filename=/etc/traefik/dynamic/tcp.yaml
+            - --providers.file.directory=/etc/traefik/dynamic
             - --providers.file.watch=true
             - --certificatesresolvers.cloudflare.acme.email={{ private_cloud.networking.acme_email }}
             - --certificatesresolvers.cloudflare.acme.storage=/data/acme.json
             - --certificatesresolvers.cloudflare.acme.dnschallenge.provider=cloudflare
+            - --certificatesresolvers.cloudflare.acme.dnschallenge.resolvers=1.1.1.1:53,1.0.0.1:53
             - --api.dashboard=false
             - --ping=true
           env:
@@ -74,7 +74,18 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: traefik-data
-        - {name: dynamic, configMap: {name: traefik-dynamic}}
+        - name: dynamic
+          projected:
+            sources:
+              - configMap:
+                  name: traefik-dynamic
+                  items: [{key: tcp.yaml, path: routes/tcp.yaml}]
+{% for service in networking_traefik_route_services %}
+              - configMap:
+                  name: traefik-route-{{ service }}
+                  optional: true
+                  items: [{key: {{ service }}.yaml, path: routes/{{ service }}.yaml}]
+{% endfor %}
         - {name: tmp, emptyDir: {}}
 ---
 apiVersion: v1
@@ -121,6 +132,12 @@ spec:
       ports: [{protocol: TCP, port: 8096}]
     - to:
         - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: observability}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: openobserve}
+      ports: [{protocol: TCP, port: 5080}]
+    - to:
+        - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: kube-system}
           podSelector:
             matchLabels: {k8s-app: kube-dns}
@@ -129,18 +146,22 @@ spec:
         - {protocol: TCP, port: 53}
     - to:
         - ipBlock:
-            cidr: {{ private_cloud.networking.service_cidr }}
-      ports: [{protocol: TCP, port: 443}]
-{% for address in networking_kubernetes_api_addresses %}
-{% for api_port in networking_kubernetes_api_tcp_ports %}
-    - to:
-        - ipBlock:
-            cidr: {{ address }}/32
-      ports: [{protocol: TCP, port: {{ api_port }}}]
-{% endfor %}
-{% endfor %}
-    - to:
-        - ipBlock:
             cidr: 0.0.0.0/0
             except: [10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16]
       ports: [{protocol: TCP, port: 443}]
+    # lego checks DNS-01 propagation against public authoritative nameservers.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - {{ private_cloud.networking.pod_cidr }}
+              - {{ private_cloud.networking.service_cidr }}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}

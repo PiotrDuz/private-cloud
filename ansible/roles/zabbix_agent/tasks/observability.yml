@@ -8,6 +8,7 @@
     namespace: observability
   register: observability_alloy_service
   changed_when: false
+  when: private_cloud.stages.logging | bool
 
 - name: Select certificate endpoints
   ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/observability_certificates.yml"
@@ -26,9 +27,9 @@
   ansible.builtin.copy:
     dest: /etc/zabbix/private-cloud-observability.json
     content: >-
-      {{ {'endpoints': {
+      {{ {'endpoints': ({
         'alloy': 'http://' ~ observability_alloy_service.resources[0].spec.clusterIP ~ ':12345'
-      }, 'address': private_cloud.networking.traefik_internal_ip,
+      } if private_cloud.stages.logging | bool else {}), 'address': private_cloud.networking.traefik_internal_ip,
       'certificates': observability_certificates} | to_nice_json }}
     owner: root
     group: root

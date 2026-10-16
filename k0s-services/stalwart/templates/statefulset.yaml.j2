@@ -19,6 +19,7 @@ spec:
     spec:
       serviceAccountName: stalwart
       automountServiceAccountToken: false
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 2000
@@ -69,8 +70,8 @@ spec:
               valueFrom: {secretKeyRef: {name: stalwart-runtime-credentials, key: INBOX_EU_SMTP_PASSWORD}}
             - name: STALWART_CLOUDFLARE_API_TOKEN
               valueFrom: {secretKeyRef: {name: stalwart-runtime-credentials, key: STALWART_CLOUDFLARE_API_TOKEN}}
-            - name: MEILI_MASTER_KEY
-              valueFrom: {secretKeyRef: {name: meilisearch-credentials, key: MEILI_MASTER_KEY}}
+            - name: STALWART_MEILISEARCH_API_KEY
+              valueFrom: {secretKeyRef: {name: stalwart-runtime-credentials, key: STALWART_MEILISEARCH_API_KEY}}
             - name: STALWART_RECOVERY_ADMIN
               valueFrom:
                 secretKeyRef:

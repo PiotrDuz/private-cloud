@@ -20,7 +20,15 @@ The AFFiNE service is managed by `ansible/roles/affine`.
 - The service listens inside the cluster on port `3010`.
 - A ClusterIP service exposes TCP `3010` only inside the cluster.
 - Traefik publishes the configured hostname through HTTPS.
-- The Ingress preserves WebSocket connections.
+- `AFFINE_SERVER_EXTERNAL_URL` sets the public `https://<hostname>` origin for generated links and OAuth redirects.
+- The route ConfigMap preserves WebSocket connections.
+- The installer creates the first administrator from `private_cloud.affine.admin_email` before applying the route ConfigMap.
+- The installer skips the claim when AFFiNE reports `initialized`.
+- The administrator password must contain 16 to 32 characters.
+- The server and the preparation Job drop all capabilities and disable privilege escalation.
+- AFFiNE needs no capabilities because it runs as the owner of its data and binds port `3010`.
+- The role alters the PostgreSQL role password when the stored database password changes.
+- The pod annotation carries the credentials Secret revision to restart the pod on rotation.
 - The AFFiNE role enables and verifies `vector` in its database.
 
 ## OpenCloud OIDC

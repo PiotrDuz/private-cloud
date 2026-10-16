@@ -23,6 +23,8 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: false
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
           command: [sh, -c, 'node ./scripts/self-host-predeploy.js']
           env:
             - {name: REDIS_SERVER_HOST, value: redis-affine}

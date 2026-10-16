@@ -66,6 +66,31 @@
     fail_msg: OpenObserve's SMTP settings do not match the internal Stalwart service.
   when: private_cloud.stages.notifications | bool
 
+- name: Read OpenObserve credential Secrets for validation
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ logging_kubeconfig }}"
+    api_version: v1
+    kind: Secret
+    name: "{{ item }}"
+    namespace: observability
+  loop: [openobserve-admin, openobserve-ingest]
+  register: logging_validation_secrets
+  changed_when: false
+  no_log: true
+
+- name: Require administrator and ingestion credentials in separate Secrets
+  ansible.builtin.assert:
+    that:
+      - logging_validation_secrets.results | map(attribute='resources') | map('length') | list == [1, 1]
+      - (logging_validation_secrets.results[0].resources[0].data | default({})).keys() | sort | list == ['admin-password', 'username']
+      - (logging_validation_secrets.results[1].resources[0].data | default({})).keys() | sort | list == ['ingest-password', 'username']
+      - >-
+        logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
+        | selectattr('valueFrom', 'defined') | map(attribute='valueFrom.secretKeyRef.name') | unique | list == ['openobserve-admin']
+      - logging_validation_deployments.results[1].resources[0].spec.template.spec.volumes | selectattr('secret', 'defined') | map(attribute='secret.secretName') | list == ['openobserve-ingest']
+    fail_msg: OpenObserve administrator and Alloy ingestion credentials must stay in separate Secrets.
+  no_log: true
+
 - name: Read OpenObserve and Alloy endpoints for validation
   kubernetes.core.k8s_info:
     kubeconfig: "{{ logging_kubeconfig }}"
