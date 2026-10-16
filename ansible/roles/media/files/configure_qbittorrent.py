@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Set file logging before qBittorrent starts without replacing other settings."""
+"""Set file logging, seeding limits, and WebUI credentials before qBittorrent starts without replacing other settings."""
 import configparser
 import io
 import json
@@ -15,25 +15,29 @@ def main():
     configuration = configparser.RawConfigParser(delimiters=("=",), strict=False)
     configuration.optionxform = str
     configuration.read(path)
-    if not configuration.has_section("Application"):
-        configuration.add_section("Application")
-    desired = {"Enabled": "true", "Path": "/config/qBittorrent/logs", "Backup": "true", "DeleteOld": "true", "MaxSizeBytes": "10485760", "Age": "7", "AgeType": "0"}
-    changed = any(configuration.get("Application", "FileLogger\\" + key, fallback=None) != value for key, value in desired.items())
-    if not configuration.has_section("Preferences"):
-        configuration.add_section("Preferences")
-    preferences = {
-        "WebUI\\Username": "private-cloud",
-        "WebUI\\Password_PBKDF2": password_value(
-            os.environ["QBITTORRENT_PASSWORD"],
-            configuration.get("Preferences", "WebUI\\Password_PBKDF2", fallback=""),
-        ),
+    logging = {"Enabled": "true", "Path": "/config/qBittorrent/logs", "Backup": "true", "DeleteOld": "true", "MaxSizeBytes": "10485760", "Age": "7", "AgeType": "0"}
+    desired = {
+        "Application": {"FileLogger\\" + key: value for key, value in logging.items()},
+        "BitTorrent": {"Session\\GlobalMaxRatio": "0", "Session\\ShareLimitAction": "Stop"},
+        "Preferences": {
+            "WebUI\\Username": "private-cloud",
+            "WebUI\\Password_PBKDF2": password_value(
+                os.environ["QBITTORRENT_PASSWORD"],
+                configuration.get("Preferences", "WebUI\\Password_PBKDF2", fallback=""),
+            ),
+        },
     }
-    changed |= any(configuration.get("Preferences", key, fallback=None) != value for key, value in preferences.items())
+    changed = any(
+        configuration.get(section, key, fallback=None) != value
+        for section, settings in desired.items()
+        for key, value in settings.items()
+    )
     if changed:
-        for key, value in preferences.items():
-            configuration.set("Preferences", key, value)
-        for key, value in desired.items():
-            configuration.set("Application", "FileLogger\\" + key, value)
+        for section, settings in desired.items():
+            if not configuration.has_section(section):
+                configuration.add_section(section)
+            for key, value in settings.items():
+                configuration.set(section, key, value)
         output = io.StringIO()
         configuration.write(output, space_around_delimiters=False)
         existing = path.stat()

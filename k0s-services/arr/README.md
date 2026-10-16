@@ -24,6 +24,8 @@ The WireGuard endpoint must be a literal IP address so its UDP exception stays e
 - The installer reads Sonarr, Radarr, and Prowlarr API keys from their protected datasets.
 - Prowlarr synchronizes selected indexers to Sonarr and Radarr.
 - Sonarr and Radarr use qBittorrent with separate download categories.
+- qBittorrent stops each torrent at share ratio 0, so it seeds only while downloading.
+- Sonarr and Radarr remove stopped torrents and their download copies after import.
 - Sonarr uses `/media/tv` and Radarr uses `/media/movies` as library roots.
 - Store `media.qbittorrent_password` in Vault and use `private-cloud` as the WebUI username.
 - The startup initializer applies the qBittorrent password before its WebUI starts.
@@ -57,7 +59,7 @@ The configuration is [file-logs.conf](files/file-logs.conf). It discovers new fi
 
 Forwarding is best effort across abrupt crashes or rotation during an outage. Lines larger than 1 MiB are skipped with a Fluent Bit warning. Original application timestamps remain inside `message`; `collected_at` records collection time.
 
-The installer seeds qBittorrent defaults and the startup initializer reapplies logging and WebUI credentials on every pod start. File logging rotates at 10MiB and removes logs after seven days. An existing configuration must use the documented path; forwarding remains best effort during abrupt crashes, rotation, and collector outages.
+The installer seeds qBittorrent defaults and the startup initializer reapplies logging, seeding limits, and WebUI credentials on every pod start. File logging rotates at 10MiB and removes logs after seven days. An existing configuration must use the documented path; forwarding remains best effort during abrupt crashes, rotation, and collector outages.
 
 After deployment, browse the stream with:
 

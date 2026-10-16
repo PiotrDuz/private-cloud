@@ -66,7 +66,7 @@ def validate_download_client(client, application):
         "username": "private-cloud",
         category_field: application,
     }
-    if any(fields.get(name) != value for name, value in expected.items()):
+    if not download_client.get("removeCompletedDownloads") or any(fields.get(name) != value for name, value in expected.items()):
         raise RuntimeError("ARR qBittorrent connection differs from the managed settings")
 
 

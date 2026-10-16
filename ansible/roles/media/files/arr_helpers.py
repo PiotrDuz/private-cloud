@@ -50,7 +50,7 @@ def configure_download_client(client, name, password):
         'useSsl': False, 'username': 'private-cloud', 'password': password,
         'tvCategory' if name == 'sonarr' else 'movieCategory': name,
     }
-    return client.upsert('/downloadclient', 'QBittorrent', 'private-cloud-qbittorrent', fields, {'enable': True})
+    return client.upsert('/downloadclient', 'QBittorrent', 'private-cloud-qbittorrent', fields, {'enable': True, 'removeCompletedDownloads': True})
 
 
 def configure_prowlarr(client, name, key):
