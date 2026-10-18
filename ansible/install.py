@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import fcntl
+import ipaddress
 import os
 import stat
 import sys
@@ -34,6 +35,7 @@ from install_helpers import (
     SECRET_SCHEMAS,
     SECRET_STAGES,
     TEMP_PUBLIC_FILE,
+    TEMP_RESOLVED_FILE,
     TEMP_RUNTIME_FILE,
     TEMP_SECRET_FILE,
     VALIDATION_PLAYBOOK,
@@ -42,6 +44,8 @@ from install_helpers import (
     atomic_write,
     clear_create_intent,
     decrypt_secrets,
+    discover_lan,
+    discover_timezone,
     dump_yaml,
     encrypt_secrets,
     ensure_runtime_directory,
@@ -63,6 +67,7 @@ from install_helpers import (
     require_kubernetes_readiness,
     require_resumable_pool,
     require_root,
+    resolve_public_configuration,
     resumable_create_intent,
     run_command,
     validate_public_configuration,
@@ -116,6 +121,7 @@ def run_installation() -> dict[str, Any]:
             decrypt_secrets(SECRETS_CONFIGURATION, TEMP_SECRET_FILE, VAULT_PASSWORD_FILE)
             secrets_configuration = load_yaml(TEMP_SECRET_FILE)
             validate_secrets_configuration(secrets_configuration, existing_public["private_cloud"]["stages"])
+            atomic_write(TEMP_RESOLVED_FILE, dump_yaml(resolve_public_configuration(existing_public)), 0o600)
             run_validation_playbook()
             return {"status": "completed", "mode": "validate", "playbook": str(VALIDATION_PLAYBOOK)}
         if mode == "create" and existing_public is not None:
@@ -170,7 +176,8 @@ def run_installation() -> dict[str, Any]:
             new_password = vault_password
         write_password_file(new_password)
 
-        print(dump_yaml(redact_secrets({**public, **secrets_configuration})).rstrip())
+        resolved = resolve_public_configuration(public)
+        print(dump_yaml(redact_secrets({**resolved, **secrets_configuration})).rstrip())
         runtime = build_runtime_values(public, mode)
         atomic_write(TEMP_RUNTIME_FILE, dump_yaml(runtime), 0o600)
         if not prompt_bool("Allow Ansible to start", True):
@@ -178,6 +185,7 @@ def run_installation() -> dict[str, Any]:
         if mode == "create" and resume_intent is None:
             record_create_intent(public["private_cloud"]["storage"]["disks"])
         atomic_write(TEMP_PUBLIC_FILE, dump_yaml(public), 0o600)
+        atomic_write(TEMP_RESOLVED_FILE, dump_yaml(resolved), 0o600)
         if secrets_changed:
             write_secret_file(secrets_configuration, stages)
             encrypt_secrets(TEMP_SECRET_FILE, TEMP_ENCRYPTED_FILE, VAULT_PASSWORD_FILE)
@@ -190,7 +198,7 @@ def run_installation() -> dict[str, Any]:
             atomic_write(PUBLIC_CONFIGURATION, dump_yaml(public), 0o600)
             atomic_write(SECRETS_CONFIGURATION, TEMP_ENCRYPTED_FILE.read_text(), 0o600)
         run_playbook()
-        boot_integrity = enroll_boot_integrity(public["private_cloud"]["boot_integrity"]) if stages["boot_integrity"] else None
+        boot_integrity = enroll_boot_integrity(resolved["private_cloud"]["boot_integrity"]) if stages["boot_integrity"] else None
         if boot_integrity is not None:
             print(f"boot_integrity: {boot_integrity}", file=sys.stderr)
         run_validation_playbook()
@@ -227,7 +235,7 @@ def runtime_cleanup() -> Iterator[None]:
     try:
         yield
     finally:
-        for path in (TEMP_SECRET_FILE, TEMP_PUBLIC_FILE, TEMP_ENCRYPTED_FILE, TEMP_RUNTIME_FILE, VAULT_PASSWORD_FILE, OLD_VAULT_PASSWORD_FILE, KUBECONFIG_FILE, LUKS_PASSPHRASE_FILE, LUKS_KEY_FILE):
+        for path in (TEMP_SECRET_FILE, TEMP_PUBLIC_FILE, TEMP_RESOLVED_FILE, TEMP_ENCRYPTED_FILE, TEMP_RUNTIME_FILE, VAULT_PASSWORD_FILE, OLD_VAULT_PASSWORD_FILE, KUBECONFIG_FILE, LUKS_PASSPHRASE_FILE, LUKS_KEY_FILE):
             path.unlink(missing_ok=True)
 
 
@@ -240,18 +248,22 @@ def choose_mode(has_public: bool) -> str:
 def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> dict[str, Any]:
     if existing is not None and mode in {"reapply", "rotate"}:
         return existing
-    source = existing or default_public_configuration()
+    source = existing or discovered_public_configuration()
     if mode == "update":
-        sections = prompt_line("Sections to change (stages, storage, k0s, networking, media, postgres, meilisearch, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, stalwart, zabbix, logging, notifications, boot_integrity)", "").split()
+        sections = prompt_line("Sections to change (general, stages, storage, k0s, networking, media, postgres, meilisearch, tika, bleve, onlyoffice, opencloud, grist, manticore, redis_affine, affine, immich, stalwart, zabbix, logging, notifications, boot_integrity)", "").split()
     else:
-        sections = ["stages", "storage", "k0s", "networking", "media", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix", "logging", "notifications", "boot_integrity"]
+        sections = ["general", "stages", "storage", "k0s", "networking", "media", "postgres", "meilisearch", "tika", "bleve", "onlyoffice", "opencloud", "grist", "manticore", "redis_affine", "affine", "immich", "stalwart", "zabbix", "logging", "notifications", "boot_integrity"]
     result = _copy_mapping(source)
-    stages = result["private_cloud"]["stages"]
+    cloud = result["private_cloud"]
+    if "general" in sections:
+        cloud["domain"] = prompt_line("Base domain for every service hostname", cloud["domain"] if existing is not None else None)
+        cloud["admin_email"] = prompt_line("Administrator email for ACME and application administrators", cloud["admin_email"] if existing is not None else f"admin@{cloud['domain']}")
+        cloud["timezone"] = prompt_line("Timezone", cloud["timezone"])
+    stages = cloud["stages"]
     if "stages" in sections:
         for stage in stages:
             if existing is None or not stages[stage]:
                 stages[stage] = prompt_bool(f"Enable {stage}", stages[stage])
-    cloud = result["private_cloud"]
     if "storage" in sections and cloud["stages"]["zfs"]:
         if mode == "create":
             discover_disks()
@@ -263,44 +275,35 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
             cloud["k0s"][key] = prompt_line(f"k0s {key}", cloud["k0s"][key])
     if "networking" in sections:
         networking = cloud["networking"]
-        for key in ("storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "pod_cidr", "service_cidr", "cluster_dns_ip", "traefik_internal_ip", "zabbix_hostname"):
+        for key in ("storage_size", "cloudflare_zone_id", "public_ip_url", "pod_cidr", "service_cidr", "cluster_dns_ip"):
             if existing is not None and key in IMMUTABLE_NETWORK_KEYS:
                 continue
             networking[key] = prompt_line(f"Networking {key}", networking[key])
+        lan = networking["lan"]
+        lan["interface"] = prompt_line("LAN interface", lan["interface"])
+        lan["address"] = prompt_line("Host LAN address with prefix length", lan["address"])
+        lan["gateway"] = prompt_line("LAN gateway", lan["gateway"])
         networking["local_network_cidrs"] = prompt_line(
             "Local network CIDRs separated by spaces", " ".join(networking["local_network_cidrs"])
         ).split()
-        networking["managed_records"] = prompt_line(
-            "Cloudflare managed records separated by spaces", " ".join(networking["managed_records"])
-        ).split()
         amneziawg = networking["amneziawg"]
-        for key in ("hostname", "address", "tunnel_cidr"):
+        for key in ("admin_username", "storage_size", "tunnel_cidr"):
             amneziawg[key] = prompt_line(f"AmneziaWG {key}", amneziawg[key])
         amneziawg["listen_port"] = prompt_int("AmneziaWG listen_port", amneziawg["listen_port"])
-        peer_count = prompt_int("AmneziaWG peer count", len(amneziawg["peers"]))
-        peers = []
-        for index in range(peer_count):
-            current = amneziawg["peers"][index] if index < len(amneziawg["peers"]) else {"name": f"peer-{index + 1}", "address": "", "public_key": "", "lan_access": []}
-            peer = {
-                "name": prompt_line(f"AmneziaWG peer {index + 1} name", current["name"]),
-                "address": prompt_line(f"AmneziaWG peer {index + 1} address", current["address"]),
-                "public_key": prompt_line(f"AmneziaWG peer {index + 1} public_key", current["public_key"]),
-                "lan_access": [],
-            }
-            access_count = prompt_int(f"AmneziaWG peer {index + 1} LAN rule count", len(current["lan_access"]))
-            for access_index in range(access_count):
-                access = current["lan_access"][access_index] if access_index < len(current["lan_access"]) else {"destination": "", "protocol": "TCP", "port": 443}
-                peer["lan_access"].append({
-                    "destination": prompt_line(f"Peer {index + 1} LAN rule {access_index + 1} destination CIDR", access["destination"]),
-                    "protocol": prompt_choice(f"Peer {index + 1} LAN rule {access_index + 1} protocol", ("TCP", "UDP"), access["protocol"]),
-                    "port": prompt_int(f"Peer {index + 1} LAN rule {access_index + 1} port", access["port"]),
-                })
-            peers.append(peer)
-        amneziawg["peers"] = peers
+        amneziawg["dns"] = prompt_line("AmneziaWG peer DNS servers separated by spaces", " ".join(amneziawg["dns"])).split()
+        access_count = prompt_int("AmneziaWG LAN rule count", len(amneziawg["lan_access"]))
+        lan_access = []
+        for index in range(access_count):
+            access = amneziawg["lan_access"][index] if index < len(amneziawg["lan_access"]) else {"destination": "", "protocol": "TCP", "port": 443}
+            lan_access.append({
+                "destination": prompt_line(f"AmneziaWG LAN rule {index + 1} destination CIDR", access["destination"]),
+                "protocol": prompt_choice(f"AmneziaWG LAN rule {index + 1} protocol", ("TCP", "UDP"), access["protocol"]),
+                "port": prompt_int(f"AmneziaWG LAN rule {index + 1} port", access["port"]),
+            })
+        amneziawg["lan_access"] = lan_access
     if "media" in sections:
         media = cloud["media"]
-        for key in ("storage_size", "hostname", "timezone"):
-            media[key] = prompt_line(f"Media {key}", media[key])
+        media["storage_size"] = prompt_line("Media storage_size", media["storage_size"])
         for service in media["max_ram"]:
             media["max_ram"][service] = prompt_line(f"Media {service} maximum RAM", media["max_ram"][service])
         for service in ("sonarr", "radarr"):
@@ -326,13 +329,13 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
     if "bleve" in sections:
         cloud["bleve"]["storage_size"] = prompt_line("Bleve storage_size", cloud["bleve"]["storage_size"])
     if "onlyoffice" in sections:
-        for key in ("storage_size", "max_ram", "hostname"):
+        for key in ("storage_size", "max_ram"):
             cloud["onlyoffice"][key] = prompt_line(f"OnlyOffice {key}", cloud["onlyoffice"][key])
     if "opencloud" in sections:
-        for key in ("storage_size", "max_ram", "hostname"):
+        for key in ("storage_size", "max_ram"):
             cloud["opencloud"][key] = prompt_line(f"OpenCloud {key}", cloud["opencloud"][key])
     if "grist" in sections:
-        for key in ("storage_size", "max_ram", "default_email", "hostname"):
+        for key in ("storage_size", "max_ram"):
             cloud["grist"][key] = prompt_line(f"Grist {key}", cloud["grist"][key])
     if "manticore" in sections:
         for key in ("storage_size", "max_ram"):
@@ -340,15 +343,13 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
     if "redis_affine" in sections:
         cloud["redis_affine"]["max_ram"] = prompt_line("Redis for AFFiNE max_ram", cloud["redis_affine"]["max_ram"])
     if "affine" in sections:
-        for key in ("storage_size", "max_ram", "hostname"):
+        for key in ("storage_size", "max_ram"):
             cloud["affine"][key] = prompt_line(f"AFFiNE {key}", cloud["affine"][key])
-        cloud["affine"]["admin_email"] = prompt_line("AFFiNE administrator email", cloud["affine"]["admin_email"])
     if "immich" in sections:
-        for key in ("storage_size", "hostname", "timezone", "max_ram", "machine_learning_max_ram", "machine_learning_accelerator", "valkey_max_ram"):
+        for key in ("storage_size", "max_ram", "machine_learning_max_ram", "machine_learning_accelerator", "valkey_max_ram"):
             cloud["immich"][key] = prompt_line(f"Immich {key}", cloud["immich"][key])
-        cloud["immich"]["admin_email"] = prompt_line("Immich administrator email", cloud["immich"]["admin_email"])
     if "stalwart" in sections:
-        for key in ("storage_size", "max_ram", "domain", "forwarding_domain", "hostname", "acme_contact", "admin_username", "mailbox_username", "relay_host", "relay_username"):
+        for key in ("storage_size", "max_ram", "admin_username", "mailbox_username", "relay_host", "relay_username"):
             cloud["stalwart"][key] = prompt_line(f"Stalwart {key}", cloud["stalwart"][key])
         cloud["stalwart"]["relay_port"] = prompt_int("Stalwart relay_port", cloud["stalwart"]["relay_port"])
         cloud["stalwart"]["relay_implicit_tls"] = prompt_bool("Stalwart relay_implicit_tls", cloud["stalwart"]["relay_implicit_tls"])
@@ -360,8 +361,6 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
         cloud["notifications"]["from_address"] = prompt_line("Alert sender authorized by the SMTP relay", cloud["notifications"]["from_address"])
     if "boot_integrity" in sections:
         boot = cloud["boot_integrity"]
-        for key in ("interface", "host_address", "gateway_ip"):
-            boot[key] = prompt_line(f"Boot integrity {key}", boot[key])
         pcrs = prompt_line("Boot integrity extra PCRs separated by spaces (1 and 5 only)", " ".join(str(value) for value in boot["extra_pcrs"])).split()
         boot["extra_pcrs"] = [int(value) if value.isdigit() else value for value in pcrs]
         boot["extra_drivers"] = prompt_line("Boot integrity extra initrd drivers separated by spaces", " ".join(boot["extra_drivers"])).split()
@@ -394,10 +393,20 @@ def collect_valid_changed_secrets(configuration: dict[str, Any], public: dict[st
             print(f"Invalid secret configuration: {error}", file=sys.stderr)
 
 
-def default_public_configuration() -> dict[str, Any]:
-    if EXAMPLE_CONFIGURATION.is_file():
-        return load_yaml(EXAMPLE_CONFIGURATION)
-    raise InstallerError(f"Missing example configuration: {EXAMPLE_CONFIGURATION}")
+def discovered_public_configuration() -> dict[str, Any]:
+    if not EXAMPLE_CONFIGURATION.is_file():
+        raise InstallerError(f"Missing example configuration: {EXAMPLE_CONFIGURATION}")
+    configuration = load_yaml(EXAMPLE_CONFIGURATION)
+    cloud = configuration["private_cloud"]
+    networking = cloud["networking"]
+    cloud["timezone"] = discover_timezone()
+    networking["amneziawg"]["lan_access"] = []
+    lan = discover_lan()
+    if lan is not None:
+        networking["lan"] = lan
+        networking["local_network_cidrs"] = [str(ipaddress.IPv4Interface(lan["address"]).network)]
+        networking["amneziawg"]["dns"] = [lan["gateway"]]
+    return configuration
 
 
 def collect_missing_secrets(configuration: dict[str, Any], public: dict[str, Any]) -> dict[str, Any]:
@@ -433,7 +442,7 @@ def collect_missing_secrets(configuration: dict[str, Any], public: dict[str, Any
         ("zabbix", "agent_psk"): "Zabbix agent PSK (64 lowercase hexadecimal characters)",
         ("networking", "cloudflare_api_token"): "Cloudflare ACME DNS API token",
         ("networking", "cloudflare_ddns_api_token"): "Cloudflare DDNS API token",
-        ("networking", "amneziawg_private_key"): "AmneziaWG server private key",
+        ("networking", "amneziawg_admin_password"): "AmneziaWG UI administrator password (at least 16 characters)",
         ("media", "wireguard_private_key"): "AirVPN WireGuard private key",
         ("media", "wireguard_preshared_key"): "AirVPN WireGuard preshared key",
         ("media", "proxy_password"): "Media VPN proxy password",
@@ -471,7 +480,6 @@ def update_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         ("zabbix", "agent_psk"),
         ("networking", "cloudflare_api_token"),
         ("networking", "cloudflare_ddns_api_token"),
-        ("networking", "amneziawg_private_key"),
         ("media", "wireguard_private_key"),
         ("media", "wireguard_preshared_key"),
         ("media", "proxy_password"),
@@ -484,7 +492,7 @@ def update_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
 
 def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> dict[str, Any]:
     result = _copy_mapping(configuration)
-    names = "meilisearch stalwart_database stalwart_admin mailbox relay stalwart_dns onlyoffice opencloud_wopi grist_database grist_session grist_boot grist_oidc_cookie affine_database immich_database zabbix_database zabbix_agent_psk cloudflare_acme cloudflare_ddns amneziawg wireguard_private_key wireguard_preshared_key media_proxy qbittorrent"
+    names = "meilisearch stalwart_database stalwart_admin mailbox relay stalwart_dns onlyoffice opencloud_wopi grist_database grist_session grist_boot grist_oidc_cookie affine_database immich_database zabbix_database zabbix_agent_psk cloudflare_acme cloudflare_ddns wireguard_private_key wireguard_preshared_key media_proxy qbittorrent"
     selected = prompt_line(f"Secrets to rotate ({names})", "all").split()
     supported = {"all", *names.split()}
     if set(selected) - supported:
@@ -510,7 +518,6 @@ def rotate_secrets(configuration: dict[str, Any], stages: dict[str, bool]) -> di
         "immich_database": ("immich", "database_password"),
         "cloudflare_acme": ("networking", "cloudflare_api_token"),
         "cloudflare_ddns": ("networking", "cloudflare_ddns_api_token"),
-        "amneziawg": ("networking", "amneziawg_private_key"),
         "wireguard_private_key": ("media", "wireguard_private_key"),
         "wireguard_preshared_key": ("media", "wireguard_preshared_key"),
         "media_proxy": ("media", "proxy_password"),
@@ -547,6 +554,7 @@ def reject_unsupported_secret_rotations(previous: dict[str, Any], candidate: dic
         ("immich", "admin_password"),
         ("affine", "admin_password"),
         ("media", "jellyfin_admin_password"),
+        ("networking", "amneziawg_admin_password"),
     )
     changed = [
         f"{section}.{key}"
@@ -623,7 +631,7 @@ def run_playbook() -> None:
         "ansible-playbook",
         "-i", str(INVENTORY),
         str(PLAYBOOK),
-        "--extra-vars", f"@{TEMP_PUBLIC_FILE}",
+        "--extra-vars", f"@{TEMP_RESOLVED_FILE}",
         "--extra-vars", f"@{TEMP_ENCRYPTED_FILE}",
         "--extra-vars", f"@{TEMP_RUNTIME_FILE}",
         "--vault-password-file", str(VAULT_PASSWORD_FILE),
@@ -637,7 +645,7 @@ def run_validation_playbook() -> None:
         "ansible-playbook",
         "-i", str(INVENTORY),
         str(VALIDATION_PLAYBOOK),
-        "--extra-vars", f"@{PUBLIC_CONFIGURATION}",
+        "--extra-vars", f"@{TEMP_RESOLVED_FILE}",
         "--extra-vars", f"@{SECRETS_CONFIGURATION}",
         "--vault-password-file", str(VAULT_PASSWORD_FILE),
     ], environment={"ANSIBLE_CONFIG": str(ANSIBLE_CONFIG), "ANSIBLE_LOG_PATH": str(live_log)}, stage="validation")

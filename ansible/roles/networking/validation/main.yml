@@ -123,6 +123,31 @@
     that: networking_validation_amneziawg_forwarding.stdout | trim == '1'
     fail_msg: AmneziaWG's network namespace is not forwarding peer traffic.
 
+- name: Read the AmneziaWG UI runtime information
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, network-access, deployment/amneziawg, -c, amneziawg, --, wget, -qO-, "http://127.0.0.1:51821/api/information"]
+  register: networking_validation_amneziawg_information
+  changed_when: false
+
+- name: Require wg-easy to run the AmneziaWG protocol
+  ansible.builtin.assert:
+    that: (networking_validation_amneziawg_information.stdout | from_json).isAwg
+    fail_msg: wg-easy fell back to plain WireGuard instead of AmneziaWG.
+
+- name: Read the AmneziaWG tunnel and peer isolation rule
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, network-access, deployment/amneziawg, -c, amneziawg, --, /bin/sh, -c, "awg show wg0 listen-port && iptables -t mangle -C FORWARD -i wg0 -o wg0 -j DROP"]
+  register: networking_validation_amneziawg_tunnel
+  changed_when: false
+  failed_when: false
+
+- name: Require the tunnel on the configured port with peers isolated from each other
+  ansible.builtin.assert:
+    that:
+      - networking_validation_amneziawg_tunnel.rc == 0
+      - networking_validation_amneziawg_tunnel.stdout | trim == private_cloud.networking.amneziawg.listen_port | string
+    fail_msg: The AmneziaWG tunnel is down, listens on another port, or lost its peer isolation rule; restart the amneziawg pod.
+
 - name: Read AmneziaWG's egress NetworkPolicy
   kubernetes.core.k8s_info:
     kubeconfig: "{{ networking_kubeconfig }}"

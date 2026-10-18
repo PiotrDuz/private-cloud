@@ -9,7 +9,7 @@ private_cloud_alert_smtp_port: 2525
 # Memory requests reserved per container; preflight budgets these and limits stay burstable.
 private_cloud_memory_requests:
   traefik: 96Mi
-  amneziawg: 16Mi
+  amneziawg: 96Mi
   ddns: 32Mi
   forward_auth: 32Mi
   postgres: 384Mi
@@ -56,6 +56,7 @@ private_cloud_dataset_catalog:
   - {name: images, stage: k0s, dataset: tank/secure/no-backup/k0s/images, color: 66BB6A}
   - {name: ephemeral, stage: k0s, dataset: tank/secure/no-backup/k0s/ephemeral, color: FFA726}
   - {name: traefik, stage: networking, dataset: tank/secure/backup/k0s/services/traefik, color: 26A69A}
+  - {name: amneziawg, stage: networking, dataset: tank/secure/backup/k0s/services/amneziawg, color: 5C6BC0}
   - {name: jellyfin, stage: media, dataset: tank/secure/backup/k0s/services/jellyfin, color: 00897B}
   - {name: sonarr, stage: media, dataset: tank/secure/no-backup/k0s/services/sonarr, color: 42A5F5}
   - {name: radarr, stage: media, dataset: tank/secure/no-backup/k0s/services/radarr, color: FFC107}

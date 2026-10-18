@@ -2,7 +2,7 @@
 - name: Require the supported public schema version
   ansible.builtin.assert:
     that:
-      - schema_version == 14
+      - schema_version == 16
     fail_msg: Public configuration schema version is unsupported
 
 - name: Require supported Debian-family target
@@ -32,7 +32,7 @@
       - (private_cloud.storage.keys() | list | sort) == ['arc_max', 'disks']
       - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'host_reserve_ram', 'images_quota']
       - (private_cloud.networking.keys() | list | sort) == ['acme_email', 'amneziawg', 'cloudflare_zone_id', 'cluster_dns_ip', 'local_network_cidrs', 'managed_records', 'pod_cidr', 'public_ip_url', 'service_cidr', 'storage_size', 'traefik_internal_ip', 'zabbix_hostname']
-      - (private_cloud.networking.amneziawg.keys() | list | sort) == ['address', 'hostname', 'listen_port', 'peers', 'tunnel_cidr']
+      - (private_cloud.networking.amneziawg.keys() | list | sort) == ['admin_username', 'dns', 'hostname', 'lan_access', 'listen_port', 'storage_size', 'tunnel_cidr', 'ui_hostname']
       - (private_cloud.media.keys() | list | sort) == ['hostname', 'jellyfin_admin_username', 'max_ram', 'quality_profiles', 'storage_size', 'timezone', 'vpn']
       - (private_cloud.media.quality_profiles.keys() | list | sort) == ['radarr', 'sonarr']
       - (private_cloud.media.vpn.keys() | list | sort) == ['address', 'endpoint_ip', 'endpoint_port', 'gateway_cluster_ip', 'peer_public_key']
@@ -66,7 +66,7 @@
 - name: Require the supported encrypted schema version
   ansible.builtin.assert:
     that:
-      - secrets_schema_version == 8
+      - secrets_schema_version == 9
     fail_msg: Encrypted configuration schema version is unsupported
   no_log: true
 
@@ -96,7 +96,7 @@
     - {name: grist, keys: [boot_key, database_password, oidc_client_secret, oidc_cookie_secret, session_secret]}
     - {name: affine, keys: [admin_password, database_password, oidc_client_secret]}
     - {name: immich, keys: [admin_password, database_password, oidc_client_secret]}
-    - {name: networking, keys: [amneziawg_private_key, cloudflare_api_token, cloudflare_ddns_api_token]}
+    - {name: networking, keys: [amneziawg_admin_password, cloudflare_api_token, cloudflare_ddns_api_token]}
     - {name: media, keys: [jellyfin_admin_password, proxy_password, qbittorrent_password, wireguard_preshared_key, wireguard_private_key]}
   no_log: true
 
@@ -217,9 +217,10 @@
       - private_cloud.networking.acme_email is match('^[^@ ]+@[^@ ]+\.[^@ ]+$')
       - private_cloud.networking.cloudflare_zone_id is match('^[0-9a-fA-F]{32}$')
       - private_cloud.networking.public_ip_url is match('^https://')
-      - private_cloud.networking.managed_records | length > 0
+      - private_cloud.networking.managed_records | length > 0 or not private_cloud.stages.networking
       - private_cloud.networking.local_network_cidrs | length > 0
-      - private_cloud.networking.amneziawg.peers | length > 0
+      - private_cloud.networking.amneziawg.dns | length > 0
+      - private_cloud.networking.amneziawg.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
     fail_msg: Networking configuration is invalid
 
 - name: Require media values
@@ -534,7 +535,8 @@
       - private_cloud_secrets.networking.cloudflare_api_token | length >= 20
       - private_cloud_secrets.networking.cloudflare_ddns_api_token is string
       - private_cloud_secrets.networking.cloudflare_ddns_api_token | length >= 20
-      - private_cloud_secrets.networking.amneziawg_private_key is match('^[A-Za-z0-9+/]{43}=$')
+      - private_cloud_secrets.networking.amneziawg_admin_password is string
+      - private_cloud_secrets.networking.amneziawg_admin_password | length >= 16
     fail_msg: Required encrypted networking secrets are missing
   when: private_cloud.stages.networking | bool
   no_log: true
@@ -829,6 +831,7 @@
       kubernetes_namespace: private-cloud
       service_pv_capacity: 10Ti
       traefik_dataset: tank/secure/backup/k0s/services/traefik
+      amneziawg_dataset: tank/secure/backup/k0s/services/amneziawg
       jellyfin_dataset: tank/secure/backup/k0s/services/jellyfin
       sonarr_dataset: tank/secure/no-backup/k0s/services/sonarr
       radarr_dataset: tank/secure/no-backup/k0s/services/radarr
@@ -855,6 +858,7 @@
     - { dataset: 'tank/secure/no-backup/k0s/images', quota: '{{ private_cloud.k0s.images_quota }}' }
     - { dataset: 'tank/secure/no-backup/k0s/ephemeral', quota: '{{ private_cloud.k0s.ephemeral_quota }}' }
     - { dataset: 'tank/secure/backup/k0s/services/traefik', quota: '{{ private_cloud.networking.storage_size }}' }
+    - { dataset: 'tank/secure/backup/k0s/services/amneziawg', quota: '{{ private_cloud.networking.amneziawg.storage_size }}' }
     - { dataset: 'tank/secure/backup/k0s/services/jellyfin', quota: '{{ private_cloud.media.storage_size }}' }
     - { dataset: 'tank/secure/no-backup/k0s/services/sonarr', quota: '{{ private_cloud.media.storage_size }}' }
     - { dataset: 'tank/secure/no-backup/k0s/services/radarr', quota: '{{ private_cloud.media.storage_size }}' }
@@ -893,7 +897,7 @@
   ansible.builtin.set_fact:
     preflight_memory_requests: >-
       {{ [
-        ['networking', 'traefik', '256Mi', 1], ['networking', 'amneziawg', '128Mi', 1],
+        ['networking', 'traefik', '256Mi', 1], ['networking', 'amneziawg', '256Mi', 1],
         ['networking', 'ddns', '64Mi', 1], ['grist', 'forward_auth', '64Mi', 1],
         ['postgres', 'postgres', private_cloud.postgres.max_ram, 1],
         ['meilisearch', 'meilisearch', private_cloud.meilisearch.max_ram, 1],
@@ -1006,7 +1010,7 @@
         stalwart_certificate_dns_api_token: configured
         networking_cloudflare_api_token: configured
         networking_cloudflare_ddns_api_token: configured
-        networking_amneziawg_private_key: configured
+        networking_amneziawg_admin_password: configured
         media_wireguard_private_key: configured
         media_wireguard_preshared_key: configured
         media_proxy_password: configured

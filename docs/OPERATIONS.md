@@ -4,7 +4,7 @@ Repository configuration installs OpenObserve, Alloy, Zabbix monitoring, and opt
 
 ## Monitoring
 
-Open Zabbix at `networking.zabbix_hostname` and review **Monitoring → Problems** for `private-cloud-zabbix`.
+Open Zabbix at `monitor.<domain>` and review **Monitoring → Problems** for `private-cloud-zabbix`.
 
 | View | Critical checks | Response |
 | --- | --- | --- |
@@ -69,9 +69,10 @@ OpenCloud's built-in provider and directory supply shared login for Grist, AFFiN
 - Restore the public configuration and Vault ciphertext from the same recovery point.
 - Restore and mount `tank/secure/backup/private-cloud-config` before reapplying.
 - The initial OpenCloud administrator password and OIDC client secrets are not rotatable through the installer.
-- The Immich, AFFiNE, and Jellyfin administrator passwords are bootstrap credentials and are not rotatable.
+- The Immich, AFFiNE, Jellyfin, and AmneziaWG UI administrator passwords are bootstrap credentials and are not rotatable.
 - Change those passwords inside each application after the installer claims the instance.
 - Rotatable groups cover enabled service database passwords, mail credentials, Cloudflare tokens, and the AirVPN WireGuard keys.
+- Rotate the AmneziaWG server key in the wg-easy UI, then reissue every client configuration.
 - The OpenCloud WOPI secret, Grist cookie secret, and Zabbix agent PSK are also rotatable.
 - A PSK rotation updates the Zabbix host object and restarts the agent on the same run.
 - PostgreSQL, Zabbix, and OpenObserve administrator passwords and the ZFS passphrase are not rotatable.
@@ -109,7 +110,7 @@ Account deletion is manual in each application; OIDC does not synchronize accoun
 | Stalwart | Deny authentication permissions while retaining mailbox data. | Revoke app passwords and API keys, delete the account and aliases, and confirm mail and blob cleanup completes. |
 | Jellyfin | Disable the user in the dashboard. | Revoke devices, sessions, and applicable API keys, then delete the user while preserving the shared media library. |
 | ARR, Zabbix, OpenObserve | Disable or remove access through native controls. | Revoke native credentials and tokens and remove personal resources through each service's controls. |
-| AmneziaWG | Remove peer access from the public configuration. | Remove the peer and reapply to revoke its key. |
+| AmneziaWG | Disable the client in the UI. | Delete the client in the UI to revoke its key. |
 
 - Remove shared resources owned by the deleted user after identifying their owner.
 - Preserve resources owned by other users and remove only the departing user's access.

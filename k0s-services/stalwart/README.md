@@ -39,7 +39,7 @@ The Stalwart service is managed by `ansible/roles/stalwart`.
 
 - Stalwart 0.16 has no account-level enabled flag.
 - Suspend, resume, and delete are operator actions through `stalwart-cli`.
-- Run the commands against `https://<stalwart.hostname>`.
+- Run the commands against `https://mail.<domain>`.
 - Authenticate with native administrator credentials through `STALWART_USER` and `STALWART_PASSWORD`.
 - List the account id with `stalwart-cli query Account --where name=<username>`.
 - Suspend an account with `stalwart-cli update Account <id> --field 'permissions={"@type":"Merge","disabledPermissions":{"authenticate":true,"authenticateWithAlias":true}}'`.

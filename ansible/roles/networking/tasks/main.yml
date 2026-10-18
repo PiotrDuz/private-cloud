@@ -9,7 +9,7 @@
       - private_cloud.networking.local_network_cidrs | length > 0
       - private_cloud_secrets.networking.cloudflare_api_token | length >= 20
       - private_cloud_secrets.networking.cloudflare_ddns_api_token | length >= 20
-      - private_cloud_secrets.networking.amneziawg_private_key | length == 44
+      - private_cloud_secrets.networking.amneziawg_admin_password | length >= 16
     fail_msg: Networking configuration is invalid.
   no_log: true
 
@@ -27,6 +27,22 @@
     private_cloud_service_dataset_mountpoint: "{{ networking_traefik_mountpoint }}"
     private_cloud_service_dataset_owner: 65532
     private_cloud_service_dataset_group: 65532
+
+- name: Prepare the AmneziaWG service dataset
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
+  vars:
+    private_cloud_service_name: AmneziaWG
+    private_cloud_service_dataset: "{{ networking_amneziawg_dataset }}"
+    private_cloud_service_dataset_mountpoint: "{{ networking_amneziawg_mountpoint }}"
+    private_cloud_service_storage_size: "{{ private_cloud.networking.amneziawg.storage_size }}"
+
+# wg-easy runs as root to manage the tunnel and its iptables rules inside the pod network namespace.
+- name: Set AmneziaWG dataset permissions
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_permissions.yml"
+  vars:
+    private_cloud_service_dataset_mountpoint: "{{ networking_amneziawg_mountpoint }}"
+    private_cloud_service_dataset_owner: 0
+    private_cloud_service_dataset_group: 0
 
 - name: Select the Traefik storage node
   ansible.builtin.set_fact:
@@ -93,7 +109,7 @@
     name: "{{ item.name }}"
   loop:
     - {name: cloudflare-dns-api, namespace: edge}
-    - {name: amneziawg-config, namespace: network-access}
+    - {name: amneziawg-admin, namespace: network-access}
   register: networking_secret_revisions
   changed_when: false
   no_log: true

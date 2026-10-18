@@ -73,13 +73,13 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 - [ ] Point the domain's authoritative DNS to Cloudflare before deployment.
 - [ ] Use a registered domain, a reachable AirVPN WireGuard endpoint, and a public SMTP relay; validation rejects private or reserved substitutes.
 - [ ] Create separate zone-scoped Cloudflare tokens for DDNS, Traefik ACME, and Stalwart ACME.
-- [ ] Reserve `private_cloud.networking.traefik_internal_ip` for the host on the router.
+- [ ] Reserve `private_cloud.networking.lan.address` for the host on the router.
 - [ ] Provide a physical Intel iGPU or supported PCI passthrough before enabling Intel GPU workloads.
 - [ ] Select Immich CPU acceleration and disable the Intel GPU stage on VMware Workstation.
 - [ ] Confirm the ISP provides a reachable public IPv4 address and permits inbound TCP 25.
 - [ ] Ask the ISP to publish the reverse-DNS PTR record for the public mail address.
 - [ ] Forward WAN TCP 25 and TCP 443, plus the configured AmneziaWG UDP port, to the host.
-- [ ] Configure LAN and VPN split DNS for the configured service hostnames.
+- [ ] Configure LAN and VPN split DNS for the configured service hostnames and the AmneziaWG UI hostname.
 - [ ] Resolve the OpenCloud hostname to the Traefik address for LAN clients and pods.
 - [ ] Keep public mail hostname records DNS-only so SMTP reaches the host directly.
 
@@ -87,7 +87,7 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 
 - [ ] Keep the primary domain's MX records pointed at the external inbox provider.
 - [ ] Point the forwarding domain's MX record at the configured Stalwart mail hostname.
-- [ ] Configure the external inbox to forward accepted messages to `<mailbox_username>@<forwarding_domain>`.
+- [ ] Configure the external inbox to forward accepted messages to `<mailbox_username>@inbound.<domain>`.
 - [ ] Publish the SPF, DKIM, and DMARC records required by the external inbox and outbound relay.
 - [ ] Publish and verify the DKIM record configured in Stalwart.
 - [ ] Confirm the forwarding alias delivers mail to `<mailbox_username>@<domain>`.
@@ -147,10 +147,20 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 - [ ] Create users and grant their library access in Jellyfin.
 - [ ] Authorize supported native clients through Jellyfin Quick Connect.
 
+## AmneziaWG peers
+
+- [ ] Add `vpn-admin.<domain>` to LAN split DNS and leave it out of public DNS.
+- [ ] Point `networking.amneziawg.dns` at the LAN resolver that serves split DNS.
+- [ ] Sign in at `https://vpn-admin.<domain>` with `networking.amneziawg.admin_username` and the stored password.
+- [ ] Enable two-factor authentication for the administrator in the UI.
+- [ ] Create one client per device and scan its QR code with the AmneziaWG app.
+- [ ] Enable the per-client firewall in the UI and set firewall entries to narrow single peers.
+- [ ] Manage peers remotely only after connecting through the VPN.
+
 ## First administrators
 
-- [ ] Sign in to Immich with `private_cloud.immich.admin_email` and the stored Immich administrator password.
-- [ ] Sign in to AFFiNE with `private_cloud.affine.admin_email` and the stored AFFiNE administrator password.
+- [ ] Sign in to Immich with `private_cloud.admin_email` and the stored Immich administrator password.
+- [ ] Sign in to AFFiNE with `private_cloud.admin_email` and the stored AFFiNE administrator password.
 - [ ] Sign in to Jellyfin with `private_cloud.media.jellyfin_admin_username` and the stored Jellyfin administrator password.
 - [ ] Record any generated password printed once by the installer.
 - [ ] Change the passwords inside each application if desired.
@@ -164,6 +174,7 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 - [ ] Verify inbound SMTP preserves the sender address through Proxy Protocol.
 - [ ] Interrupt the AirVPN WireGuard tunnel and confirm guarded media apps lose external access.
 - [ ] Confirm each AmneziaWG peer can reach only its approved LAN destinations.
+- [ ] Confirm the AmneziaWG UI is unreachable from WAN.
 
 ## Deployment acceptance
 
@@ -189,7 +200,7 @@ Complete the external prerequisites above before the first installation, or the 
 - Cluster node, volume, and workload readiness.
 - Service protocols, authenticated APIs, and OpenCloud storage round trips.
 - HTTPS and SMTP STARTTLS certificates chain to Mozilla public roots and expire in more than 14 days.
-- Host split DNS resolves every checked hostname to `networking.traefik_internal_ip`.
+- Host split DNS resolves every checked hostname to the host address in `networking.lan.address`.
 - Cloudflare `1.1.1.1` and Google `8.8.8.8` resolve each managed record to the address returned by `networking.public_ip_url`.
 - The forwarding-domain MX includes the Stalwart hostname.
 - The primary-domain MX points away from Stalwart.

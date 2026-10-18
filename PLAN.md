@@ -133,8 +133,8 @@ This file is the source of truth for the desired system state and its major deci
 - Delete accounts manually in OpenCloud and each downstream application
 - Remove user-owned data and revoke credentials during each application's account deletion
 - Preserve data when disabling accounts and preserve resources owned by other users during deletion
-- Keep Stalwart, Jellyfin, the ARR stack, Zabbix, and OpenObserve on native passwords
-- Keep AmneziaWG peers on their configured keys
+- Keep Stalwart, Jellyfin, the ARR stack, Zabbix, OpenObserve, and the AmneziaWG UI on native passwords
+- Keep AmneziaWG peers on keys generated in its UI
 - Keep backend APIs, database connections, mail transport, and log ingestion on service credentials
 - Keep internal services without interactive logins private
 
@@ -167,10 +167,10 @@ This file is the source of truth for the desired system state and its major deci
     * Reject invalid relay certificates
     * Supply the relay password through the Stalwart runtime Secret
     * Use the configured notification sender address for alert emails
-    * Address alerts to `<stalwart.mailbox_username>@<stalwart.forwarding_domain>`
+    * Address alerts to `<stalwart.mailbox_username>@inbound.<domain>`
     * Send OpenObserve and Zabbix alerts directly to Stalwart's internal SMTP listener on TCP 2525
     * Use plain SMTP without authentication for internal alerts
-    * Deliver the forwarding alias into `<stalwart.mailbox_username>@<stalwart.domain>`
+    * Deliver the forwarding alias into `<stalwart.mailbox_username>@<domain>`
     * Restrict internal alert SMTP ingress and egress to OpenObserve, Zabbix, and Stalwart pods
     * Reject anonymous external relaying on the internal SMTP listener
 - Support JMAP access, SMTP forwarding, filtering, outbound relay, and automatic certificate renewal
@@ -377,6 +377,7 @@ This file is the source of truth for the desired system state and its major deci
 ### Public entry and DNS
 
 - Maintain configured public A records with a dedicated Cloudflare DDNS token
+- Derive every service hostname from one base domain
 
 ### Traefik
 
@@ -419,16 +420,22 @@ This file is the source of truth for the desired system state and its major deci
 ### VPN and media routing
 
 - Run AmneziaWG with the userspace amneziawg-go implementation so no host kernel module is needed
-- Keep AmneziaWG routing, NAT, and peer ACLs inside its pod network namespace
+- Keep AmneziaWG routing, NAT, and peer firewall rules inside its pod network namespace
 - Route guarded media application egress through the AirVPN WireGuard gateway with fail-closed policies
 - Keep Jellyfin ingress behind Traefik and allow direct Internet metadata egress
-- Restrict AmneziaWG peers to approved LAN destinations and public Internet forwarding
+- Cap AmneziaWG peers at configured LAN destinations, peer DNS, Traefik, and public Internet through its NetworkPolicy
 - Deny AmneziaWG peer access to other peers, pod CIDRs, service CIDRs, and media APIs
 
 ### AmneziaWG
 
-- Deploy AmneziaWG in the network-access namespace with a configured UDP hostPort
-- Authenticate VPN peers using their configured keys
+- Deploy AmneziaWG through wg-easy in the network-access namespace with a configured UDP hostPort
+- Force wg-easy's AmneziaWG mode onto the bundled userspace amneziawg-go
+- Generate the server key and obfuscation values on first start
+- Create the UI administrator from Vault on first start
+- Manage peers, client keys, QR codes, and per-peer firewall entries in the UI
+- Publish the UI through Traefik only to local networks and VPN peers
+- Keep the UI database on its own dataset, quota, and 10Ti PV
+- Block peer-to-peer forwarding in the mangle table so UI edits cannot reopen it
 - Use native stdout/stderr logging for collection by Alloy
 
 ## Observability

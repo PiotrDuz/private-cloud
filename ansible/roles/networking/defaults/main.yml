@@ -12,7 +12,10 @@ networking_traefik_route_services:
   - zabbix
   - openobserve
   - jellyfin
-networking_amneziawg_tools_image: amneziavpn/amneziawg-go:3.1.20260828@sha256:cbafc02b8373a83f428272db6d8001b37bc02e6211cbd8c0cb4e2e3759b12b72
+  - amneziawg
+networking_amneziawg_image: ghcr.io/wg-easy/wg-easy:15.4.0@sha256:0e7bc9d34e86ddcaa92bc700d4d7dc9b33291dbc07ac8d13382f7c2095f949ec
+networking_amneziawg_dataset: tank/secure/backup/k0s/services/amneziawg
+networking_amneziawg_mountpoint: /tank/secure/backup/k0s/services/amneziawg
 networking_traefik_dataset: tank/secure/backup/k0s/services/traefik
 networking_traefik_mountpoint: /tank/secure/backup/k0s/services/traefik
 networking_traefik_pv_capacity: 10Ti

@@ -83,6 +83,7 @@ Validators trust only the distribution's Mozilla root store in `/usr/share/ca-ce
 ## Networking and media
 
 - Networking validation checks Traefik, AmneziaWG, the VPN interface, firewall rules, and routes.
+- It requires wg-easy to report AmneziaWG mode, the tunnel on the configured port, and the peer isolation rule.
 - It requires the production Let's Encrypt and Cloudflare endpoints in Traefik and DDNS.
 - It requires Traefik to use only the file provider, with no RBAC binding and no service-account token.
 - Service validation requires a Traefik route ConfigMap in `edge` for every enabled routed service.

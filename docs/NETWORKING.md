@@ -15,7 +15,7 @@ The cluster uses default-deny pod networking, a restricted host firewall, Traefi
 | `private-cloud` | Applications, OpenCloud identity, and dependencies. | Explicit application flows only. |
 | `media` | Jellyfin, Sonarr, Radarr, Prowlarr, and qBittorrent. | Jellyfin accepts only Traefik ingress and exits directly for metadata; guarded apps exit through AirVPN WireGuard. |
 | `edge` | Traefik HTTPS and SMTP entry plus the Grist oauth2-proxy helper. | Only approved application listeners are reachable. |
-| `network-access` | AmneziaWG server and peer forwarding. | Per-peer LAN permissions and public Internet egress. |
+| `network-access` | AmneziaWG server, peer forwarding, and its wg-easy UI. | Configured LAN ceiling, per-peer UI firewall, and public Internet egress. |
 | `dns-system` | Cloudflare DDNS updater. | DNS management has no application-data access. |
 | `observability` | Alloy and OpenObserve. | Alloy ingests node logs; OpenObserve provides the authenticated HTTPS interface. |
 | `kube-system` / host | CNI, DNS, device plugin, and control plane. | Infrastructure privileges stay outside application workloads. |
@@ -66,7 +66,7 @@ Traefik binds host TCP `443` and TCP `25` from a pod in `edge`.
 - Zabbix server TCP `31051` is the only retained NodePort.
 - AmneziaWG remains a direct UDP hostPort because HTTP/TCP routing cannot proxy its UDP tunnel protocol usefully.
 
-Public DNS resolves enabled application names to the home WAN address. Split DNS resolves the same names to `networking.traefik_internal_ip` for LAN and AmneziaWG clients. OpenCloud and OnlyOffice callbacks use that internal HTTPS address.
+Public DNS resolves enabled application names to the home WAN address. Split DNS resolves the same names to the host address in `networking.lan.address` for LAN and AmneziaWG clients. OpenCloud and OnlyOffice callbacks use that internal HTTPS address.
 
 OpenCloud uses its configured HTTPS URL as the issuer. LAN clients and pods must resolve that hostname to the Traefik address so the issuer matches for browsers and services.
 
@@ -149,20 +149,27 @@ Jellyfin uses the local read-only media library and one shared `gpu.intel.com/i9
 
 ## AmneziaWG
 
-AmneziaWG runs in `network-access` with pod networking and one UDP hostPort. The pod runs the userspace amneziawg-go implementation through `/dev/net/tun`, so the host needs no kernel module, while tunnel routes, NAT, and peer ACLs are created only inside the pod network namespace.
+AmneziaWG runs in `network-access` as [wg-easy](https://github.com/wg-easy/wg-easy) with pod networking and one UDP hostPort. wg-easy's experimental AmneziaWG mode is forced on, so `awg-quick` starts the bundled userspace amneziawg-go through `/dev/net/tun` and the host needs no kernel module. Tunnel routes, NAT, and peer firewall rules exist only inside the pod network namespace.
 
-This keeps Amnezia-specific interface settings and iptables rules out of the host network namespace and prevents them from changing other pods' routing or firewall rules. The pod still has `NET_ADMIN`, so its image and configuration remain infrastructure-trusted.
+The pod still has `NET_ADMIN` and `NET_RAW`, and the UI administrator can edit its interface hooks, so the UI credentials are infrastructure-trusted.
+
+- wg-easy generates the server key and AmneziaWG obfuscation values on first start.
+- The installer creates the UI administrator from Vault on first start only.
+- Peers, client keys, QR codes, and per-peer firewall entries are managed in the UI.
+- The UI is published at `vpn-admin.<domain>` and admits only local networks and VPN peers.
+- The UI hostname stays out of public DNS and resolves through split DNS.
+- wg-easy stores its database and configuration on the `amneziawg` dataset.
 
 | Peer destination | Route | Enforcement |
 | --- | --- | --- |
-| Public Internet | Peer → AmneziaWG → host uplink → ISP. | Pod firewall permits public destinations and applies NAT. |
+| Public Internet | Peer → AmneziaWG → host uplink → ISP. | NetworkPolicy permits public destinations; the pod applies NAT. |
 | Application names | Peer → split DNS → Traefik TCP `443`. | Only approved HTTPS hosts route to backends. |
-| LAN devices | Peer → AmneziaWG → configured LAN IP and port. | Per-peer allowlists are enforced in the pod. |
-| Other peers, pod CIDRs, service CIDRs, and media APIs | No route. | Pod firewall denies the connection. |
+| Peer DNS | Peer → configured LAN resolver TCP/UDP `53`. | NetworkPolicy permits only `networking.amneziawg.dns`. |
+| LAN devices | Peer → AmneziaWG → configured LAN IP and port. | NetworkPolicy caps all peers at `networking.amneziawg.lan_access`; UI firewall entries narrow single peers. |
+| Other peers | No route. | A mangle rule drops `wg0` to `wg0` forwarding before wg-easy's rules. |
+| Pod CIDRs, service CIDRs, and media APIs | No route. | NetworkPolicy denies the connection. |
 
-The AmneziaWG pod egress policy rejects the configured pod and service CIDRs before it forwards other public destinations.
-
-The tunnel subnet must not overlap local, pod, service, or common client networks. Each peer receives a unique key and address. Client `AllowedIPs` settings select routes but do not replace server-side authorization.
+A peer without UI firewall entries reaches everything under the NetworkPolicy ceiling. The tunnel subnet must not overlap local, pod, service, or common client networks.
 
 ## Cloudflare DDNS
 
@@ -192,7 +199,7 @@ Everything omitted is denied. Each entry permits connection initiation in the st
 | Guarded media pod | Media VPN gateway | Proxy and DNS ports only. |
 | Media VPN gateway | AirVPN WireGuard endpoint | Pinned endpoint IP and UDP port. |
 | Media integrations | Declared arr / qBittorrent APIs | Required API ports only. |
-| AmneziaWG peer | Approved LAN target | Per-peer destination IPs and ports. |
+| AmneziaWG peer | Approved LAN target | Configured destination IPs and ports, narrowed per peer in the UI. |
 | AmneziaWG peer | Public Internet | Full-tunnel forwarding after private-range denials. |
 | Declared application | PostgreSQL and internal dependency | Service-specific ports only. |
 | Stalwart | Cloudflare, Let's Encrypt, DNS, relay, and mail lookups | Required service ports only. |
@@ -226,7 +233,8 @@ Repository implementation is not evidence of live enforcement. Before exposure:
 - Confirm Immich machine learning downloads models over TCP `443`.
 - Confirm Jellyfin downloads metadata over IPv4 and cannot initiate IPv6 connections.
 - Confirm Jellyfin streaming and local scanning continue during media VPN failure.
-- Verify per-peer AmneziaWG LAN permissions and full-tunnel Internet egress.
+- Verify the AmneziaWG LAN ceiling, per-peer UI firewall entries, and full-tunnel Internet egress.
+- Verify the AmneziaWG UI rejects clients outside local networks and the VPN.
 - Verify AmneziaWG peers cannot reach the pod or service CIDRs.
 - Confirm qBittorrent reports `tun0` as its bound interface.
 - Verify Jellyfin transcoding uses the Intel GPU.

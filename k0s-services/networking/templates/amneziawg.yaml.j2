@@ -22,51 +22,89 @@ spec:
         sysctls:
           - {name: net.ipv4.ip_forward, value: '1'}
         seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        # The mangle table runs before wg-easy's filter rules, so UI hook or firewall edits cannot reopen peer-to-peer traffic.
+        - name: peer-isolation
+          image: {{ networking_amneziawg_image }}
+          command: [/bin/sh, -ceu]
+          args:
+            - iptables -t mangle -C FORWARD -i wg0 -o wg0 -j DROP 2>/dev/null || iptables -t mangle -A FORWARD -i wg0 -o wg0 -j DROP
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL], add: [NET_ADMIN, NET_RAW]}
+            seccompProfile: {type: RuntimeDefault}
       containers:
         - name: amneziawg
-          image: {{ networking_amneziawg_tools_image }}
-          command: [/bin/bash, -ceu]
-          args:
-            - |
-              awg-quick up /etc/amneziawg/awg0.conf
-              trap 'awg-quick down /etc/amneziawg/awg0.conf' TERM INT EXIT
-              sleep infinity & wait $!
+          image: {{ networking_amneziawg_image }}
+          env:
+            - {name: PORT, value: "51821"}
+            - {name: INSECURE, value: "false"}
+            # Forcing awg skips wg-easy's kernel-module probe; awg-quick then starts the bundled userspace amneziawg-go.
+            - {name: EXPERIMENTAL_AWG, value: "true"}
+            - {name: OVERRIDE_AUTO_AWG, value: awg}
+            - {name: DISABLE_IPV6, value: "true"}
+            - {name: DISABLE_VERSION_CHECK, value: "true"}
+            - {name: INIT_ENABLED, value: "true"}
+            - name: INIT_USERNAME
+              valueFrom: {secretKeyRef: {name: amneziawg-admin, key: username}}
+            - name: INIT_PASSWORD
+              valueFrom: {secretKeyRef: {name: amneziawg-admin, key: password}}
+            - {name: INIT_HOST, value: {{ private_cloud.networking.amneziawg.hostname | to_json }}}
+            - {name: INIT_PORT, value: "{{ private_cloud.networking.amneziawg.listen_port }}"}
+            - {name: INIT_DNS, value: {{ private_cloud.networking.amneziawg.dns | join(',') | to_json }}}
+            - {name: INIT_IPV4_CIDR, value: {{ private_cloud.networking.amneziawg.tunnel_cidr | to_json }}}
+            # wg-easy requires both CIDRs together; DISABLE_IPV6 keeps the IPv6 range unused.
+            - {name: INIT_IPV6_CIDR, value: "fdcc:ad94:bacf:61a4::cafe:0/112"}
           ports:
             - name: tunnel
               containerPort: {{ private_cloud.networking.amneziawg.listen_port }}
               hostPort: {{ private_cloud.networking.amneziawg.listen_port }}
               protocol: UDP
+            - name: ui
+              containerPort: 51821
+              protocol: TCP
           resources:
             requests: {cpu: 50m, memory: {{ private_cloud_memory_requests.amneziawg }}}
-            limits: {memory: 128Mi}
+            limits: {memory: 256Mi}
           readinessProbe:
-            exec:
-              command: [awg, show, awg0]
+            httpGet: {path: /api/information, port: ui}
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 6
           livenessProbe:
             exec:
-              command: [awg, show, awg0]
-            initialDelaySeconds: 20
+              command: [awg, show, wg0]
+            initialDelaySeconds: 30
             periodSeconds: 20
             timeoutSeconds: 3
             failureThreshold: 3
           securityContext:
             privileged: false
             allowPrivilegeEscalation: false
-            capabilities: {drop: [ALL], add: [NET_ADMIN]}
+            capabilities: {drop: [ALL], add: [NET_ADMIN, NET_RAW]}
             seccompProfile: {type: RuntimeDefault}
           volumeMounts:
-            - {name: config, mountPath: /etc/amneziawg, readOnly: true}
+            - {name: data, mountPath: /etc/wireguard}
             - {name: tun, mountPath: /dev/net/tun}
       volumes:
-        - name: config
-          secret: {secretName: amneziawg-config, defaultMode: 0400}
+        - name: data
+          persistentVolumeClaim:
+            claimName: amneziawg-data
         # The userspace amneziawg-go tunnel needs no host kernel module, so it loads under Secure Boot.
         - name: tun
           hostPath: {path: /dev/net/tun, type: CharDevice}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: amneziawg
+  namespace: network-access
+spec:
+  selector: {app.kubernetes.io/name: amneziawg}
+  ports:
+    - {name: ui, port: 51821, targetPort: ui, protocol: TCP}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -79,11 +117,24 @@ spec:
   policyTypes: [Ingress, Egress]
   ingress:
     - ports: [{protocol: UDP, port: {{ private_cloud.networking.amneziawg.listen_port }}}]
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: edge}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports: [{protocol: TCP, port: 51821}]
+  # This policy is the ceiling for every peer; per-peer firewall entries in the UI can only narrow it.
   egress:
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
               - {{ private_cloud.networking.pod_cidr }}
               - {{ private_cloud.networking.service_cidr }}
     # HostPort traffic to the configured HTTPS endpoint is DNATed to Traefik's pod port.
@@ -93,3 +144,15 @@ spec:
           podSelector:
             matchLabels: {app.kubernetes.io/name: traefik}
       ports: [{protocol: TCP, port: 8443}]
+    - to:
+{% for server in private_cloud.networking.amneziawg.dns %}
+        - ipBlock: {cidr: {{ server }}/32}
+{% endfor %}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+{% for rule in private_cloud.networking.amneziawg.lan_access %}
+    - to:
+        - ipBlock: {cidr: {{ rule.destination if '/' in rule.destination else rule.destination ~ '/32' }}}
+      ports: [{protocol: {{ rule.protocol }}, port: {{ rule.port }}}]
+{% endfor %}

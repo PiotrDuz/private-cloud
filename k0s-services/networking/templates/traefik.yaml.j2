@@ -138,6 +138,12 @@ spec:
       ports: [{protocol: TCP, port: 5080}]
     - to:
         - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: network-access}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: amneziawg}
+      ports: [{protocol: TCP, port: 51821}]
+    - to:
+        - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: kube-system}
           podSelector:
             matchLabels: {k8s-app: kube-dns}

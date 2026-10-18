@@ -5,7 +5,7 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 ## Installation
 
 - Enable `private_cloud.stages.zabbix_agent` in the public configuration.
-- Set the monitored hostname under `private_cloud.networking.zabbix_hostname` and the active server through the constants in `ansible/service_catalog.yml`.
+- The Zabbix hostname is `monitor.<domain>`; set the active server through the constants in `ansible/service_catalog.yml`.
 - Run `sudo python3 ansible/install.py` from the repository root.
 - The agent listens on localhost and uses unencrypted local transport.
 

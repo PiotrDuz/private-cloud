@@ -1,5 +1,8 @@
-schema_version: 14
+schema_version: 16
 private_cloud:
+  domain: example.com
+  admin_email: admin@example.com
+  timezone: Etc/UTC
   stages:
     zfs: true
     boot_integrity: false
@@ -35,40 +38,28 @@ private_cloud:
     ephemeral_quota: 10G
   networking:
     storage_size: 1G
-    acme_email: admin@example.com
     cloudflare_zone_id: '00000000000000000000000000000000'
     public_ip_url: https://api.ipify.org
-    managed_records:
-      - affine.example.com
-      - cloud.example.com
-      - grist.example.com
-      - jellyfin.example.com
-      - mail.example.com
-      - monitor.example.com
-      - logs.example.com
-      - onlyoffice.example.com
-      - photos.example.com
-      - vpn.example.com
     pod_cidr: 10.244.0.0/16
     service_cidr: 10.96.0.0/12
     cluster_dns_ip: 10.96.0.10
+    lan:
+      interface: enp1s0
+      address: 192.168.1.10/24
+      gateway: 192.168.1.1
     local_network_cidrs:
       - 192.168.1.0/24
-    traefik_internal_ip: 192.168.1.10
-    zabbix_hostname: monitor.example.com
     amneziawg:
-      hostname: vpn.example.com
-      address: 10.90.0.1/24
+      admin_username: vpn-admin
+      storage_size: 1G
       tunnel_cidr: 10.90.0.0/24
       listen_port: 51820
-      peers:
-        - name: phone
-          address: 10.90.0.2
-          public_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-          lan_access:
-            - destination: 192.168.1.20/32
-              protocol: TCP
-              port: 443
+      dns:
+        - 192.168.1.1
+      lan_access:
+        - destination: 192.168.1.20/32
+          protocol: TCP
+          port: 443
   media:
     max_ram:
       sonarr: 1Gi
@@ -81,8 +72,6 @@ private_cloud:
       dns: 128Mi
       file_logs: 64Mi
     storage_size: 1T
-    hostname: jellyfin.example.com
-    timezone: Etc/UTC
     jellyfin_admin_username: admin
     quality_profiles:
       sonarr: 1080p
@@ -107,16 +96,12 @@ private_cloud:
   onlyoffice:
     storage_size: 20G
     max_ram: 4Gi
-    hostname: onlyoffice.example.com
   opencloud:
     storage_size: 100G
     max_ram: 1Gi
-    hostname: cloud.example.com
   grist:
     storage_size: 50G
     max_ram: 2Gi
-    default_email: admin@example.com
-    hostname: grist.example.com
   manticore:
     storage_size: 50G
     max_ram: 1Gi
@@ -125,24 +110,15 @@ private_cloud:
   affine:
     storage_size: 100G
     max_ram: 2Gi
-    hostname: affine.example.com
-    admin_email: admin@example.com
   immich:
     storage_size: 100G
-    hostname: photos.example.com
-    timezone: Etc/UTC
     max_ram: 2Gi
     machine_learning_max_ram: 3Gi
     machine_learning_accelerator: openvino
     valkey_max_ram: 256Mi
-    admin_email: admin@example.com
   stalwart:
     storage_size: 100G
     max_ram: 1Gi
-    domain: example.com
-    forwarding_domain: inbound.example.com
-    hostname: mail.example.com
-    acme_contact: postmaster@example.com
     admin_username: admin
     mailbox_username: user
     relay_host: mail.inbox.eu
@@ -153,7 +129,6 @@ private_cloud:
     storage_size: 5G
     admin_username: Admin
   logging:
-    hostname: logs.example.com
     openobserve_storage_size: 50G
     alloy_storage_size: 5G
     openobserve_max_ram: 2Gi
@@ -162,8 +137,5 @@ private_cloud:
   notifications:
     from_address: user@example.com
   boot_integrity:
-    interface: enp1s0
-    host_address: 192.168.1.10/24
-    gateway_ip: 192.168.1.1
     extra_pcrs: []
     extra_drivers: []

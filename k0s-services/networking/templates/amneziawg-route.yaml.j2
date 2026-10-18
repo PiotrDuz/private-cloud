@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-route-amneziawg
+  namespace: edge
+  labels: {private-cloud.example/traefik-route: "true"}
+data:
+  amneziawg.yaml: |
+    http:
+      routers:
+        amneziawg:
+          entryPoints: [websecure]
+          rule: Host(`{{ private_cloud.networking.amneziawg.ui_hostname }}`)
+          service: amneziawg
+          middlewares: [amneziawg-local-only]
+          tls:
+            certResolver: cloudflare
+      # LAN clients keep their source address; VPN peers arrive masqueraded from the AmneziaWG pod.
+      middlewares:
+        amneziawg-local-only:
+          ipAllowList:
+            sourceRange:
+{% for network in private_cloud.networking.local_network_cidrs %}
+              - {{ network }}
+{% endfor %}
+              - {{ private_cloud.networking.pod_cidr }}
+      services:
+        amneziawg:
+          loadBalancer:
+            servers:
+              - url: http://amneziawg.network-access.svc.cluster.local:51821

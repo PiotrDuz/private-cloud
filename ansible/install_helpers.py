@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import getpass
 import ipaddress
 import json
@@ -37,6 +38,7 @@ VAULT_PASSWORD_FILE = RUNTIME_DIRECTORY / "vault-password"
 OLD_VAULT_PASSWORD_FILE = RUNTIME_DIRECTORY / "old-vault-password"
 TEMP_SECRET_FILE = RUNTIME_DIRECTORY / "secrets.yml"
 TEMP_PUBLIC_FILE = RUNTIME_DIRECTORY / "public.yml"
+TEMP_RESOLVED_FILE = RUNTIME_DIRECTORY / "resolved.yml"
 TEMP_ENCRYPTED_FILE = RUNTIME_DIRECTORY / "private-cloud.secrets.yml"
 TEMP_RUNTIME_FILE = RUNTIME_DIRECTORY / "runtime.yml"
 KUBECONFIG_FILE = RUNTIME_DIRECTORY / "kubeconfig"
@@ -45,8 +47,8 @@ LUKS_KEY_FILE = RUNTIME_DIRECTORY / "luks-key"
 INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
 SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate", "validate")
-CURRENT_SCHEMA_VERSION = 14
-CURRENT_SECRETS_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 16
+CURRENT_SECRETS_SCHEMA_VERSION = 9
 SECRET_SCHEMAS = {
     "storage": {"encryption_passphrase"},
     "postgres": {"admin_password"},
@@ -58,7 +60,7 @@ SECRET_SCHEMAS = {
     "grist": {"database_password", "session_secret", "boot_key", "oidc_client_secret", "oidc_cookie_secret"},
     "affine": {"database_password", "oidc_client_secret", "admin_password"},
     "immich": {"database_password", "oidc_client_secret", "admin_password"},
-    "networking": {"cloudflare_api_token", "cloudflare_ddns_api_token", "amneziawg_private_key"},
+    "networking": {"cloudflare_api_token", "cloudflare_ddns_api_token", "amneziawg_admin_password"},
     "logging": {"admin_password"},
     "media": {"wireguard_private_key", "wireguard_preshared_key", "proxy_password", "qbittorrent_password", "jellyfin_admin_password"},
 }
@@ -88,6 +90,7 @@ ADMIN_PASSWORDS = {
     ("media", "jellyfin_admin_password"),
     ("immich", "admin_password"),
     ("affine", "admin_password"),
+    ("networking", "amneziawg_admin_password"),
 }
 MACHINE_SECRETS = {
     ("meilisearch", "master_key"),
@@ -125,6 +128,34 @@ DOMAIN_PATTERN = re.compile(r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[
 EMAIL_PATTERN = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}")
 USERNAME_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]{0,30}[A-Za-z0-9])?")
 MAILBOX_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._+-]{0,62}[A-Za-z0-9])?")
+TIMEZONE_PATTERN = re.compile(r"[A-Za-z_+-]+/[A-Za-z_+/-]+")
+SERVICE_SUBDOMAINS = {
+    "networking": "vpn",
+    "media": "jellyfin",
+    "stalwart": "mail",
+    "onlyoffice": "onlyoffice",
+    "opencloud": "cloud",
+    "grist": "grist",
+    "affine": "affine",
+    "immich": "photos",
+    "logging": "logs",
+    "zabbix_server": "monitor",
+}
+AMNEZIAWG_UI_SUBDOMAIN = "vpn-admin"
+MAIL_FORWARDING_SUBDOMAIN = "inbound"
+DERIVED_KEYS = {
+    ("networking",): {"acme_email", "managed_records", "traefik_internal_ip", "zabbix_hostname"},
+    ("networking", "amneziawg"): {"hostname", "ui_hostname"},
+    ("media",): {"hostname", "timezone"},
+    ("onlyoffice",): {"hostname"},
+    ("opencloud",): {"hostname"},
+    ("grist",): {"hostname", "default_email"},
+    ("affine",): {"hostname", "admin_email"},
+    ("immich",): {"hostname", "timezone", "admin_email"},
+    ("stalwart",): {"domain", "forwarding_domain", "hostname", "acme_contact"},
+    ("logging",): {"hostname"},
+    ("boot_integrity",): {"interface", "host_address", "gateway_ip"},
+}
 
 
 def require_root() -> None:
@@ -154,7 +185,7 @@ def ensure_runtime_directory(path: Path = RUNTIME_DIRECTORY) -> None:
 
 
 def remove_stale_runtime_files(path: Path = RUNTIME_DIRECTORY) -> None:
-    for name in (TEMP_SECRET_FILE.name, TEMP_PUBLIC_FILE.name, TEMP_ENCRYPTED_FILE.name, TEMP_RUNTIME_FILE.name, VAULT_PASSWORD_FILE.name, OLD_VAULT_PASSWORD_FILE.name, KUBECONFIG_FILE.name, LUKS_PASSPHRASE_FILE.name, LUKS_KEY_FILE.name):
+    for name in (TEMP_SECRET_FILE.name, TEMP_PUBLIC_FILE.name, TEMP_RESOLVED_FILE.name, TEMP_ENCRYPTED_FILE.name, TEMP_RUNTIME_FILE.name, VAULT_PASSWORD_FILE.name, OLD_VAULT_PASSWORD_FILE.name, KUBECONFIG_FILE.name, LUKS_PASSPHRASE_FILE.name, LUKS_KEY_FILE.name):
         candidate = path / name
         if candidate.exists() or candidate.is_symlink():
             details = candidate.lstat()
@@ -274,6 +305,75 @@ def prompt_secret(prompt: str, *, confirm: bool = True, generated: str | None = 
 
 
 def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
+    validate_resolved_configuration(resolve_public_configuration(configuration))
+
+
+def resolve_public_configuration(configuration: Mapping[str, Any]) -> dict[str, Any]:
+    """Expand the stored base values into the full contract that Ansible consumes."""
+    if not isinstance(configuration.get("private_cloud"), dict):
+        raise InstallerError("Public configuration must contain a private_cloud mapping")
+    result = copy.deepcopy(dict(configuration))
+    cloud = result["private_cloud"]
+    if not {"domain", "admin_email", "timezone"} <= set(cloud) or any(not isinstance(_section(cloud, path), dict) for path in DERIVED_KEYS):
+        raise InstallerError("Public configuration has missing or unknown sections")
+    for path, keys in DERIVED_KEYS.items():
+        stored = sorted(keys & set(_section(cloud, path)))
+        if stored:
+            raise InstallerError(f"Derived keys must not be stored: {'.'.join(path)}.{', '.join(stored)}")
+    domain, admin_email, timezone = cloud.pop("domain"), cloud.pop("admin_email"), cloud.pop("timezone")
+    if not isinstance(domain, str) or not DOMAIN_PATTERN.fullmatch(domain):
+        raise InstallerError("Invalid private_cloud.domain")
+    networking = cloud["networking"]
+    lan = networking.pop("lan", None)
+    if not isinstance(lan, dict) or set(lan) != {"interface", "address", "gateway"}:
+        raise InstallerError("networking.lan must contain interface, address, and gateway")
+    try:
+        lan_address = ipaddress.IPv4Interface(lan["address"])
+    except (TypeError, ValueError) as error:
+        raise InstallerError("Invalid networking.lan.address") from error
+    stages = cloud["stages"] if isinstance(cloud.get("stages"), dict) else {}
+    hostnames = {stage: f"{label}.{domain}" for stage, label in SERVICE_SUBDOMAINS.items()}
+    networking.update({
+        "acme_email": admin_email,
+        "managed_records": [hostname for stage, hostname in hostnames.items() if stages.get(stage)],
+        "traefik_internal_ip": str(lan_address.ip),
+        "zabbix_hostname": hostnames["zabbix_server"],
+    })
+    networking["amneziawg"].update({"hostname": hostnames["networking"], "ui_hostname": f"{AMNEZIAWG_UI_SUBDOMAIN}.{domain}"})
+    cloud["media"].update({"hostname": hostnames["media"], "timezone": timezone})
+    for stage in ("onlyoffice", "opencloud", "logging"):
+        cloud[stage]["hostname"] = hostnames[stage]
+    cloud["grist"].update({"hostname": hostnames["grist"], "default_email": admin_email})
+    cloud["affine"].update({"hostname": hostnames["affine"], "admin_email": admin_email})
+    cloud["immich"].update({"hostname": hostnames["immich"], "timezone": timezone, "admin_email": admin_email})
+    cloud["stalwart"].update({
+        "domain": domain,
+        "forwarding_domain": f"{MAIL_FORWARDING_SUBDOMAIN}.{domain}",
+        "hostname": hostnames["stalwart"],
+        "acme_contact": admin_email,
+    })
+    cloud["boot_integrity"].update({"interface": lan["interface"], "host_address": lan["address"], "gateway_ip": lan["gateway"]})
+    return result
+
+
+def discover_lan() -> dict[str, str] | None:
+    routes = json.loads(run_command(["ip", "-j", "-4", "route", "show", "default"]).stdout or "[]")
+    route = next((entry for entry in routes if entry.get("gateway") and entry.get("dev")), None)
+    if route is None:
+        return None
+    interfaces = json.loads(run_command(["ip", "-j", "-4", "address", "show", "dev", route["dev"]]).stdout or "[]")
+    addresses = [info for entry in interfaces for info in entry.get("addr_info", []) if info.get("scope") == "global"]
+    if not addresses:
+        return None
+    return {"interface": route["dev"], "address": f"{addresses[0]['local']}/{addresses[0]['prefixlen']}", "gateway": route["gateway"]}
+
+
+def discover_timezone() -> str:
+    zone = os.path.realpath("/etc/localtime").partition("/zoneinfo/")[2]
+    return zone if TIMEZONE_PATTERN.fullmatch(zone) else "Etc/UTC"
+
+
+def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
     if set(configuration) != {"schema_version", "private_cloud"} or not isinstance(configuration["private_cloud"], dict):
         raise InstallerError("Public configuration must contain only schema_version and private_cloud")
     if configuration["schema_version"] != CURRENT_SCHEMA_VERSION:
@@ -335,7 +435,7 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if not re.fullmatch(r"https://[^\s/]+(?:/[^\s]*)?", str(networking.get("public_ip_url", ""))):
         raise InstallerError("Invalid networking.public_ip_url")
     managed_records = networking.get("managed_records")
-    if not isinstance(managed_records, list) or not managed_records or len(managed_records) != len(set(managed_records)):
+    if not isinstance(managed_records, list) or (stages["networking"] and not managed_records) or len(managed_records) != len(set(managed_records)):
         raise InstallerError("Cloudflare managed records must be a non-empty unique list")
     if any(not isinstance(record, str) or not DOMAIN_PATTERN.fullmatch(record) for record in managed_records):
         raise InstallerError("Invalid Cloudflare managed record")
@@ -361,40 +461,49 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
     if traefik_address in pod_network or traefik_address in service_network:
         raise InstallerError("Pod, service, and Traefik address ranges must not overlap")
     amneziawg = networking.get("amneziawg")
-    if not isinstance(amneziawg, dict) or set(amneziawg) != {"hostname", "address", "tunnel_cidr", "listen_port", "peers"}:
-        raise InstallerError("AmneziaWG configuration is incomplete")
-    if not DOMAIN_PATTERN.fullmatch(str(amneziawg.get("hostname", ""))):
-        raise InstallerError("Invalid AmneziaWG hostname")
+    if not isinstance(amneziawg, dict) or set(amneziawg) != {"hostname", "ui_hostname", "admin_username", "storage_size", "tunnel_cidr", "listen_port", "dns", "lan_access"}:
+        raise InstallerError("AmneziaWG configuration has missing or unknown keys")
+    for key in ("hostname", "ui_hostname"):
+        if not DOMAIN_PATTERN.fullmatch(str(amneziawg.get(key, ""))):
+            raise InstallerError(f"Invalid networking.amneziawg.{key}")
+    if amneziawg["ui_hostname"] in managed_records:
+        raise InstallerError("The AmneziaWG UI hostname must stay out of public DNS records")
+    if not isinstance(amneziawg["admin_username"], str) or not USERNAME_PATTERN.fullmatch(amneziawg["admin_username"]):
+        raise InstallerError("Invalid networking.amneziawg.admin_username")
+    if not QUOTA_PATTERN.fullmatch(str(amneziawg["storage_size"])):
+        raise InstallerError("Invalid networking.amneziawg.storage_size")
     try:
         tunnel_network = ipaddress.ip_network(amneziawg["tunnel_cidr"], strict=True)
-        server_interface = ipaddress.ip_interface(amneziawg["address"])
-        peer_addresses = [ipaddress.ip_address(peer["address"]) for peer in amneziawg["peers"]]
-    except (KeyError, TypeError, ValueError) as error:
-        raise InstallerError("Invalid AmneziaWG address configuration") from error
-    if server_interface.ip not in tunnel_network or any(address not in tunnel_network for address in peer_addresses):
-        raise InstallerError("Every AmneziaWG address must belong to its tunnel CIDR")
+    except (TypeError, ValueError) as error:
+        raise InstallerError("Invalid AmneziaWG tunnel CIDR") from error
+    if tunnel_network.version != 4 or tunnel_network.num_addresses < 4:
+        raise InstallerError("The AmneziaWG tunnel must be an IPv4 network with room for peers")
     if tunnel_network.overlaps(pod_network) or tunnel_network.overlaps(service_network) or any(tunnel_network.overlaps(network) for network in local_networks):
         raise InstallerError("The AmneziaWG tunnel must not overlap cluster or local networks")
-    if len(peer_addresses) != len(set(peer_addresses)) or server_interface.ip in peer_addresses:
-        raise InstallerError("AmneziaWG tunnel addresses must be unique")
     if type(amneziawg.get("listen_port")) is not int or not 1 <= amneziawg["listen_port"] <= 65535:
         raise InstallerError("Invalid AmneziaWG listen port")
-    if not amneziawg["peers"] or any(set(peer) != {"name", "address", "public_key", "lan_access"} or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", peer["name"]) or not re.fullmatch(r"[A-Za-z0-9+/]{43}=", peer["public_key"]) for peer in amneziawg["peers"]):
-        raise InstallerError("Invalid AmneziaWG peer configuration")
-    for peer in amneziawg["peers"]:
-        if not isinstance(peer["lan_access"], list):
-            raise InstallerError("AmneziaWG peer LAN access must be a list")
-        for rule in peer["lan_access"]:
-            try:
-                destination = ipaddress.ip_network(rule["destination"], strict=False)
-            except (KeyError, TypeError, ValueError) as error:
-                raise InstallerError("Invalid AmneziaWG LAN destination") from error
-            if set(rule) != {"destination", "protocol", "port"} or destination.version != 4:
-                raise InstallerError("Invalid AmneziaWG LAN rule")
-            if not any(destination.subnet_of(network) for network in local_networks):
-                raise InstallerError("AmneziaWG LAN destinations must belong to a local network")
-            if rule["protocol"] not in {"TCP", "UDP"} or type(rule["port"]) is not int or not 1 <= rule["port"] <= 65535:
-                raise InstallerError("Invalid AmneziaWG LAN protocol or port")
+    if not isinstance(amneziawg["dns"], list) or not amneziawg["dns"]:
+        raise InstallerError("AmneziaWG peers need at least one DNS server")
+    for server in amneziawg["dns"]:
+        try:
+            address = ipaddress.IPv4Address(server)
+        except (TypeError, ValueError) as error:
+            raise InstallerError("Invalid AmneziaWG DNS server") from error
+        if not any(address in network for network in local_networks):
+            raise InstallerError("AmneziaWG DNS servers must belong to a local network for split DNS")
+    if not isinstance(amneziawg["lan_access"], list):
+        raise InstallerError("AmneziaWG LAN access must be a list")
+    for rule in amneziawg["lan_access"]:
+        try:
+            destination = ipaddress.ip_network(rule["destination"], strict=True)
+        except (KeyError, TypeError, ValueError) as error:
+            raise InstallerError("Invalid AmneziaWG LAN destination") from error
+        if set(rule) != {"destination", "protocol", "port"} or destination.version != 4:
+            raise InstallerError("Invalid AmneziaWG LAN rule")
+        if not any(destination.subnet_of(network) for network in local_networks):
+            raise InstallerError("AmneziaWG LAN destinations must belong to a local network")
+        if rule["protocol"] not in {"TCP", "UDP"} or type(rule["port"]) is not int or not 1 <= rule["port"] <= 65535:
+            raise InstallerError("Invalid AmneziaWG LAN protocol or port")
     media = cloud["media"]
     if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "timezone", "quality_profiles", "vpn", "max_ram", "jellyfin_admin_username"}:
         raise InstallerError("Media configuration has missing or unknown keys")
@@ -610,9 +719,11 @@ def validate_public_configuration(configuration: Mapping[str, Any]) -> None:
         "immich": cloud["immich"]["hostname"],
     }
     enabled_hostnames = [hostname for stage, hostname in public_hostnames.items() if stages[stage]]
+    if stages["networking"]:
+        enabled_hostnames.append(amneziawg["ui_hostname"])
     if len(enabled_hostnames) != len(set(enabled_hostnames)):
         raise InstallerError("Enabled public service hostnames must be unique")
-    missing_records = sorted(set(enabled_hostnames) - set(managed_records))
+    missing_records = sorted(set(public_hostnames[stage] for stage in public_hostnames if stages[stage]) - set(managed_records))
     if missing_records:
         raise InstallerError(f"Cloudflare managed records are missing: {', '.join(missing_records)}")
 
@@ -695,8 +806,6 @@ def validate_secrets_configuration(configuration: Mapping[str, Any], stages: Map
     networking_secrets = secrets_root.get("networking", {})
     if any(len(networking_secrets.get(key, "x" * 20)) < 20 for key in ("cloudflare_api_token", "cloudflare_ddns_api_token")):
         raise InstallerError("Each Cloudflare API token must contain at least 20 characters")
-    if "amneziawg_private_key" in networking_secrets and not WIREGUARD_KEY_PATTERN.fullmatch(networking_secrets["amneziawg_private_key"]):
-        raise InstallerError("The AmneziaWG private key is invalid")
     media_secrets = secrets_root.get("media", {})
     if any(key in media_secrets and not WIREGUARD_KEY_PATTERN.fullmatch(media_secrets[key]) for key in ("wireguard_private_key", "wireguard_preshared_key")):
         raise InstallerError("The media WireGuard private and preshared keys must be base64 WireGuard keys")
@@ -930,6 +1039,13 @@ def _sanitize_failure_text(value: str, limit: int) -> str:
     text = re.sub(r"(?i)(password|passphrase|secret|token|key)(\s*[=:]\s*)([^\s,;}]+)", r"\1\2[redacted]", text)
     text = " ".join(text.split())
     return (text[: limit - 3] + "...") if len(text) > limit else text
+
+
+def _section(cloud: Mapping[str, Any], path: tuple[str, ...]) -> Any:
+    value: Any = cloud
+    for key in path:
+        value = value.get(key) if isinstance(value, dict) else None
+    return value
 
 
 class InstallerError(RuntimeError):
