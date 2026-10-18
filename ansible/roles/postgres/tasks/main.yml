@@ -177,7 +177,7 @@
     namespace: "{{ postgres_namespace }}"
     pod: "{{ postgres_pods.resources[0].metadata.name }}"
     command: psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS vector;"
-  when: postgres_extension_state.stdout.split('|')[0] == 'absent'
+  when: (postgres_extension_state.stdout | trim).split('|')[0] == 'absent'
   changed_when: true
 
 - name: Enable VectorChord in the PostgreSQL administrator database
@@ -186,7 +186,7 @@
     namespace: "{{ postgres_namespace }}"
     pod: "{{ postgres_pods.resources[0].metadata.name }}"
     command: psql -v ON_ERROR_STOP=1 -At -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS vchord CASCADE;"
-  when: postgres_extension_state.stdout.split('|')[1] == 'absent'
+  when: (postgres_extension_state.stdout | trim).split('|')[1] == 'absent'
   changed_when: true
 
 - name: Validate PostgreSQL after installation

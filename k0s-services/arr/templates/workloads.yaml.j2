@@ -23,6 +23,9 @@ metadata:
   namespace: media
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
+    rollingUpdate: null
   selector:
     matchLabels: {app.kubernetes.io/name: media-vpn}
   template:
@@ -35,11 +38,18 @@ spec:
       containers:
         - name: wireguard
           image: {{ media_vpn_gateway_image }}
+          # Container restarts keep the pod network namespace, so clear rules left by the previous tunnel.
+          command:
+            - /bin/sh
+            - -c
+            - while ip rule del table 51820 2>/dev/null; do :; done; while ip -6 rule del table 51820 2>/dev/null; do :; done; exec /gluetun-entrypoint
           env:
             - {name: VPN_SERVICE_PROVIDER, value: custom}
             - {name: VPN_TYPE, value: wireguard}
             - {name: VPN_INTERFACE, value: wg0}
             - {name: DNS_SERVER, value: 'off'}
+            # Gluetun creates /tmp/gluetun without search permission, which root cannot use without DAC_OVERRIDE.
+            - {name: PUBLICIP_FILE, value: /tmp/gluetun-ip}
             - {name: WIREGUARD_IMPLEMENTATION, value: kernelspace}
             - {name: WIREGUARD_ENDPOINT_IP, value: {{ private_cloud.media.vpn.endpoint_ip | to_json }}}
             - {name: WIREGUARD_ENDPOINT_PORT, value: {{ private_cloud.media.vpn.endpoint_port | string | to_json }}}

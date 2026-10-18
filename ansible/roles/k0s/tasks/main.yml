@@ -336,6 +336,12 @@
   delay: 2
   when: private_cloud.stages.networking | bool
 
+- name: Wait for the running kubelet configuration
+  ansible.builtin.wait_for:
+    path: /run/k0s/kubelet/config.yaml
+    timeout: 300
+  when: private_cloud.stages.networking | bool
+
 - name: Read the running kubelet configuration
   ansible.builtin.slurp:
     src: /run/k0s/kubelet/config.yaml

@@ -3,7 +3,7 @@
   ansible.builtin.assert:
     that:
       - intel_gpu_shared_device_count | int >= 2
-      - intel_gpu_kubelet_device_plugin_path == '/tank/secure/k0s/kubelet/device-plugins'
+      - intel_gpu_kubelet_device_plugin_path == '/var/lib/kubelet/device-plugins'
     fail_msg: Intel GPU role constants are invalid.
 
 - name: Install Intel integrated graphics firmware
@@ -36,6 +36,27 @@
       - intel_gpu_render_device.stat.ischr | default(false)
     fail_msg: The Intel i915 render device /dev/dri/renderD128 is unavailable.
 
+# A replaced boot framebuffer can leave dangling by-path links that break CDI device mounts.
+- name: Install the dangling DRM link cleanup service
+  ansible.builtin.template:
+    src: private-cloud-dri-links.service.j2
+    dest: "/etc/systemd/system/{{ intel_gpu_dri_links_service }}"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable the dangling DRM link cleanup service
+  ansible.builtin.systemd:
+    name: "{{ intel_gpu_dri_links_service }}"
+    enabled: true
+    daemon_reload: true
+
+- name: Remove dangling DRM by-path links
+  ansible.builtin.command:
+    argv: [find, /dev/dri/by-path, -xtype, l, -print, -delete]
+  register: intel_gpu_dangling_links
+  changed_when: intel_gpu_dangling_links.stdout | trim | length > 0
+
 - name: Record the Intel GPU render group
   ansible.builtin.set_fact:
     intel_gpu_render_group_id: "{{ intel_gpu_render_device.stat.gid | int }}"
@@ -56,6 +77,11 @@
     kubeconfig: "{{ intel_gpu_kubeconfig }}"
     state: present
     definition: "{{ private_cloud_rendered_manifests }}"
+
+- name: Regenerate the Intel GPU CDI specification without dangling links
+  ansible.builtin.command:
+    argv: [k0s, kubectl, --kubeconfig, "{{ intel_gpu_kubeconfig }}", rollout, restart, -n, "{{ intel_gpu_namespace }}", "daemonset/{{ intel_gpu_daemonset_name }}"]
+  when: intel_gpu_dangling_links.changed
 
 - name: Wait for the Intel GPU device plugin
   kubernetes.core.k8s_info:

@@ -20,7 +20,6 @@
     src: "/run/private-cloud/{{ item.source }}"
     dest: "{{ zfs_installer_config_mountpoint }}/{{ item.destination }}"
     remote_src: true
-    decrypt: false
     owner: root
     group: root
     mode: '0600'

@@ -60,9 +60,13 @@ spec:
             seccompProfile: {type: RuntimeDefault}
           volumeMounts:
             - {name: config, mountPath: /etc/amneziawg, readOnly: true}
+            - {name: tun, mountPath: /dev/net/tun}
       volumes:
         - name: config
           secret: {secretName: amneziawg-config, defaultMode: 0400}
+        # The userspace amneziawg-go tunnel needs no host kernel module, so it loads under Secure Boot.
+        - name: tun
+          hostPath: {path: /dev/net/tun, type: CharDevice}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

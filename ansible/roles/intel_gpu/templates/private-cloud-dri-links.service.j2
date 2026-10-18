@@ -1,0 +1,14 @@
+[Unit]
+Description=Remove dangling DRM by-path links before the GPU device plugin starts
+After=systemd-modules-load.service systemd-udev-trigger.service
+Before=k0scontroller.service
+ConditionPathIsDirectory=/dev/dri/by-path
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/udevadm settle
+ExecStart=/usr/bin/find /dev/dri/by-path -xtype l -delete
+
+[Install]
+WantedBy=multi-user.target

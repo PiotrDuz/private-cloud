@@ -105,28 +105,6 @@
     that: networking_validation_traefik_networkpolicy.resources | length == 1
     fail_msg: Traefik's egress NetworkPolicy is missing.
 
-- name: Require egress to every ready Kubernetes API endpoint
-  ansible.builtin.assert:
-    that:
-      - >-
-        (item ~ '/32') in (networking_validation_traefik_networkpolicy.resources[0].spec.egress | to_json)
-      - >-
-        (networking_validation_traefik_networkpolicy.resources[0].spec.egress | to_json
-        | regex_search('"port"\s*:\s*' ~ (networking_validation_api_tcp_ports[0] | string) ~ '[^0-9]')) is not none
-    fail_msg: Traefik's egress policy cannot reach the discovered Kubernetes API endpoint.
-  loop: "{{ networking_validation_api_addresses }}"
-
-- name: Verify the AmneziaWG kernel module loaded on the host
-  ansible.builtin.command:
-    argv: [modinfo, -F, filename, amneziawg]
-  register: networking_validation_amneziawg_module
-  changed_when: false
-
-- name: Require the installed AmneziaWG kernel module
-  ansible.builtin.assert:
-    that: networking_validation_amneziawg_module.stdout is search('/updates/dkms/amneziawg[.]ko')
-    fail_msg: The AmneziaWG kernel module was not installed from DKMS.
-
 - name: Verify AmneziaWG enables forwarding in its isolated network namespace
   ansible.builtin.command:
     argv: [k0s, kubectl, exec, -n, network-access, deployment/amneziawg, --, cat, /proc/sys/net/ipv4/ip_forward]

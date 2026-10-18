@@ -12,7 +12,7 @@ The networking services are managed by `ansible/roles/networking`.
 - Pods reach the public hostname through the Traefik pod port.
 - The Cloudflare DDNS CronJob maintains configured public A records, proxy status, and TTL.
 - AmneziaWG binds one configured UDP hostPort.
-- The AmneziaWG kernel module is installed on the host.
+- AmneziaWG runs the userspace amneziawg-go implementation without a host kernel module.
 - AmneziaWG routes and firewall rules remain inside its pod network namespace.
 - Default-deny policies cover every managed namespace.
 - The host nftables policy limits all other incoming ports.

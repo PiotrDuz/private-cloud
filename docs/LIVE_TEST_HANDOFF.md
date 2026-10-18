@@ -186,7 +186,7 @@ Browser login, document editing, public mail routing, physical GPU behavior, and
 | Area | Main corrections |
 | --- | --- |
 | Traefik | Discovered API endpoint egress, Node read permissions, replacement strategy, and SMTP destination port preservation. |
-| AmneziaWG | Linux 7 DKMS compatibility, forwarding sysctl allowlist, peer-secret rollout checksum, and precise HTTPS egress through Traefik. |
+| AmneziaWG | userspace amneziawg-go tunnel, forwarding sysctl allowlist, peer-secret rollout checksum, and precise HTTPS egress through Traefik. |
 | Media | Correct tun2socks flags, real tunnel health checks, startup capabilities, restart-safe routing, and bounded ARR configuration retries. |
 | ARR configuration | Corrected comparisons for write-only secret fields to make reapplication idempotent. |
 | Jellyfin | Raised trial dataset quotas to satisfy its startup free-space requirement. |

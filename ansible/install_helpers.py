@@ -911,12 +911,12 @@ def _write_command_log(args: Sequence[str], stdout: str, stderr: str) -> Path:
 
 
 def _summarize_command_failure(command: str, stdout: str, stderr: str, stage: str | None) -> tuple[str, str, str]:
-    failure_match = re.search(r"(?m)^fatal: .*?FAILED! =>", stdout)
+    failure_match = re.search(r"(?m)^(?:fatal: .*?FAILED! =>|failed: \[)", stdout)
     task_output = stdout[:failure_match.start()] if failure_match else stdout
     task_matches = re.findall(r"(?m)^TASK \[([^]]+)]", task_output)
     task = task_matches[-1] if task_matches else command
     inferred_stage = task.split(" : ", 1)[0] if " : " in task else stage or command
-    failure_lines = re.findall(r"(?m)^fatal: .*?FAILED! => (.+)$", stdout)
+    failure_lines = re.findall(r"(?m)^(?:fatal: .*?FAILED!|failed: \[.*?) => (.+)$", stdout)
     detail = "Ansible task failed" if failure_lines else "Command execution failed"
     return (
         _sanitize_failure_text(inferred_stage, 80),

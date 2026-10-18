@@ -149,7 +149,7 @@ Jellyfin uses the local read-only media library and one shared `gpu.intel.com/i9
 
 ## AmneziaWG
 
-AmneziaWG runs in `network-access` with pod networking and one UDP hostPort. The host installs the pinned AmneziaWG kernel module, while tunnel routes, NAT, and peer ACLs are created only inside the pod network namespace.
+AmneziaWG runs in `network-access` with pod networking and one UDP hostPort. The pod runs the userspace amneziawg-go implementation through `/dev/net/tun`, so the host needs no kernel module, while tunnel routes, NAT, and peer ACLs are created only inside the pod network namespace.
 
 This keeps Amnezia-specific interface settings and iptables rules out of the host network namespace and prevents them from changing other pods' routing or firewall rules. The pod still has `NET_ADMIN`, so its image and configuration remain infrastructure-trusted.
 

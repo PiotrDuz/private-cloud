@@ -416,7 +416,7 @@ This file is the source of truth for the desired system state and its major deci
 
 ### VPN and media routing
 
-- Install the AmneziaWG kernel module on the host
+- Run AmneziaWG with the userspace amneziawg-go implementation so no host kernel module is needed
 - Keep AmneziaWG routing, NAT, and peer ACLs inside its pod network namespace
 - Route guarded media application egress through the AirVPN WireGuard gateway with fail-closed policies
 - Keep Jellyfin ingress behind Traefik and allow direct Internet metadata egress
