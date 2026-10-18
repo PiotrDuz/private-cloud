@@ -14,6 +14,8 @@ UNLOCK_RESULT = RUN / "unlock-result"
 INITRD_INVENTORY = RUN / "initrd-inventory"
 CONSOLE_FLAG = RUN / "console-allowed"
 INVENTORY_SCRIPT = HELPERS / "inventory.sh"
+AUTHORIZE_USB_SCRIPT = HELPERS / "authorize-usb.sh"
+ROOT_USB_RULES = Path("/etc/udev/rules.d/90-private-cloud-root-usb.rules")
 
 
 def load_settings() -> dict[str, str]:

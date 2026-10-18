@@ -37,7 +37,7 @@ The host installs a persistent nftables table without flushing kube-router rules
 | Configured local networks | TCP `6443` | Kubernetes API. |
 | Configured local networks | TCP `31051` | Zabbix server. |
 
-All other new traffic to the host is dropped, apart from required DHCP, ICMP, loopback, established traffic, and pod-to-node traffic. Direct external forwarding to pod and service CIDRs is dropped unless it belongs to an approved marked connection.
+Traffic from interfaces other than loopback, the default interface, `kube-bridge`, and pod `veth` links is dropped first. All other new traffic to the host is dropped, apart from required DHCP, ICMP, loopback, established traffic, and pod-to-node traffic. Direct external forwarding to pod and service CIDRs is dropped unless it belongs to an approved marked connection.
 
 The home router remains outside this repository. It must forward WAN TCP `443`, WAN TCP `25`, and the configured AmneziaWG UDP port to the host address. It must not forward SSH, the Kubernetes API, Zabbix, former application NodePorts, or any media service.
 

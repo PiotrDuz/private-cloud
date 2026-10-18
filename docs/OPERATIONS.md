@@ -178,7 +178,7 @@ Backup automation and independent outage monitoring are not configured by this r
 - Sign the UKI on the workstation and copy it to `signed.efi` in the build directory.
 - Rerun the installer to install the signed UKI.
 - Expect the first reboot to wipe the unlock and ask for the LUKS recovery passphrase.
-- Log in with the administrator password and unplug external USB devices.
+- Log in with the administrator password and unplug external USB devices except a USB system disk.
 - Rerun the installer to enroll the unlock again.
 - Reboot and run the installer `validate` action.
 

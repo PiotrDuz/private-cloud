@@ -19,6 +19,13 @@
       - networking_validation_firewall_rules.stdout is search('iifname "lo" accept')
     fail_msg: The active firewall does not expose the configured service ports or preserve local host traffic.
 
+- name: Verify that unknown interfaces are dropped
+  ansible.builtin.assert:
+    that:
+      - networking_validation_firewall_rules.stdout is search('iifname "veth\*" accept')
+      - networking_validation_firewall_rules.stdout is search('iifname != \{[^}]*"kube-bridge"[^}]*\} drop')
+    fail_msg: The active firewall accepts traffic from interfaces other than loopback, the default interface, and pod networking.
+
 - name: Wait for Traefik and AmneziaWG rollouts
   ansible.builtin.command:
     argv:

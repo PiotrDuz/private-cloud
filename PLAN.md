@@ -68,6 +68,7 @@ This file is the source of truth for the desired system state and its major deci
 - Power off after a runtime wipe and never reboot from a check
 - Disable initrd shells
 - Disable console login and external USB devices while armed
+- Authorize only the storage interface of a USB system disk and the hubs on its path
 - Run no checks in the wiped state and allow console login with the administrator password
 - Re-enroll the key by hand after each boot-chain update
 
@@ -399,6 +400,7 @@ This file is the source of truth for the desired system state and its major deci
 
 - Restrict SSH, the Kubernetes API, and Zabbix TCP 31051 to local networks
 - Permit only TCP 443, TCP 25, the AmneziaWG UDP port, ICMP, and DHCP from untrusted networks
+- Drop traffic from interfaces other than loopback, the default interface, and pod networking
 - Block obsolete application NodePorts and undeclared host ports
 - Label managed namespaces and enforce default-deny ingress and egress with explicit exceptions
 - Permit application dependencies only through declared service ports and namespace selectors

@@ -194,6 +194,15 @@ Why power off and not reboot: a reboot would give a thief a host that unlocks it
 
 `authorized_default=2` relies on ACPI marking the ports as internal. Check on this board which devices it leaves unauthorized.
 
+#### USB system disk
+
+- Detect whether the LUKS device sits behind USB from its sysfs path.
+- Write a udev rule for that port, vendor, product, and serial into the host and the initrd.
+- Bind only mass-storage interfaces on the disk adapter and hub interfaces on hubs along the path.
+- Write no rule for an internal SATA or NVMe system disk.
+
+Why: the port is removable, so `authorized_default=2` would hide the system disk in the initrd. An adapter with a zero serial can be replaced by a composite device with the same IDs. Binding only the storage interface leaves an added keyboard or network function without a driver. The disk serial in PCR 15 still detects a swapped disk.
+
 ### 10. Running-host hardening
 
 - Enable VT-d with strict IOMMU invalidation (`intel_iommu=on iommu.strict=1`).
@@ -288,7 +297,7 @@ Update:
 5. Rerun the installer to place the UKI on the ESP.
 6. Reboot; the key read fails, the hook wipes, and the recovery prompt appears.
 7. Attach a keyboard, enter the recovery passphrase, and log in with the administrator password.
-8. Unplug the keyboard and every other external USB device.
+8. Unplug the keyboard and every other external USB device except a USB system disk.
 9. Rerun the installer, confirm the gateway MAC and USB list, and enter the recovery passphrase.
 10. Reboot and confirm an unattended unlock.
 

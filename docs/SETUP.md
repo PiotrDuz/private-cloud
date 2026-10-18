@@ -17,7 +17,7 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 ### Firmware settings
 
 - [ ] Set a firmware administrator password.
-- [ ] Disable USB, PXE, and network boot.
+- [ ] Disable USB, PXE, and network boot; with a USB system disk, allow only the `private-cloud` boot entry instead.
 - [ ] Disable the one-time boot menu.
 - [ ] Enable Intel PTT.
 - [ ] Enable VT-d and pre-boot DMA protection if offered.
@@ -47,7 +47,7 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 
 ### Enroll the unlock
 
-- [ ] Unplug every external USB device, including the keyboard.
+- [ ] Unplug every external USB device, including the keyboard, except a USB system disk.
 - [ ] Confirm the host booted the signed UKI.
 - [ ] Rerun the installer and review the gateway MAC and USB device list.
 - [ ] Enter the LUKS recovery passphrase when prompted.

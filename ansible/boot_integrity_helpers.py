@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import tpm_nv
-from boot_settings import ENROLLMENT, INITRD_INVENTORY, INVENTORY_SCRIPT, UKI_LIBRARY, UNLOCK_RESULT, load_settings
+from boot_settings import AUTHORIZE_USB_SCRIPT, ENROLLMENT, INITRD_INVENTORY, INVENTORY_SCRIPT, ROOT_USB_RULES, UKI_LIBRARY, UNLOCK_RESULT, load_settings
 from install_helpers import LUKS_KEY_FILE, LUKS_PASSPHRASE_FILE, InstallerError, atomic_write, prompt_bool, prompt_choice, prompt_secret
 
 CRYPTTAB = Path("/etc/crypttab")
@@ -21,6 +21,9 @@ TPM_DEVICE = Path("/dev/tpmrm0")
 SECURE_BOOT_VARIABLE = Path("/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c")
 STUB_VARIABLE = Path("/sys/firmware/efi/efivars/StubInfo-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f")
 LUKS_SLOT = "7"
+USB_DEVICE = re.compile(r"\d+-[\d.]+")
+USB_STORAGE_CLASS = "08"
+USB_HUB_CLASS = "09"
 HELD_PACKAGES = ("linux-generic", "linux-image-generic", "linux-firmware", "intel-microcode", "dracut", "dracut-core", "systemd-ukify", "systemd-boot-efi")
 
 
@@ -58,6 +61,8 @@ def validation_failures(configuration: Mapping[str, Any]) -> list[str]:
         (service_active("private-cloud-tripwire.service"), "The tripwire service is not running"),
         (not Path("/run/private-cloud/console-allowed").exists(), "The console accepts logins while the unlock is armed"),
         (not initrd_view_differences(), "The initrd hardware inventory differs from the running system"),
+        (installed_root_usb_rules().strip() == root_usb_rules().strip(), "The root disk USB rules do not match the root disk path"),
+        (not unexpected_root_usb_interfaces(), "The root disk USB path has authorized interfaces outside storage and hubs"),
         (Path("/etc/apt/apt.conf.d/52private-cloud-boot-chain").exists(), "Automatic boot-chain updates are not blocked"),
         (not unheld_packages(), f"Boot-chain packages are not held: {', '.join(unheld_packages())}"),
     ]
@@ -135,7 +140,7 @@ def confirm_enrollment(inventory: str, gateway: str) -> bool:
     usb_devices = [line for line in inventory.splitlines() if line.startswith("usb ")]
     print(f"Gateway MAC address: {gateway}")
     print("USB devices that will be bound to the unlock:\n  " + "\n  ".join(usb_devices))
-    return prompt_bool("Unplug every external USB device first; enroll with exactly these devices", False)
+    return prompt_bool("Unplug every external USB device except the root disk path first; enroll with exactly these devices", False)
 
 
 def arm(configuration: Mapping[str, Any], build: Mapping[str, str], inventory: str, gateway: str, passphrase: str) -> None:
@@ -181,6 +186,30 @@ def luks_target() -> tuple[str, str]:
     return (f"/dev/disk/by-uuid/{source[5:]}" if source.startswith("UUID=") else source), name
 
 
+def root_usb_authorizations() -> list[tuple[str, str]]:
+    """Return each USB device from the root hub to a USB root disk with the only interface class it may bind."""
+    path = root_usb_path()
+    return [(device.name, USB_STORAGE_CLASS if device == path[-1] else USB_HUB_CLASS) for device in path]
+
+
+def root_usb_rules() -> str:
+    """Return udev rules that authorize only the storage path of a USB root disk; an internal disk needs none."""
+    return "".join(usb_rule(Path("/sys/bus/usb/devices", name), interface_class) for name, interface_class in root_usb_authorizations())
+
+
+def installed_root_usb_rules() -> str:
+    return ROOT_USB_RULES.read_text() if ROOT_USB_RULES.exists() else ""
+
+
+def unexpected_root_usb_interfaces() -> list[str]:
+    found = []
+    for name, interface_class in root_usb_authorizations():
+        for interface in Path("/sys/bus/usb/devices", name).glob(f"{name}:*"):
+            if usb_attribute(interface, "authorized") == "1" and usb_attribute(interface, "bInterfaceClass") != interface_class:
+                found.append(interface.name)
+    return found
+
+
 def secure_boot_enabled() -> bool:
     try:
         return SECURE_BOOT_VARIABLE.read_bytes()[-1] == 1
@@ -218,3 +247,24 @@ def run(arguments: list[str], check: bool = True) -> subprocess.CompletedProcess
     if check and result.returncode != 0:
         raise InstallerError(f"{arguments[0]} failed: {result.stderr.strip() or result.stdout.strip()}")
     return result
+
+
+def root_usb_path() -> list[Path]:
+    block = Path(luks_target()[0]).resolve().name
+    device = Path("/sys/class/block", block).resolve()
+    return [parent for parent in reversed(device.parents) if USB_DEVICE.fullmatch(parent.name)]
+
+
+def usb_rule(device: Path, interface_class: str) -> str:
+    values = {name: usb_attribute(device, name) for name in ("idVendor", "idProduct", "serial")}
+    if any(not re.fullmatch(r"[\x21-\x7e ]*", value) or '"' in value for value in values.values()):
+        raise InstallerError(f"The USB device {device.name} on the root disk path reports identifiers that a udev rule cannot match")
+    matches = [f'KERNEL=="{device.name}"', *(f'ATTR{{{name}}}=="{value}"' for name, value in values.items() if value)]
+    return f'ACTION=="add", SUBSYSTEM=="usb", ENV{{DEVTYPE}}=="usb_device", {", ".join(matches)}, RUN+="{AUTHORIZE_USB_SCRIPT} %k {interface_class}"\n'
+
+
+def usb_attribute(device: Path, name: str) -> str:
+    try:
+        return (device / name).read_text().strip()
+    except OSError:
+        return ""

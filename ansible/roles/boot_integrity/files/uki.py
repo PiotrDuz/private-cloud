@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from boot_settings import CONFIGURATION, HELPERS, UKI_LIBRARY, load_settings
+from boot_settings import AUTHORIZE_USB_SCRIPT, CONFIGURATION, HELPERS, ROOT_USB_RULES, UKI_LIBRARY, load_settings
 
 MODULE_DIRECTORY = Path("/usr/lib/dracut/modules.d/90private-cloud-tpm")
 DRACUT_CONFIGURATION = Path("/etc/dracut.conf.d/90-private-cloud.conf")
@@ -82,7 +82,8 @@ def kernel_command_line() -> str:
 def inputs_digest(kernel: str, command_line: str) -> str:
     result = hashlib.sha256(f"{kernel}\n{command_line}\n".encode())
     paths = [Path(f"/boot/vmlinuz-{kernel}"), CONFIGURATION, DRACUT_CONFIGURATION, Path("/etc/crypttab"), Path("/etc/os-release"),
-             HELPERS / "inventory.sh", *sorted(MODULE_DIRECTORY.glob("*"))]
+             HELPERS / "inventory.sh", AUTHORIZE_USB_SCRIPT, *sorted(MODULE_DIRECTORY.glob("*"))]
+    result.update(ROOT_USB_RULES.read_bytes() if ROOT_USB_RULES.exists() else b"internal root disk\n")
     for path in paths:
         result.update(digest(path).encode())
     return result.hexdigest()

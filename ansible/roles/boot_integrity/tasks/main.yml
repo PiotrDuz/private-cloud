@@ -51,10 +51,41 @@
     mode: "{{ item.mode }}"
   loop:
     - {src: inventory.sh, dest: inventory.sh, mode: '0755'}
+    - {src: authorize-usb.sh, dest: authorize-usb.sh, mode: '0755'}
     - {src: tripwire.py, dest: tripwire.py, mode: '0755'}
     - {src: uki.py, dest: uki.py, mode: '0755'}
     - {src: "{{ playbook_dir }}/tpm_nv.py", dest: tpm_nv.py, mode: '0644'}
     - {src: "{{ playbook_dir }}/boot_settings.py", dest: boot_settings.py, mode: '0644'}
+
+- name: Resolve the USB path of the root disk
+  ansible.builtin.command:
+    argv: [python3, -c, "import json; from boot_integrity_helpers import root_usb_authorizations, root_usb_rules; print(json.dumps({'rules': root_usb_rules(), 'devices': root_usb_authorizations()}))"]
+    chdir: "{{ playbook_dir }}"
+  register: boot_integrity_root_usb
+  changed_when: false
+
+- name: Authorize only the storage path of a USB root disk
+  ansible.builtin.copy:
+    content: "{{ (boot_integrity_root_usb.stdout | from_json).rules }}"
+    dest: /etc/udev/rules.d/90-private-cloud-root-usb.rules
+    owner: root
+    group: root
+    mode: '0644'
+  register: boot_integrity_root_usb_rules
+  when: (boot_integrity_root_usb.stdout | from_json).rules | length > 0
+
+- name: Remove the USB authorization rules for an internal root disk
+  ansible.builtin.file:
+    path: /etc/udev/rules.d/90-private-cloud-root-usb.rules
+    state: absent
+  when: (boot_integrity_root_usb.stdout | from_json).rules | length == 0
+
+- name: Unbind non-storage functions on the current boot
+  ansible.builtin.command:
+    argv: ["{{ boot_integrity_helper_directory }}/authorize-usb.sh", "{{ item.0 }}", "{{ item.1 }}"]
+  loop: "{{ (boot_integrity_root_usb.stdout | from_json).devices }}"
+  when: boot_integrity_root_usb_rules is changed
+  changed_when: true
 
 - name: Install the boot integrity settings
   ansible.builtin.template:

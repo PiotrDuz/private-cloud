@@ -12,7 +12,7 @@ depends() {
 }
 
 installkernel() {
-    hostonly='' instmods tpm tpm_crb tpm_tis tpm_tis_core xhci_pci xhci_hcd ehci_pci usbhid hid hid_generic nvme ahci libahci sd_mod
+    hostonly='' instmods tpm tpm_crb tpm_tis tpm_tis_core xhci_pci xhci_hcd ehci_pci usbhid hid hid_generic nvme ahci libahci sd_mod usb_storage uas
 }
 
 install() {
@@ -21,6 +21,10 @@ install() {
     inst_simple "$moddir/unlock.sh" /usr/lib/private-cloud/unlock.sh
     inst_simple /usr/local/libexec/private-cloud/inventory.sh /usr/lib/private-cloud/inventory.sh
     inst_simple /etc/private-cloud/boot-integrity.conf /etc/private-cloud/boot-integrity.conf
+    if [ -f /etc/udev/rules.d/90-private-cloud-root-usb.rules ]; then
+        inst_simple /usr/local/libexec/private-cloud/authorize-usb.sh
+        inst_simple /etc/udev/rules.d/90-private-cloud-root-usb.rules
+    fi
     inst_simple "$moddir/system.conf" /etc/systemd/system.conf.d/90-private-cloud.conf
     inst_simple "$moddir/private-cloud-tpm-unlock.service" "$systemdsystemunitdir/private-cloud-tpm-unlock.service"
     $SYSTEMCTL -q --root "$initdir" add-wants cryptsetup-pre.target private-cloud-tpm-unlock.service

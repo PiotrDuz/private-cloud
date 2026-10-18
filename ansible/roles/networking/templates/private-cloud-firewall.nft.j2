@@ -10,6 +10,9 @@ table inet private_cloud {
     chain prerouting {
         type filter hook prerouting priority mangle; policy accept;
 
+        # Unknown interfaces, such as an attached USB network adapter, carry no host or forwarded traffic.
+        iifname "veth*" accept
+        iifname != { "lo", {{ ansible_default_ipv4.interface | to_json }}, "kube-bridge" } drop
         iifname {{ ansible_default_ipv4.interface | to_json }} ct state established,related accept
         iifname {{ ansible_default_ipv4.interface | to_json }} fib daddr type local ip saddr @local_networks tcp dport { 22, 6443, 31051 } ct mark set 0x5043 accept
         iifname {{ ansible_default_ipv4.interface | to_json }} fib daddr type local tcp dport { 25, 443 } ct mark set 0x5043 accept
