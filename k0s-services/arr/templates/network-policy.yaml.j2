@@ -27,8 +27,11 @@ spec:
     matchLabels: {app.kubernetes.io/name: media-vpn}
   policyTypes: [Egress]
   egress:
+    # Gluetun picks an AirVPN server at runtime; its firewall pins traffic to that server while this policy caps the port.
     - to:
-        - ipBlock: {cidr: {{ private_cloud.media.vpn.endpoint_ip }}/32}
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16]
       ports:
         - {protocol: UDP, port: {{ private_cloud.media.vpn.endpoint_port }}}
     - to:

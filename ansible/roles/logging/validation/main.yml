@@ -41,27 +41,27 @@
     that:
       - >-
         (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
-         | selectattr('name', 'equalto', 'ZO_SMTP_HOST') | map(attribute='value') | first)
+         | selectattr('name', 'equalto', 'ZO_SMTP_HOST') | map(attribute='value', default='') | first)
         == private_cloud_alert_smtp_host
       - >-
         (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
-         | selectattr('name', 'equalto', 'ZO_SMTP_PORT') | map(attribute='value') | first)
+         | selectattr('name', 'equalto', 'ZO_SMTP_PORT') | map(attribute='value', default='') | first)
         == (private_cloud_alert_smtp_port | string)
       - >-
         (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
-         | selectattr('name', 'equalto', 'ZO_SMTP_USER_NAME') | map(attribute='value') | first)
+         | selectattr('name', 'equalto', 'ZO_SMTP_USER_NAME') | map(attribute='value', default='') | first)
         == ''
       - >-
         (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
-         | selectattr('name', 'equalto', 'ZO_SMTP_PASSWORD') | map(attribute='value') | first)
+         | selectattr('name', 'equalto', 'ZO_SMTP_PASSWORD') | map(attribute='value', default='') | first)
         == ''
       - >-
         (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
-         | selectattr('name', 'equalto', 'ZO_SMTP_FROM_EMAIL') | map(attribute='value') | first)
+         | selectattr('name', 'equalto', 'ZO_SMTP_FROM_EMAIL') | map(attribute='value', default='') | first)
         == private_cloud.notifications.from_address
       - >-
         (logging_validation_deployments.results[0].resources[0].spec.template.spec.containers[0].env
-         | selectattr('name', 'equalto', 'ZO_SMTP_ENCRYPTION') | map(attribute='value') | first)
+         | selectattr('name', 'equalto', 'ZO_SMTP_ENCRYPTION') | map(attribute='value', default='') | first)
         == ''
     fail_msg: OpenObserve's SMTP settings do not match the internal Stalwart service.
   when: private_cloud.stages.notifications | bool

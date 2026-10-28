@@ -20,7 +20,7 @@
           {'stage': 'affine', 'id': 'affine', 'redirect': 'https://' ~ private_cloud.affine.hostname ~ '/oauth/callback', 'secret': (private_cloud_secrets.affine | default({})).oidc_client_secret | default('')},
           {'stage': 'immich', 'id': 'immich', 'redirect': 'https://' ~ private_cloud.immich.hostname ~ '/auth/login', 'secret': (private_cloud_secrets.immich | default({})).oidc_client_secret | default('')},
           {'stage': 'immich', 'id': 'immich', 'redirect': 'https://' ~ private_cloud.immich.hostname ~ '/user-settings', 'secret': (private_cloud_secrets.immich | default({})).oidc_client_secret | default('')},
-          {'stage': 'immich', 'id': 'immich', 'redirect': 'app.immich:///oauth-callback', 'secret': (private_cloud_secrets.immich | default({})).oidc_client_secret | default('')}
+          {'stage': 'immich', 'id': 'immich', 'redirect': 'https://' ~ private_cloud.immich.hostname ~ '/api/oauth/mobile-redirect', 'secret': (private_cloud_secrets.immich | default({})).oidc_client_secret | default('')}
         ] | selectattr('stage', 'in', private_cloud.stages | dict2items | selectattr('value', 'equalto', true) | map(attribute='key') | list) | list,
         'end_session_path': grist_opencloud_end_session_path | default('/signin/v1/identifier/_/endsession') if private_cloud.stages.grist | bool else '',
         'forward_auth': {

@@ -1,4 +1,4 @@
-schema_version: 16
+schema_version: 17
 private_cloud:
   domain: example.com
   admin_email: admin@example.com
@@ -54,8 +54,6 @@ private_cloud:
       storage_size: 1G
       tunnel_cidr: 10.90.0.0/24
       listen_port: 51820
-      dns:
-        - 192.168.1.1
       lan_access:
         - destination: 192.168.1.20/32
           protocol: TCP
@@ -78,10 +76,14 @@ private_cloud:
       radarr: 1080p
     vpn:
       gateway_cluster_ip: 10.96.0.53
-      endpoint_ip: 1.2.3.4 # replace with your AirVPN entry IP
+      server_countries:
+        - Switzerland
       endpoint_port: 1637
-      peer_public_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= # replace with the AirVPN server public key
-      address: 10.128.64.2/32 # replace with your AirVPN interface IPv4 address
+      peer_public_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= # replace with the AirVPN [Peer] PublicKey
+      address: 10.128.64.2/32 # replace with your AirVPN [Interface] Address IPv4 value
+      mtu: 1320
+      dns: 10.128.0.1
+      persistent_keepalive: 15
   postgres:
     volume_size: 20G
     max_ram: 2Gi

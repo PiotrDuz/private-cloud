@@ -49,6 +49,22 @@
     that: media_validation_wireguard_tunnel.stdout is search('inet ' ~ private_cloud.media.vpn.address | regex_escape)
     fail_msg: The media VPN container has no wg0 interface with the configured address.
 
+- name: Verify the tunnel peer key, endpoint port, keepalive, and handshake
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/media/check_wireguard_peer.py"]
+    stdin: >-
+      {{ {
+        'interface': 'wg0',
+        'peer_public_key': private_cloud.media.vpn.peer_public_key,
+        'endpoint_port': private_cloud.media.vpn.endpoint_port,
+        'persistent_keepalive': private_cloud.media.vpn.persistent_keepalive
+      } | to_json }}
+  register: media_validation_wireguard_peer
+  until: media_validation_wireguard_peer.rc == 0
+  retries: 6
+  delay: 10
+  changed_when: false
+
 - name: Read the media gateway pod specification
   kubernetes.core.k8s_info:
     kubeconfig: "{{ media_kubeconfig }}"

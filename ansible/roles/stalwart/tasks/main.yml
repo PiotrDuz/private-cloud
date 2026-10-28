@@ -474,5 +474,24 @@
       changed_when: false
   when: stalwart_configuration_required | bool
 
+# The final restart can interrupt the first ACME task, whose lock then blocks retries for an hour.
+- name: Ensure Stalwart has its TLS certificate
+  ansible.builtin.command:
+    argv: [python3, "{{ role_path }}/files/ensure_certificate.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': stalwart_kubeconfig,
+        'namespace': stalwart_namespace,
+        'service': stalwart_service_name,
+        'port': 8080,
+        'username': private_cloud.stalwart.admin_username,
+        'password': private_cloud_secrets.stalwart.admin_password,
+        'hostname': private_cloud.stalwart.hostname,
+        'timeout': 600
+      } | to_json }}
+  register: stalwart_certificate
+  changed_when: (stalwart_certificate.stdout | from_json).changed
+  no_log: true
+
 - name: Validate the installed Stalwart service
   ansible.builtin.include_tasks: ../validation/main.yml

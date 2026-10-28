@@ -25,6 +25,7 @@ The Stalwart service is managed by `ansible/roles/stalwart`.
 - Stalwart obtains and renews its certificate with Let's Encrypt DNS-01.
 - DNS-01 propagation checks use the pod resolver, so no public port `53` egress is needed.
 - The certificate workflow uses its dedicated Cloudflare DNS token.
+- Automatic DNS publishes only TLSA, because Stalwart's CAA `accounturi` record would block Traefik's certificate for the same hostname.
 - Submission ports `465` and `587` and IMAPS `993` are not published.
 - The external inbox receives Internet mail and forwards it to the Stalwart forwarding domain.
 - Stalwart filtering controls which inbound forwarded messages are accepted.
@@ -35,11 +36,16 @@ The Stalwart service is managed by `ansible/roles/stalwart`.
 - The `Authentication` singleton leaves `directoryId` null.
 - Manage mailboxes, aliases, quotas, permissions, and app passwords in Stalwart.
 
+## Logging
+
+- The plan reconciles `Tracer` to a single `Stdout` tracer at `info`.
+- The default file tracer is removed because `/var/log/stalwart` does not exist in the container.
+
 ## Mailbox lifecycle
 
 - Stalwart 0.16 has no account-level enabled flag.
 - Suspend, resume, and delete are operator actions through `stalwart-cli`.
-- Run the commands against `https://mail.<domain>`.
+- Run the commands against `https://mx-inbound.<domain>`.
 - Authenticate with native administrator credentials through `STALWART_USER` and `STALWART_PASSWORD`.
 - List the account id with `stalwart-cli query Account --where name=<username>`.
 - Suspend an account with `stalwart-cli update Account <id> --field 'permissions={"@type":"Merge","disabledPermissions":{"authenticate":true,"authenticateWithAlias":true}}'`.
@@ -54,6 +60,7 @@ The Stalwart service is managed by `ansible/roles/stalwart`.
 - The plan pins `SpamSettings` with `scoreSpam` `5`, `trustContacts`, and `trustReplies`.
 - `scoreReject` and `scoreDiscard` stay `0`, so forwarded mail is never bounced or dropped.
 - Users filter on the `X-Spam-Status` and `X-Spam-Result` headers.
+- The internal alert listener skips the spam filter, so alerts never land in Junk.
 
 ## Manifest review
 

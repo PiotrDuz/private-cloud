@@ -10,6 +10,9 @@ from identity_helpers import (
     https_request, redirect_target, token_error,
 )
 
+# OpenCloud's identity provider answers client authentication failures with access_denied.
+CLIENT_REJECTIONS = {"invalid_client", "access_denied"}
+
 
 def main():
     config = json.load(sys.stdin)
@@ -51,7 +54,8 @@ def check_sign_in_redirect(config, discovery, client):
     )
     target = redirect_target(discovery["authorization_endpoint"], status, response)
     errors = error_parameters(target)
-    if errors or target.netloc != config["hostname"] or target.geturl().startswith(client["redirect"]):
+    callback = target._replace(query="", fragment="").geturl() == client["redirect"]
+    if errors or target.netloc != config["hostname"] or callback:
         raise RuntimeError(f"OpenCloud did not redirect the {client['id']} login to its sign-in page: {errors or target.geturl()[:80]}")
 
 
@@ -61,9 +65,9 @@ def check_client(config, discovery, client):
     probe = lambda redirect, secret: token_error(config["address"], config["hostname"], path, client["id"], redirect, secret)
     if probe(client["redirect"], client.get("secret")) != "invalid_grant":
         raise RuntimeError(f"OpenCloud rejected the {client['id']} client or its {client['redirect']} redirect")
-    if probe(WRONG_REDIRECT, client.get("secret")) != "invalid_client":
+    if probe(WRONG_REDIRECT, client.get("secret")) not in CLIENT_REJECTIONS:
         raise RuntimeError(f"OpenCloud accepted an unregistered redirect for {client['id']}")
-    if client.get("secret") and probe(client["redirect"], WRONG_SECRET) != "invalid_client":
+    if client.get("secret") and probe(client["redirect"], WRONG_SECRET) not in CLIENT_REJECTIONS:
         raise RuntimeError(f"OpenCloud accepted a wrong secret for {client['id']}")
     return client["id"]
 

@@ -34,12 +34,31 @@ The host installs a persistent nftables table without flushing kube-router rules
 | Any source | TCP `25` | Traefik SMTP proxy. |
 | Any source | Configured UDP port | AmneziaWG. |
 | Configured local networks | TCP `22` | SSH. |
+| Configured local networks | TCP and UDP `53` | LAN DNS. |
 | Configured local networks | TCP `6443` | Kubernetes API. |
 | Configured local networks | TCP `31051` | Zabbix server. |
 
 Traffic from interfaces other than loopback, the default interface, `kube-bridge`, and pod `veth` links is dropped first. All other new traffic to the host is dropped, apart from required DHCP, ICMP, loopback, established traffic, and pod-to-node traffic. Direct external forwarding to pod and service CIDRs is dropped unless it belongs to an approved marked connection.
 
-The home router remains outside this repository. It must forward WAN TCP `443`, WAN TCP `25`, and the configured AmneziaWG UDP port to the host address. It must not forward SSH, the Kubernetes API, Zabbix, former application NodePorts, or any media service.
+The home router remains outside this repository. It must forward WAN TCP `443`, WAN TCP `25`, and the configured AmneziaWG UDP port to the host address. It must not forward SSH, DNS, the Kubernetes API, Zabbix, former application NodePorts, or any media service.
+
+## LAN DNS
+
+The `lan-dns` CoreDNS Deployment in `dns-system` is the split-DNS resolver for LAN clients, AmneziaWG peers, and pods. The router points its DNS at the host address.
+
+| Listener | Clients | Service hostname answer |
+| --- | --- | --- |
+| Host TCP and UDP `53` through hostPort | Local networks and AmneziaWG peers. | Host LAN address. |
+| `lan-dns` Service TCP and UDP `53` at `networking.lan_dns_cluster_ip` | k0s CoreDNS. | Traefik Service address `networking.traefik_cluster_ip`. |
+
+- Other names are forwarded to Cloudflare over DNS-over-TLS on TCP `853`.
+- The kubelet `resolvConf` names the `lan-dns` Service, so k0s CoreDNS forwards there without Corefile changes.
+- `use-application-dns.net` returns NXDOMAIN, so Firefox disables its automatic DNS-over-HTTPS.
+- `mask.icloud.com` and `mask-h2.icloud.com` return NXDOMAIN, so Apple devices disable iCloud Private Relay on this network.
+- `resolver.arpa` returns NXDOMAIN, so DDR clients find no designated encrypted resolver.
+- Chrome and Windows upgrade only known public resolvers, so they keep using the LAN address.
+- Devices with a manually configured encrypted resolver bypass the canaries and need that setting disabled.
+- Cluster DNS has no fallback while `lan-dns` is unavailable.
 
 ## Traefik entry
 
@@ -66,20 +85,20 @@ Traefik binds host TCP `443` and TCP `25` from a pod in `edge`.
 - Zabbix server TCP `31051` is the only retained NodePort.
 - AmneziaWG remains a direct UDP hostPort because HTTP/TCP routing cannot proxy its UDP tunnel protocol usefully.
 
-Public DNS resolves enabled application names to the home WAN address. Split DNS resolves the same names to the host address in `networking.lan.address` for LAN and AmneziaWG clients. OpenCloud and OnlyOffice callbacks use that internal HTTPS address.
+Public DNS resolves enabled application names to the home WAN address. LAN DNS resolves the same names to the host address in `networking.lan.address` for LAN and AmneziaWG clients, and to the Traefik Service for pods.
 
-OpenCloud uses its configured HTTPS URL as the issuer. LAN clients and pods must resolve that hostname to the Traefik address so the issuer matches for browsers and services.
+OpenCloud uses its configured HTTPS URL as the issuer. LAN clients and pods reach that hostname through Traefik, so the issuer matches for browsers and services.
 
 OpenObserve is published through its configured exact HTTPS hostname. Alloy has no public route. When notifications are enabled, OpenObserve and Zabbix send alerts directly to Stalwart's internal SMTP listener on TCP `2525`.
 
 ### Pod access to the public hostname
 
-Pods that need the public hostname connect to the Traefik host address on TCP `443`. HostPort translation rewrites that destination to the Traefik pod on TCP `8443` before NetworkPolicy evaluation.
+Pods resolve the public hostname to the Traefik Service on TCP `443`. Service translation rewrites that destination to the Traefik pod on TCP `8443` before NetworkPolicy evaluation.
 
 - OpenCloud, OnlyOffice, AFFiNE, Immich, and the oauth2-proxy helper may reach the Traefik pod on TCP `8443`.
 - Grist does not reach Traefik because oauth2-proxy performs the OIDC exchange.
-- AmneziaWG uses the same pod-port rule.
-- Application policies do not allow the untranslated host address on TCP `443`.
+- AmneziaWG reaches the same pod port through hostPort translation of the host address.
+- Application policies do not allow the untranslated Service or host address on TCP `443`.
 
 ## OpenCloud and Grist authentication
 
@@ -120,7 +139,7 @@ The Stalwart certificate token and DDNS token are separate credentials:
 
 The primary receiving domain's MX records remain pointed at the external inbox provider. The forwarding domain's MX record points at the Stalwart mail hostname, whose A record is maintained by DDNS.
 
-The operator must still publish and verify PTR, SPF, DKIM, and DMARC records appropriate to the external receiving and outbound-relay design.
+The operator must still publish and verify SPF, DKIM, and DMARC records appropriate to the external receiving and outbound-relay design. The home address needs no PTR record because outbound mail leaves through the relay.
 
 ## Guarded media egress
 
@@ -129,8 +148,12 @@ The [arr stack templates](../k0s-services/arr/README.md) own the guarded applica
 Sonarr, Radarr, Prowlarr, and qBittorrent share one AirVPN WireGuard gateway pod. Each guarded application pod has a `tun2socks` helper and no direct Internet route permitted by NetworkPolicy.
 
 - The helper sends external TCP and UDP through the gateway's Shadowsocks listener.
-- The gateway may reach only the pinned endpoint IP on its UDP port outside the tunnel.
-- Gateway CoreDNS sends external lookups to the AirVPN in-tunnel resolver `10.128.0.1`.
+- Gluetun selects an AirVPN server in `media.vpn.server_countries` from its built-in list.
+- Gluetun's firewall allows only the selected server outside the tunnel.
+- The gateway NetworkPolicy allows only the AirVPN WireGuard UDP port to public addresses.
+- Retired servers in the bundled list fail health checks, and gluetun reconnects to another server.
+- Gateway CoreDNS sends external lookups to the in-tunnel resolver `media.vpn.dns`.
+- Validation requires the live peer key, endpoint port, and keepalive to match `media.vpn`.
 - Cluster-local DNS is forwarded to the configured cluster DNS address.
 - Guarded apps may reach only gateway DNS/proxy ports and declared media APIs.
 - IPv6 is disabled until equivalent capture and filtering exist.
@@ -157,14 +180,14 @@ The pod still has `NET_ADMIN` and `NET_RAW`, and the UI administrator can edit i
 - The installer creates the UI administrator from Vault on first start only.
 - Peers, client keys, QR codes, and per-peer firewall entries are managed in the UI.
 - The UI is published at `vpn-admin.<domain>` and admits only local networks and VPN peers.
-- The UI hostname stays out of public DNS and resolves through split DNS.
+- The UI hostname stays out of public DNS and resolves through LAN DNS.
 - wg-easy stores its database and configuration on the `amneziawg` dataset.
 
 | Peer destination | Route | Enforcement |
 | --- | --- | --- |
 | Public Internet | Peer → AmneziaWG → host uplink → ISP. | NetworkPolicy permits public destinations; the pod applies NAT. |
-| Application names | Peer → split DNS → Traefik TCP `443`. | Only approved HTTPS hosts route to backends. |
-| Peer DNS | Peer → configured LAN resolver TCP/UDP `53`. | NetworkPolicy permits only `networking.amneziawg.dns`. |
+| Application names | Peer → LAN DNS → Traefik TCP `443`. | Only approved HTTPS hosts route to backends. |
+| Peer DNS | Peer → host address TCP/UDP `53` → `lan-dns`. | NetworkPolicy permits only the `lan-dns` pod port. |
 | LAN devices | Peer → AmneziaWG → configured LAN IP and port. | NetworkPolicy caps all peers at `networking.amneziawg.lan_access`; UI firewall entries narrow single peers. |
 | Other peers | No route. | A mangle rule drops `wg0` to `wg0` forwarding before wg-easy's rules. |
 | Pod CIDRs, service CIDRs, and media APIs | No route. | NetworkPolicy denies the connection. |
@@ -197,7 +220,7 @@ Everything omitted is denied. Each entry permits connection initiation in the st
 | Immich machine learning | Model download endpoints | TCP `443` to public addresses. |
 | Traefik | Stalwart | TCP `25` with Proxy Protocol v2. |
 | Guarded media pod | Media VPN gateway | Proxy and DNS ports only. |
-| Media VPN gateway | AirVPN WireGuard endpoint | Pinned endpoint IP and UDP port. |
+| Media VPN gateway | AirVPN WireGuard servers | UDP `1637` to public addresses; gluetun pins the selected server. |
 | Media integrations | Declared arr / qBittorrent APIs | Required API ports only. |
 | AmneziaWG peer | Approved LAN target | Configured destination IPs and ports, narrowed per peer in the UI. |
 | AmneziaWG peer | Public Internet | Full-tunnel forwarding after private-range denials. |
@@ -220,7 +243,8 @@ Repository implementation is not evidence of live enforcement. Before exposure:
 - Verify all other host and former NodePort paths fail from WAN and LAN.
 - Verify SSH, Kubernetes API, and Zabbix work only from configured local networks.
 - Test every hostname from WAN, LAN, and AmneziaWG.
-- Verify split DNS resolves the OpenCloud hostname to the Traefik address for LAN and pod clients.
+- Verify LAN clients resolve service hostnames to the host address and pods to the Traefik Service.
+- Verify Firefox and Apple devices on the LAN fall back to the LAN resolver.
 - Verify OpenCloud, Grist, AFFiNE, and Immich complete an OpenCloud OIDC login.
 - Verify Grist login, the `/oauth2/callback` exchange, and logout through oauth2-proxy and the OpenCloud end-session endpoint.
 - Verify Grist rejects forged `X-Forwarded-User` headers from clients.

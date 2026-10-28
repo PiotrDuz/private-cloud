@@ -238,12 +238,21 @@
   ansible.builtin.set_fact:
     k0s_default_worker_profile: "{{ (k0s_effective_config.spec.workerProfiles | default([]) | selectattr('name', 'equalto', 'default') | first) | default({'name': 'default', 'values': {}}) }}"
 
-- name: Configure bounded container logs and namespaced VPN forwarding
+# Cluster DNS and Default-policy pods forward to the LAN DNS Service instead of the host's router.
+- name: Install the kubelet upstream resolver configuration
+  ansible.builtin.copy:
+    content: "nameserver {{ private_cloud.networking.lan_dns_cluster_ip }}\n"
+    dest: "{{ k0s_kubelet_resolv_conf }}"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Configure bounded container logs, namespaced VPN forwarding, and the upstream resolver
   ansible.builtin.copy:
     content: >-
       {{ k0s_effective_config | combine({'spec': {'workerProfiles':
         (k0s_effective_config.spec.workerProfiles | default([]) | rejectattr('name', 'equalto', 'default') | list) +
-        [k0s_default_worker_profile | combine({'values': {'containerLogMaxSize': '10Mi', 'containerLogMaxFiles': 5, 'podLogsDir': k0s_ephemeral_mountpoint ~ '/logs', 'allowedUnsafeSysctls': private_cloud.stages.networking | ternary(['net.ipv4.ip_forward'], [])}}, recursive=True)]
+        [k0s_default_worker_profile | combine({'values': {'containerLogMaxSize': '10Mi', 'containerLogMaxFiles': 5, 'podLogsDir': k0s_ephemeral_mountpoint ~ '/logs', 'resolvConf': k0s_kubelet_resolv_conf, 'allowedUnsafeSysctls': private_cloud.stages.networking | ternary(['net.ipv4.ip_forward'], [])}}, recursive=True)]
       }}, recursive=True) | to_nice_yaml }}
     dest: "{{ k0s_config_file }}"
     owner: root
@@ -331,7 +340,10 @@
   register: k0s_published_worker_profile
   changed_when: false
   failed_when: false
-  until: k0s_published_worker_profile.rc == 0 and (k0s_published_worker_profile.stdout | from_json).allowedUnsafeSysctls | default([]) == ['net.ipv4.ip_forward']
+  until: >-
+    k0s_published_worker_profile.rc == 0
+    and (k0s_published_worker_profile.stdout | from_json).allowedUnsafeSysctls | default([]) == ['net.ipv4.ip_forward']
+    and (k0s_published_worker_profile.stdout | from_json).resolvConf | default('') == k0s_kubelet_resolv_conf
   retries: 30
   delay: 2
   when: private_cloud.stages.networking | bool
@@ -354,7 +366,9 @@
     state: restarted
   when:
     - private_cloud.stages.networking | bool
-    - (k0s_running_worker_profile.content | b64decode | from_yaml).allowedUnsafeSysctls | default([]) != ['net.ipv4.ip_forward']
+    - >-
+      (k0s_running_worker_profile.content | b64decode | from_yaml).allowedUnsafeSysctls | default([]) != ['net.ipv4.ip_forward']
+      or (k0s_running_worker_profile.content | b64decode | from_yaml).resolvConf | default('') != k0s_kubelet_resolv_conf
 
 - name: Validate the installed k0s node and storage
   ansible.builtin.include_tasks: ../validation/main.yml

@@ -28,7 +28,7 @@ clients:
 {% for stage, client_id, name, callbacks, logout_redirects in [
   ('grist', 'grist-forward-auth', 'Grist', ['https://' ~ private_cloud.grist.hostname ~ '/oauth2/callback'], ['https://' ~ private_cloud.opencloud.hostname ~ '/']),
   ('affine', 'affine', 'AFFiNE', ['https://' ~ private_cloud.affine.hostname ~ '/oauth/callback'], []),
-  ('immich', 'immich', 'Immich', ['https://' ~ private_cloud.immich.hostname ~ '/auth/login', 'https://' ~ private_cloud.immich.hostname ~ '/user-settings', 'app.immich:///oauth-callback'], [])
+  ('immich', 'immich', 'Immich', ['https://' ~ private_cloud.immich.hostname ~ '/auth/login', 'https://' ~ private_cloud.immich.hostname ~ '/user-settings', 'https://' ~ private_cloud.immich.hostname ~ '/api/oauth/mobile-redirect'], [])
 ] %}
 {% if private_cloud.stages[stage] | bool %}
   - id: {{ client_id }}

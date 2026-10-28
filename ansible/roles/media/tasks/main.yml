@@ -8,8 +8,8 @@
       - private_cloud.media.timezone is match('^[A-Za-z_+-]+/[A-Za-z_+/-]+$')
       - private_cloud.media.quality_profiles.sonarr in ['720p', '1080p', '2160p']
       - private_cloud.media.quality_profiles.radarr in ['720p', '1080p', '2160p']
-      - private_cloud.media.vpn.endpoint_port | int >= 1
-      - private_cloud.media.vpn.endpoint_port | int <= 65535
+      - private_cloud.media.vpn.server_countries | length > 0
+      - private_cloud.media.vpn.endpoint_port in [1637, 47107]
       - private_cloud.media.vpn.peer_public_key is match('^[A-Za-z0-9+/]{43}=$')
       - private_cloud.media.vpn.address is match('^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$')
       - private_cloud_secrets.media.jellyfin_admin_password | length >= 16
@@ -20,6 +20,11 @@
       - private_cloud_secrets.media.proxy_password is match('^[A-Za-z0-9_-]{16,64}$')
     fail_msg: Media configuration is invalid.
   no_log: true
+
+- name: Install WireGuard tools for gateway tunnel validation
+  ansible.builtin.apt:
+    name: wireguard-tools
+    state: present
 
 - name: Require the host TUN device
   ansible.builtin.stat:

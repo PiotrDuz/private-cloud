@@ -1,15 +1,24 @@
 """Minimal DNS client for querying independent public resolvers directly."""
 
-import ipaddress
 import secrets
 import socket
 import struct
 
 
-TYPES = {"A": 1, "PTR": 12, "MX": 15, "TXT": 16}
+TYPES = {"A": 1, "MX": 15, "TXT": 16}
+
+
+NXDOMAIN = 3
 
 
 def resolve(resolver, name, record_type):
+    rcode, records = query(resolver, name, record_type)
+    if rcode not in (0, NXDOMAIN):
+        raise RuntimeError(f"{resolver} failed {record_type} lookup for {name} with rcode {rcode}")
+    return records
+
+
+def query(resolver, name, record_type):
     query_id = secrets.randbits(16)
     question = encode_name(name) + struct.pack("!HH", TYPES[record_type], 1)
     packet = struct.pack("!HHHHHH", query_id, 0x0100, 1, 0, 0, 0) + question
@@ -22,8 +31,6 @@ def resolve(resolver, name, record_type):
         raise RuntimeError(f"{resolver} returned a mismatched DNS reply for {name}")
     if flags & 0x0200:
         raise RuntimeError(f"{resolver} returned a truncated DNS reply for {name}")
-    if flags & 0x000F not in (0, 3):
-        raise RuntimeError(f"{resolver} failed {record_type} lookup for {name} with rcode {flags & 0x000F}")
     offset = 12
     for _ in range(questions):
         _, offset = read_name(response, offset)
@@ -37,18 +44,12 @@ def resolve(resolver, name, record_type):
         if answer_type == TYPES[record_type]:
             records.append(decode_record(response, offset, data, record_type))
         offset += length
-    return records
-
-
-def reverse_name(address):
-    return ipaddress.IPv4Address(address).reverse_pointer
+    return flags & 0x000F, records
 
 
 def decode_record(response, offset, data, record_type):
     if record_type == "A":
         return socket.inet_ntoa(data)
-    if record_type == "PTR":
-        return read_name(response, offset)[0]
     if record_type == "MX":
         return read_name(response, offset + 2)[0]
     chunks, position = [], 0

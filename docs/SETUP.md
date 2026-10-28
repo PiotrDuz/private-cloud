@@ -77,16 +77,18 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 - [ ] Provide a physical Intel iGPU or supported PCI passthrough before enabling Intel GPU workloads.
 - [ ] Select Immich CPU acceleration and disable the Intel GPU stage on VMware Workstation.
 - [ ] Confirm the ISP provides a reachable public IPv4 address and permits inbound TCP 25.
-- [ ] Ask the ISP to publish the reverse-DNS PTR record for the public mail address.
 - [ ] Forward WAN TCP 25 and TCP 443, plus the configured AmneziaWG UDP port, to the host.
-- [ ] Configure LAN and VPN split DNS for the configured service hostnames and the AmneziaWG UI hostname.
-- [ ] Resolve the OpenCloud hostname to the Traefik address for LAN clients and pods.
+- [ ] Point the router's DNS server, or the DNS it hands out over DHCP, at `private_cloud.networking.lan.address`.
+- [ ] Keep a public resolver only as the router's secondary upstream so LAN clients still prefer the host.
+- [ ] Disable DNS rebind protection on the router so private answers for the domain pass through.
+- [ ] Disable manually configured DNS-over-HTTPS or DNS-over-TLS on LAN devices.
+- [ ] Keep the primary domain's `mail` and webmail records with the external inbox provider.
 - [ ] Keep public mail hostname records DNS-only so SMTP reaches the host directly.
 
 ## Mail DNS and forwarding
 
 - [ ] Keep the primary domain's MX records pointed at the external inbox provider.
-- [ ] Point the forwarding domain's MX record at the configured Stalwart mail hostname.
+- [ ] Point the forwarding domain's MX record at `mx-inbound.<domain>`.
 - [ ] Configure the external inbox to forward accepted messages to `<mailbox_username>@inbound.<domain>`.
 - [ ] Publish the SPF, DKIM, and DMARC records required by the external inbox and outbound relay.
 - [ ] Publish and verify the DKIM record configured in Stalwart.
@@ -97,14 +99,17 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 ## AirVPN WireGuard values
 
 - [ ] Open AirVPN Client Area, then Config Generator.
-- [ ] Select Linux and WireGuard, then choose one server.
-- [ ] Copy the `Endpoint` IP address to `media.vpn.endpoint_ip` and its port to `media.vpn.endpoint_port`.
+- [ ] Select Linux and WireGuard on UDP port 1637 or 47107, then generate a configuration for a server in the chosen country.
+- [ ] Enter the chosen AirVPN countries as `media.vpn.server_countries`.
+- [ ] Copy the `Endpoint` port to `media.vpn.endpoint_port`.
 - [ ] Copy the `[Peer]` `PublicKey` to `media.vpn.peer_public_key`.
 - [ ] Copy the `[Interface]` `Address` IPv4 value to `media.vpn.address`.
+- [ ] Copy the `[Interface]` `MTU` to `media.vpn.mtu`.
+- [ ] Copy the `[Interface]` `DNS` IPv4 value to `media.vpn.dns`.
+- [ ] Copy the `[Peer]` `PersistentKeepalive` to `media.vpn.persistent_keepalive`.
 - [ ] Enter the `[Interface]` `PrivateKey` as `media.wireguard_private_key` when prompted.
 - [ ] Enter the `[Peer]` `PresharedKey` as `media.wireguard_preshared_key` when prompted.
-- [ ] Ignore the IPv6 address and `DNS`; the gateway uses the in-tunnel resolver `10.128.0.1`.
-- [ ] Use a literal IP endpoint, not a hostname.
+- [ ] Ignore the endpoint hostname and IPv6 values; gluetun picks the server address from its built-in AirVPN list.
 
 ## Monitoring
 
@@ -149,8 +154,7 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 
 ## AmneziaWG peers
 
-- [ ] Add `vpn-admin.<domain>` to LAN split DNS and leave it out of public DNS.
-- [ ] Point `networking.amneziawg.dns` at the LAN resolver that serves split DNS.
+- [ ] Leave `vpn-admin.<domain>` out of public DNS; LAN DNS answers it.
 - [ ] Sign in at `https://vpn-admin.<domain>` with `networking.amneziawg.admin_username` and the stored password.
 - [ ] Enable two-factor authentication for the administrator in the UI.
 - [ ] Create one client per device and scan its QR code with the AmneziaWG app.
@@ -168,7 +172,7 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 ## Network and DNS
 
 - [ ] Test public access to configured HTTPS services, SMTP, and AmneziaWG from outside the LAN.
-- [ ] Test split DNS from LAN and VPN clients.
+- [ ] Test LAN DNS from LAN and VPN clients.
 - [ ] Confirm SSH, the Kubernetes API, and Zabbix are unavailable from WAN networks.
 - [ ] Confirm the DKIM record resolves publicly.
 - [ ] Verify inbound SMTP preserves the sender address through Proxy Protocol.
@@ -200,16 +204,16 @@ Complete the external prerequisites above before the first installation, or the 
 - Cluster node, volume, and workload readiness.
 - Service protocols, authenticated APIs, and OpenCloud storage round trips.
 - HTTPS and SMTP STARTTLS certificates chain to Mozilla public roots and expire in more than 14 days.
-- Host split DNS resolves every checked hostname to the host address in `networking.lan.address`.
+- Host DNS resolves every checked hostname to the host address in `networking.lan.address`.
+- LAN DNS answers service hostnames with the host address and encrypted DNS canaries with NXDOMAIN.
+- Cluster DNS answers service hostnames with the Traefik Service address.
 - Cloudflare `1.1.1.1` and Google `8.8.8.8` resolve each managed record to the address returned by `networking.public_ip_url`.
 - The forwarding-domain MX includes the Stalwart hostname.
 - The primary-domain MX points away from Stalwart.
 - The primary domain publishes SPF and DMARC records.
-- The public address PTR equals the Stalwart hostname.
 - Traefik, Stalwart, and DDNS use the production Let's Encrypt and Cloudflare endpoints.
 - Stalwart uses the external SMTP relay for non-local outbound mail.
 - Guarded media traffic exits through the VPN with an address different from the home WAN address.
-- The WireGuard endpoint is a public IPv4 address.
 - OpenCloud discovery and every enabled client callback are accepted.
 - Internal SMTP validation, OpenObserve alerts, and Zabbix alerts reach the Stalwart mailbox.
 - The host trust store contains no local CAs.
@@ -224,7 +228,7 @@ Complete the external prerequisites above before the first installation, or the 
 - [ ] Confirm the router forwards only TCP 25, TCP 443, and the AmneziaWG UDP port from a separate WAN connection.
 - [ ] Confirm SSH, the Kubernetes API, Zabbix, and former NodePorts are unreachable from WAN.
 - [ ] Confirm the ISP permits inbound and outbound TCP 25.
-- [ ] Confirm split DNS from LAN clients other than the host and from AmneziaWG clients.
+- [ ] Confirm LAN DNS from LAN clients other than the host and from AmneziaWG clients.
 - [ ] Publish and verify the DKIM selector, because its name is provider-specific.
 - [ ] Confirm the external inbox forwards real messages to the forwarding address.
 - [ ] Confirm outbound mail passes SPF, DKIM, and DMARC at an external recipient.

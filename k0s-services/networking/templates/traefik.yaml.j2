@@ -94,6 +94,8 @@ metadata:
   name: traefik
   namespace: edge
 spec:
+  # Cluster DNS answers service hostnames with this address so pods skip the host port.
+  clusterIP: {{ private_cloud.networking.traefik_cluster_ip }}
   selector: {app.kubernetes.io/name: traefik}
   ports:
     - {name: https, port: 443, targetPort: https, protocol: TCP}

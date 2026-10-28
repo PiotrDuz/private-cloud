@@ -1,0 +1,148 @@
+{% set lan_names = private_cloud.networking.managed_records + [private_cloud.networking.amneziawg.ui_hostname] %}
+{% set cluster_names = lan_names | reject('equalto', private_cloud.networking.amneziawg.hostname) | list %}
+{% set upstreams = private_cloud_lan_dns_upstreams | map('regex_replace', '^', 'tls://') | join(' ') %}
+{% set corefile %}
+{% for name in networking_lan_dns_encrypted_dns_canaries %}{{ name }}:5353 {% endfor %}{
+    errors
+    template ANY ANY {
+        rcode NXDOMAIN
+    }
+}
+.:5353 {
+    errors
+    health :8080
+    ready :8181
+    hosts {
+        {{ private_cloud.networking.traefik_internal_ip }} {{ lan_names | join(' ') }}
+        ttl 300
+        no_reverse
+        fallthrough
+    }
+    cache 300
+    forward . {{ upstreams }} {
+        tls_servername {{ private_cloud_lan_dns_upstream_tls_name }}
+    }
+}
+.:5300 {
+    errors
+    hosts {
+        {{ private_cloud.networking.traefik_cluster_ip }} {{ cluster_names | join(' ') }}
+        ttl 300
+        no_reverse
+        fallthrough
+    }
+    cache 300
+    forward . {{ upstreams }} {
+        tls_servername {{ private_cloud_lan_dns_upstream_tls_name }}
+    }
+}
+{% endset %}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lan-dns
+  namespace: dns-system
+data:
+  # Port 5353 answers LAN clients with the host address; port 5300 answers cluster DNS with the Traefik Service.
+  Corefile: |
+{{ corefile | indent(4, true) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lan-dns
+  namespace: dns-system
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+  selector:
+    matchLabels: {app.kubernetes.io/name: lan-dns}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: lan-dns}
+      annotations:
+        private-cloud.example/corefile-revision: "{{ corefile | hash('sha256') }}"
+    spec:
+      automountServiceAccountToken: false
+      # Cluster DNS forwards here, so this resolver must not depend on it.
+      dnsPolicy: None
+      dnsConfig:
+        nameservers: [127.0.0.1]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: coredns
+          image: {{ networking_lan_dns_image }}
+          args: [-conf, /etc/coredns/Corefile]
+          ports:
+            - {name: lan-udp, containerPort: 5353, hostPort: 53, hostIP: {{ private_cloud.networking.traefik_internal_ip }}, protocol: UDP}
+            - {name: lan-tcp, containerPort: 5353, hostPort: 53, hostIP: {{ private_cloud.networking.traefik_internal_ip }}, protocol: TCP}
+            - {name: cluster-udp, containerPort: 5300, protocol: UDP}
+            - {name: cluster-tcp, containerPort: 5300, protocol: TCP}
+          readinessProbe: {httpGet: {path: /ready, port: 8181}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: 8080}, initialDelaySeconds: 10, periodSeconds: 10}
+          resources:
+            requests: {cpu: 20m, memory: {{ private_cloud_memory_requests.lan_dns }}}
+            limits: {memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL], add: [NET_BIND_SERVICE]}
+          volumeMounts:
+            - {name: config, mountPath: /etc/coredns, readOnly: true}
+      volumes:
+        - {name: config, configMap: {name: lan-dns, defaultMode: 0444}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lan-dns
+  namespace: dns-system
+spec:
+  clusterIP: {{ private_cloud.networking.lan_dns_cluster_ip }}
+  selector: {app.kubernetes.io/name: lan-dns}
+  ports:
+    - {name: dns-udp, port: 53, targetPort: cluster-udp, protocol: UDP}
+    - {name: dns-tcp, port: 53, targetPort: cluster-tcp, protocol: TCP}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lan-dns
+  namespace: dns-system
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: lan-dns}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # HostPort traffic to the host address is DNATed to the LAN port before policy evaluation.
+    - from:
+{% for cidr in private_cloud.networking.local_network_cidrs %}
+        - ipBlock: {cidr: {{ cidr }}}
+{% endfor %}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: network-access}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: amneziawg}
+      ports:
+        - {protocol: UDP, port: 5353}
+        - {protocol: TCP, port: 5353}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 5300}
+        - {protocol: TCP, port: 5300}
+  egress:
+    - to:
+{% for upstream in private_cloud_lan_dns_upstreams %}
+        - ipBlock: {cidr: {{ upstream }}/32}
+{% endfor %}
+      ports: [{protocol: TCP, port: 853}]

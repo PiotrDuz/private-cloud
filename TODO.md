@@ -44,12 +44,14 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 - [ ] Validate OpenCloud identity configuration and data recovery together.
 - [ ] Validate Jellyfin password login and native Quick Connect.
 - [x] Validate split DNS from the host.
-- [ ] Validate split DNS from other LAN clients and VPN clients.
+- [ ] Validate LAN DNS from other LAN clients and VPN clients.
+- [ ] Verify Firefox and Apple devices fall back to the LAN resolver through the canaries.
+- [ ] Verify cluster DNS keeps resolving after a `lan-dns` pod restart.
 - [ ] Validate ARR API connections and library-folder access.
 - [ ] Validate Jellyfin library scans, playback, and metadata downloads.
 - [x] Require publicly trusted certificates with more than 14 days remaining.
 - [ ] Observe a completed Let's Encrypt renewal for Traefik and Stalwart.
-- [x] Validate forwarding-domain MX, SPF, DMARC, and PTR records through public resolvers.
+- [x] Validate forwarding-domain MX, SPF, and DMARC records through public resolvers.
 - [ ] Validate the provider-specific DKIM record.
 - [ ] Validate host firewall reachability from WAN and local networks.
 

@@ -17,7 +17,9 @@
       - networking_validation_firewall_rules.stdout is search('tcp dport \{ 25, 443 \}')
       - networking_validation_firewall_rules.stdout is search('udp dport ' ~ (private_cloud.networking.amneziawg.listen_port | string))
       - networking_validation_firewall_rules.stdout is search('iifname "lo" accept')
-    fail_msg: The active firewall does not expose the configured service ports or preserve local host traffic.
+      - networking_validation_firewall_rules.stdout is search('ip saddr @local_networks udp dport 53 accept')
+      - networking_validation_firewall_rules.stdout is not search('(?m)^\s*(tcp|udp) dport [^\n]*\b53\b[^\n]*accept')
+    fail_msg: The active firewall does not expose the configured service ports, preserve local host traffic, or limit DNS to local networks.
 
 - name: Verify that unknown interfaces are dropped
   ansible.builtin.assert:
@@ -26,7 +28,7 @@
       - networking_validation_firewall_rules.stdout is search('iifname != \{[^}]*"kube-bridge"[^}]*\} drop')
     fail_msg: The active firewall accepts traffic from interfaces other than loopback, the default interface, and pod networking.
 
-- name: Wait for Traefik and AmneziaWG rollouts
+- name: Wait for LAN DNS, Traefik, and AmneziaWG rollouts
   ansible.builtin.command:
     argv:
       - k0s
@@ -38,8 +40,28 @@
       - "{{ item.namespace }}"
       - --timeout=120s
   loop:
+    - {name: lan-dns, namespace: dns-system}
     - {name: traefik, namespace: edge}
     - {name: amneziawg, namespace: network-access}
+  changed_when: false
+
+- name: Verify LAN and cluster split DNS answers and encrypted DNS canaries
+  ansible.builtin.command:
+    argv: [python3, "{{ playbook_dir }}/validation/check_lan_dns.py"]
+    stdin: >-
+      {{ {
+        'lan_address': private_cloud.networking.traefik_internal_ip,
+        'cluster_dns_ip': private_cloud.networking.cluster_dns_ip,
+        'traefik_cluster_ip': private_cloud.networking.traefik_cluster_ip,
+        'lan_names': private_cloud.networking.managed_records + [private_cloud.networking.amneziawg.ui_hostname],
+        'cluster_names': (private_cloud.networking.managed_records + [private_cloud.networking.amneziawg.ui_hostname]) | reject('equalto', private_cloud.networking.amneziawg.hostname) | list,
+        'canaries': networking_lan_dns_encrypted_dns_canaries,
+        'public_name': private_cloud.networking.public_ip_url | urlsplit('hostname')
+      } | to_json }}
+  register: networking_validation_lan_dns
+  until: networking_validation_lan_dns.rc == 0
+  retries: 12
+  delay: 5
   changed_when: false
 
 - name: Read the Traefik service endpoint

@@ -2,6 +2,7 @@
 """Raise and resolve a temporary Zabbix problem and verify both inbox messages."""
 import json
 import socket
+import ssl
 import struct
 import sys
 import time
@@ -101,10 +102,10 @@ def main():
         trigger_id = trigger_result["triggerids"][0]
 
         baseline = matching_message_count(config["mail"], marker)
-        send_when_configured(config["sender_address"], config["sender_port"], config["host"], item_key, "1")
+        send_when_configured(config, item_key, "1")
         problem_may_be_active = True
         wait_for_messages(config["mail"], marker, baseline + 1)
-        send_value(config["sender_address"], config["sender_port"], config["host"], item_key, "0")
+        send_value(config, item_key, "0")
         problem_resolved = True
         wait_for_messages(config["mail"], marker, baseline + 2)
         print(json.dumps({"problem_and_recovery_delivered": True, "marker": marker}, separators=(",", ":")))
@@ -113,7 +114,7 @@ def main():
         cleanup_errors = []
         if item_id and problem_may_be_active and not problem_resolved:
             try:
-                send_value(config["sender_address"], config["sender_port"], config["host"], item_key, "0")
+                send_value(config, item_key, "0")
             except Exception as error:
                 cleanup_errors.append(error)
         try:
@@ -162,24 +163,26 @@ def wait_for_messages(mail, marker, expected):
     raise RuntimeError("Zabbix did not deliver the expected problem and recovery messages: " + marker)
 
 
-def send_when_configured(address, port, host, key, value):
+def send_when_configured(config, key, value):
     deadline = time.monotonic() + 120
     while True:
         try:
-            return send_value(address, port, host, key, value)
+            return send_value(config, key, value)
         except RuntimeError as error:
             if "failed: 1" not in str(error) or time.monotonic() >= deadline:
                 raise
             time.sleep(5)
 
 
-def send_value(address, port, host, key, value):
+def send_value(config, key, value):
+    """The monitored host accepts only PSK connections, so the trapper value uses the agent PSK."""
     body = json.dumps({
         "request": "sender data",
-        "data": [{"host": host, "key": key, "value": value}],
+        "data": [{"host": config["host"], "key": key, "value": value}],
     }, separators=(",", ":")).encode()
     packet = b"ZBXD\1" + struct.pack("<II", len(body), 0) + body
-    with socket.create_connection((address, port), timeout=15) as connection:
+    raw = socket.create_connection((config["sender_address"], config["sender_port"]), timeout=15)
+    with psk_context(config["psk_identity"], config["psk"]).wrap_socket(raw) as connection:
         connection.settimeout(15)
         connection.sendall(packet)
         header = read_exact(connection, 13)
@@ -189,6 +192,16 @@ def send_value(address, port, host, key, value):
         response = json.loads(read_exact(connection, length))
     if response.get("response") != "success" or "failed: 0" not in response.get("info", ""):
         raise RuntimeError("Zabbix rejected the synthetic alert value: " + response.get("info", "unknown error"))
+
+
+def psk_context(identity, key):
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    context.maximum_version = ssl.TLSVersion.TLSv1_2
+    context.set_ciphers("PSK")
+    context.set_psk_client_callback(lambda hint: (identity, bytes.fromhex(key)))
+    return context
 
 
 def read_exact(connection, size):

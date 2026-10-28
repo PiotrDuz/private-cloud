@@ -28,7 +28,7 @@ def configure_email(api, config):
         api.changed = True
     body = "Host: {HOST.NAME}\nProblem: {EVENT.NAME}\nSeverity: {EVENT.SEVERITY}\nEvent: {EVENT.ID}\nStarted: {EVENT.DATE} {EVENT.TIME}\nDetails: {EVENT.OPDATA}\n" + config["web_url"] + "/tr_events.php?triggerid={TRIGGER.ID}&eventid={EVENT.ID}"
     operation = {"operationtype": 0, "opmessage_usr": [{"userid": user["userid"]}], "opmessage": {"mediatypeid": media_id, "default_msg": 0, "subject": "[{EVENT.SEVERITY}] {EVENT.NAME}", "message": body}}
-    recovery = {"operationtype": 0, "opmessage_usr": [{"userid": user["userid"]}], "opmessage": {"mediatypeid": media_id, "default_msg": 0, "subject": "[RESOLVED] {EVENT.NAME}", "message": body + "\nRecovered: {EVENT.RECOVERY.DATE} {EVENT.RECOVERY.TIME}"}}
+    recovery = {"operationtype": 0, "opmessage_usr": [{"userid": user["userid"]}], "opmessage": {"mediatypeid": media_id, "default_msg": 0, "subject": "Resolved: {EVENT.NAME}", "message": body + "\nRecovered: {EVENT.RECOVERY.DATE} {EVENT.RECOVERY.TIME}"}}
     action = {
         "name": "Private cloud all warnings to Stalwart", "eventsource": 0, "status": 0,
         "esc_period": "1h", "pause_suppressed": 1,

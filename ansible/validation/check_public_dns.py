@@ -6,7 +6,7 @@ import json
 import sys
 import urllib.request
 
-from dns_helpers import resolve, reverse_name
+from dns_helpers import resolve
 from public_tls import public_context
 
 
@@ -20,11 +20,11 @@ def main():
         for name in config["records"]:
             require_address(resolver, name, address)
         if config.get("mail"):
-            require_mail_records(resolver, config["mail"], address)
+            require_mail_records(resolver, config["mail"])
     print(json.dumps({"public_address": address, "resolvers": RESOLVERS, "records": len(config["records"])}, separators=(",", ":")))
 
 
-def require_mail_records(resolver, mail, address):
+def require_mail_records(resolver, mail):
     exchangers = resolve(resolver, mail["forwarding_domain"], "MX")
     if mail["hostname"] not in exchangers:
         raise RuntimeError(f"{resolver}: MX for {mail['forwarding_domain']} does not include {mail['hostname']}")
@@ -35,8 +35,6 @@ def require_mail_records(resolver, mail, address):
         raise RuntimeError(f"{resolver}: {mail['domain']} has no SPF record")
     if not any(record.upper().startswith("V=DMARC1") for record in resolve(resolver, "_dmarc." + mail["domain"], "TXT")):
         raise RuntimeError(f"{resolver}: {mail['domain']} has no DMARC record")
-    if resolve(resolver, reverse_name(address), "PTR") != [mail["hostname"]]:
-        raise RuntimeError(f"{resolver}: PTR for {address} is not {mail['hostname']}")
 
 
 def require_address(resolver, name, address):

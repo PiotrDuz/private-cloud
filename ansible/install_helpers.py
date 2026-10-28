@@ -47,7 +47,7 @@ LUKS_KEY_FILE = RUNTIME_DIRECTORY / "luks-key"
 INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
 SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate", "validate")
-CURRENT_SCHEMA_VERSION = 16
+CURRENT_SCHEMA_VERSION = 17
 CURRENT_SECRETS_SCHEMA_VERSION = 9
 SECRET_SCHEMAS = {
     "storage": {"encryption_passphrase"},
@@ -111,7 +111,8 @@ MACHINE_SECRETS = {
     ("media", "proxy_password"),
 }
 WIREGUARD_KEY_PATTERN = re.compile(r"[A-Za-z0-9+/]{43}=")
-AIRVPN_DNS_ADDRESS = ipaddress.ip_address("10.128.0.1")
+COUNTRY_PATTERN = re.compile(r"[A-Z][A-Za-z .'-]{1,62}")
+AIRVPN_WIREGUARD_PORTS = {1637, 47107}
 ADMIN_PASSWORD_MINIMUM_LENGTH = 16
 AFFINE_PASSWORD_MAXIMUM_LENGTH = 32
 VENDOR_DEFAULT_PASSWORDS = {
@@ -132,7 +133,7 @@ TIMEZONE_PATTERN = re.compile(r"[A-Za-z_+-]+/[A-Za-z_+/-]+")
 SERVICE_SUBDOMAINS = {
     "networking": "vpn",
     "media": "jellyfin",
-    "stalwart": "mail",
+    "stalwart": "mx-inbound",
     "onlyoffice": "onlyoffice",
     "opencloud": "cloud",
     "grist": "grist",
@@ -144,8 +145,8 @@ SERVICE_SUBDOMAINS = {
 AMNEZIAWG_UI_SUBDOMAIN = "vpn-admin"
 MAIL_FORWARDING_SUBDOMAIN = "inbound"
 DERIVED_KEYS = {
-    ("networking",): {"acme_email", "managed_records", "traefik_internal_ip", "zabbix_hostname"},
-    ("networking", "amneziawg"): {"hostname", "ui_hostname"},
+    ("networking",): {"acme_email", "managed_records", "traefik_internal_ip", "traefik_cluster_ip", "lan_dns_cluster_ip", "zabbix_hostname"},
+    ("networking", "amneziawg"): {"hostname", "ui_hostname", "dns"},
     ("media",): {"hostname", "timezone"},
     ("onlyoffice",): {"hostname"},
     ("opencloud",): {"hostname"},
@@ -331,15 +332,21 @@ def resolve_public_configuration(configuration: Mapping[str, Any]) -> dict[str, 
         lan_address = ipaddress.IPv4Interface(lan["address"])
     except (TypeError, ValueError) as error:
         raise InstallerError("Invalid networking.lan.address") from error
+    try:
+        cluster_dns_address = ipaddress.IPv4Address(networking["cluster_dns_ip"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise InstallerError("Invalid networking.cluster_dns_ip") from error
     stages = cloud["stages"] if isinstance(cloud.get("stages"), dict) else {}
     hostnames = {stage: f"{label}.{domain}" for stage, label in SERVICE_SUBDOMAINS.items()}
     networking.update({
         "acme_email": admin_email,
         "managed_records": [hostname for stage, hostname in hostnames.items() if stages.get(stage)],
         "traefik_internal_ip": str(lan_address.ip),
+        "traefik_cluster_ip": str(cluster_dns_address + 2),
+        "lan_dns_cluster_ip": str(cluster_dns_address + 1),
         "zabbix_hostname": hostnames["zabbix_server"],
     })
-    networking["amneziawg"].update({"hostname": hostnames["networking"], "ui_hostname": f"{AMNEZIAWG_UI_SUBDOMAIN}.{domain}"})
+    networking["amneziawg"].update({"hostname": hostnames["networking"], "ui_hostname": f"{AMNEZIAWG_UI_SUBDOMAIN}.{domain}", "dns": [str(lan_address.ip)]})
     cloud["media"].update({"hostname": hostnames["media"], "timezone": timezone})
     for stage in ("onlyoffice", "opencloud", "logging"):
         cloud[stage]["hostname"] = hostnames[stage]
@@ -421,7 +428,7 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
     if not RAM_PATTERN.fullmatch(str(k0s.get("host_reserve_ram", ""))) or ram_to_bytes(k0s["host_reserve_ram"]) < ram_to_bytes(storage["arc_max"]) + 1073741824:
         raise InstallerError("k0s.host_reserve_ram must cover ZFS ARC and at least 1Gi for host services")
     networking = cloud["networking"]
-    expected_networking = {"storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "managed_records", "pod_cidr", "service_cidr", "cluster_dns_ip", "local_network_cidrs", "traefik_internal_ip", "zabbix_hostname", "amneziawg"}
+    expected_networking = {"storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "managed_records", "pod_cidr", "service_cidr", "cluster_dns_ip", "local_network_cidrs", "traefik_internal_ip", "traefik_cluster_ip", "lan_dns_cluster_ip", "zabbix_hostname", "amneziawg"}
     if not isinstance(networking, dict) or set(networking) != expected_networking:
         raise InstallerError("Networking configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(networking.get("storage_size", ""))):
@@ -444,6 +451,7 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
         service_network = ipaddress.ip_network(networking["service_cidr"], strict=True)
         cluster_dns_address = ipaddress.ip_address(networking["cluster_dns_ip"])
         traefik_address = ipaddress.ip_address(networking["traefik_internal_ip"])
+        fixed_cluster_addresses = [ipaddress.ip_address(networking[key]) for key in ("lan_dns_cluster_ip", "traefik_cluster_ip")]
         local_networks = [ipaddress.ip_network(value, strict=True) for value in networking["local_network_cidrs"]]
     except (KeyError, TypeError, ValueError) as error:
         raise InstallerError("Invalid networking address or CIDR") from error
@@ -454,6 +462,8 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
     dns_offset = 10 if service_network.max_prefixlen - service_network.prefixlen > 3 else 2
     if cluster_dns_address != service_network.network_address + dns_offset:
         raise InstallerError("The cluster DNS address must be the address k0s derives from the service CIDR")
+    if any(address not in service_network or address == service_network.broadcast_address for address in fixed_cluster_addresses):
+        raise InstallerError("The service CIDR has no room for the LAN DNS and Traefik cluster addresses")
     if pod_network.overlaps(service_network) or any(network.overlaps(pod_network) or network.overlaps(service_network) for network in local_networks):
         raise InstallerError("Pod, service, and local network ranges must not overlap")
     if not any(traefik_address in network for network in local_networks):
@@ -526,25 +536,34 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
     if any(value not in {"720p", "1080p", "2160p"} for value in quality_profiles.values()):
         raise InstallerError("Media quality profiles must be 720p, 1080p, or 2160p")
     vpn = media.get("vpn")
-    if not isinstance(vpn, dict) or set(vpn) != {"gateway_cluster_ip", "endpoint_ip", "endpoint_port", "peer_public_key", "address"}:
+    if not isinstance(vpn, dict) or set(vpn) != {"gateway_cluster_ip", "server_countries", "endpoint_port", "peer_public_key", "address", "mtu", "dns", "persistent_keepalive"}:
         raise InstallerError("Media VPN configuration has missing or unknown keys")
     try:
         gateway_address = ipaddress.ip_address(vpn["gateway_cluster_ip"])
-        endpoint_address = ipaddress.ip_address(vpn["endpoint_ip"])
         tunnel_address = ipaddress.IPv4Interface(vpn["address"])
+        tunnel_dns = ipaddress.IPv4Address(vpn["dns"])
     except (TypeError, ValueError) as error:
         raise InstallerError("Invalid media VPN address") from error
-    if gateway_address not in service_network or endpoint_address.version != 4 or not endpoint_address.is_global:
-        raise InstallerError("The media VPN gateway must use the service CIDR and its endpoint must be a public IPv4 address")
+    if gateway_address in {ipaddress.ip_address(networking[key]) for key in ("cluster_dns_ip", "lan_dns_cluster_ip", "traefik_cluster_ip")}:
+        raise InstallerError("The media VPN gateway must not reuse the cluster DNS, LAN DNS, or Traefik cluster address")
+    if gateway_address not in service_network:
+        raise InstallerError("The media VPN gateway must use the service CIDR")
     if "/" not in vpn["address"] or not tunnel_address.ip.is_private:
         raise InstallerError("The media VPN address must be a private IPv4 interface address with a prefix length")
     reserved_vpn_networks = [pod_network, service_network, tunnel_network, *local_networks]
-    if any(address in network for address in (tunnel_address.ip, AIRVPN_DNS_ADDRESS) for network in reserved_vpn_networks):
-        raise InstallerError("The media VPN address and the AirVPN resolver must not overlap cluster, local, or AmneziaWG networks")
-    if type(vpn.get("endpoint_port")) is not int or not 1 <= vpn["endpoint_port"] <= 65535:
-        raise InstallerError("Invalid media VPN endpoint port")
+    if not tunnel_dns.is_private or any(address in network for address in (tunnel_address.ip, tunnel_dns) for network in reserved_vpn_networks):
+        raise InstallerError("The media VPN address and in-tunnel resolver must be private and must not overlap cluster, local, or AmneziaWG networks")
+    countries = vpn.get("server_countries")
+    if not isinstance(countries, list) or not countries or any(not isinstance(value, str) or not COUNTRY_PATTERN.fullmatch(value) for value in countries):
+        raise InstallerError("Media VPN server_countries must list AirVPN country names")
+    if vpn.get("endpoint_port") not in AIRVPN_WIREGUARD_PORTS or type(vpn["endpoint_port"]) is not int:
+        raise InstallerError("Media VPN endpoint_port must be an AirVPN WireGuard port: 1637 or 47107")
     if not isinstance(vpn.get("peer_public_key"), str) or not WIREGUARD_KEY_PATTERN.fullmatch(vpn["peer_public_key"]):
         raise InstallerError("Invalid media VPN peer public key")
+    if type(vpn.get("mtu")) is not int or not 1280 <= vpn["mtu"] <= 1420:
+        raise InstallerError("Media VPN mtu must be between 1280 and 1420")
+    if type(vpn.get("persistent_keepalive")) is not int or not 0 <= vpn["persistent_keepalive"] <= 65535:
+        raise InstallerError("Media VPN persistent_keepalive must be between 0 and 65535 seconds")
     if media["hostname"] in {networking["zabbix_hostname"], configuration["private_cloud"]["stalwart"]["hostname"]}:
         raise InstallerError("Media hostname must be unique")
     postgres = cloud["postgres"]

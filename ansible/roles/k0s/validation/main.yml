@@ -52,3 +52,11 @@
     that: (k0s_validation_worker_configuration.content | b64decode | from_yaml).allowedUnsafeSysctls | default([]) == ['net.ipv4.ip_forward']
     fail_msg: The active kubelet has not loaded the VPN forwarding allowlist.
   when: private_cloud.stages.networking | bool
+
+- name: Require cluster DNS to forward to the LAN DNS Service
+  ansible.builtin.assert:
+    that:
+      - (k0s_validation_worker_configuration.content | b64decode | from_yaml).resolvConf | default('') == k0s_kubelet_resolv_conf
+      - lookup('ansible.builtin.file', k0s_kubelet_resolv_conf) | trim == 'nameserver ' ~ private_cloud.networking.lan_dns_cluster_ip
+    fail_msg: The active kubelet does not point cluster DNS at the LAN DNS Service.
+  when: private_cloud.stages.networking | bool

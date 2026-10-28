@@ -144,13 +144,15 @@ spec:
           podSelector:
             matchLabels: {app.kubernetes.io/name: traefik}
       ports: [{protocol: TCP, port: 8443}]
+    # HostPort traffic to the peer DNS address is DNATed to the LAN DNS pod port.
     - to:
-{% for server in private_cloud.networking.amneziawg.dns %}
-        - ipBlock: {cidr: {{ server }}/32}
-{% endfor %}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: dns-system}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: lan-dns}
       ports:
-        - {protocol: UDP, port: 53}
-        - {protocol: TCP, port: 53}
+        - {protocol: UDP, port: 5353}
+        - {protocol: TCP, port: 5353}
 {% for rule in private_cloud.networking.amneziawg.lan_access %}
     - to:
         - ipBlock: {cidr: {{ rule.destination if '/' in rule.destination else rule.destination ~ '/32' }}}

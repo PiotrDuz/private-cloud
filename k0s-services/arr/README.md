@@ -15,7 +15,7 @@ The arr stack templates are managed by `ansible/roles/media` through the `media`
 - Provision the shared `media-library` dataset and claim in this folder.
 - Mount the shared library writable in Sonarr, Radarr, and qBittorrent.
 
-The WireGuard endpoint must be a literal IP address so its UDP exception stays exact. AirVPN port forwarding cannot reach qBittorrent through the shadowsocks and `tun2socks` path, so qBittorrent stays unreachable for inbound peers. The media role connects the applications through their native APIs after deployment.
+Gluetun selects an AirVPN server by configured country from its built-in list, so no DNS lookup leaves the tunnel. AirVPN port forwarding cannot reach qBittorrent through the shadowsocks and `tun2socks` path, so qBittorrent stays unreachable for inbound peers. The media role connects the applications through their native APIs after deployment.
 
 [Jellyfin](../jellyfin/README.md) has its own templates and mounts the shared library read-only. The media role applies the arr stack and library storage before Jellyfin.
 

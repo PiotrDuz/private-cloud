@@ -27,7 +27,7 @@
   ansible.builtin.assert:
     that: >-
       ((validation_claims.stdout | from_json)['items'] |
-       selectattr('metadata.namespace', 'equalto', ('media' if item.name in ['jellyfin', 'sonarr', 'radarr', 'prowlarr', 'qbittorrent', 'media-library'] else ('edge' if item.name == 'traefik' else ('observability' if item.name in ['openobserve', 'alloy'] else 'private-cloud')))) |
+       selectattr('metadata.namespace', 'equalto', ('media' if item.name in ['jellyfin', 'sonarr', 'radarr', 'prowlarr', 'qbittorrent', 'media-library'] else ('edge' if item.name == 'traefik' else ('network-access' if item.name == 'amneziawg' else ('observability' if item.name in ['openobserve', 'alloy'] else 'private-cloud'))))) |
        selectattr('metadata.name', 'equalto', ('zabbix-server-data' if item.name == 'zabbix' else item.name ~ '-data')) |
        list | length) == 1
     fail_msg: "The enabled {{ item.name }} service has no persistent volume claim."
@@ -55,6 +55,7 @@
         'private_cloud': private_cloud,
         'alert_smtp_host': private_cloud_alert_smtp_host,
         'alert_smtp_port': private_cloud_alert_smtp_port,
+        'lan_dns_upstreams': private_cloud_lan_dns_upstreams,
         'hostnames': (
           private_cloud.networking.managed_records
           + [private_cloud.networking.zabbix_hostname, private_cloud.networking.amneziawg.hostname, private_cloud.networking.amneziawg.ui_hostname]

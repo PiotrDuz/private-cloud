@@ -88,11 +88,14 @@ Validators trust only the distribution's Mozilla root store in `/usr/share/ca-ce
 - It requires Traefik to use only the file provider, with no RBAC binding and no service-account token.
 - Service validation requires a Traefik route ConfigMap in `edge` for every enabled routed service.
 - Edge and identity checks retry while kubelet propagates route ConfigMaps.
-- The edge check requires host split DNS to resolve each hostname to the Traefik address.
+- The LAN DNS check requires service hostnames at the host address on host port `53` and at the Traefik Service through cluster DNS.
+- It requires NXDOMAIN for each encrypted DNS canary and a public answer through both resolvers.
+- The edge check requires host DNS to resolve each hostname to the Traefik address.
 - It requires publicly trusted HTTPS and SMTP certificates with more than 14 days remaining.
-- The public DNS check queries `1.1.1.1` and `8.8.8.8` for managed A records, mail MX, SPF, DMARC, and PTR.
+- The public DNS check queries `1.1.1.1` and `8.8.8.8` for managed A records, mail MX, SPF, and DMARC.
 - The media validator checks workloads, ARR APIs, download-client configuration, qBittorrent tunnel binding, the gateway `wg0` interface, and its minimal capabilities.
 - It requires guarded media traffic to exit through the VPN with an address different from the home WAN address.
+- It requires the live gateway peer key, endpoint port, keepalive, and handshake to match `media.vpn`.
 - Jellyfin validation checks its public information API and runs a short CPU transcoding probe.
 - Intel GPU validation requires a real render device.
 

@@ -2,7 +2,7 @@
 - name: Require the supported public schema version
   ansible.builtin.assert:
     that:
-      - schema_version == 16
+      - schema_version == 17
     fail_msg: Public configuration schema version is unsupported
 
 - name: Require supported Debian-family target
@@ -31,11 +31,11 @@
       - (private_cloud.stages.keys() | list | sort) == ['affine', 'bleve', 'boot_integrity', 'grist', 'immich', 'intel_gpu', 'k0s', 'logging', 'manticore', 'media', 'meilisearch', 'networking', 'notifications', 'onlyoffice', 'opencloud', 'postgres', 'redis_affine', 'stalwart', 'tika', 'zabbix_agent', 'zabbix_server', 'zfs']
       - (private_cloud.storage.keys() | list | sort) == ['arc_max', 'disks']
       - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'host_reserve_ram', 'images_quota']
-      - (private_cloud.networking.keys() | list | sort) == ['acme_email', 'amneziawg', 'cloudflare_zone_id', 'cluster_dns_ip', 'local_network_cidrs', 'managed_records', 'pod_cidr', 'public_ip_url', 'service_cidr', 'storage_size', 'traefik_internal_ip', 'zabbix_hostname']
+      - (private_cloud.networking.keys() | list | sort) == ['acme_email', 'amneziawg', 'cloudflare_zone_id', 'cluster_dns_ip', 'lan_dns_cluster_ip', 'local_network_cidrs', 'managed_records', 'pod_cidr', 'public_ip_url', 'service_cidr', 'storage_size', 'traefik_cluster_ip', 'traefik_internal_ip', 'zabbix_hostname']
       - (private_cloud.networking.amneziawg.keys() | list | sort) == ['admin_username', 'dns', 'hostname', 'lan_access', 'listen_port', 'storage_size', 'tunnel_cidr', 'ui_hostname']
       - (private_cloud.media.keys() | list | sort) == ['hostname', 'jellyfin_admin_username', 'max_ram', 'quality_profiles', 'storage_size', 'timezone', 'vpn']
       - (private_cloud.media.quality_profiles.keys() | list | sort) == ['radarr', 'sonarr']
-      - (private_cloud.media.vpn.keys() | list | sort) == ['address', 'endpoint_ip', 'endpoint_port', 'gateway_cluster_ip', 'peer_public_key']
+      - (private_cloud.media.vpn.keys() | list | sort) == ['address', 'dns', 'endpoint_port', 'gateway_cluster_ip', 'mtu', 'peer_public_key', 'persistent_keepalive', 'server_countries']
       - (private_cloud.postgres.keys() | list | sort) == ['max_ram', 'volume_size']
       - (private_cloud.meilisearch.keys() | list | sort) == ['max_ram', 'storage_size']
       - (private_cloud.tika.keys() | list | sort) == ['max_ram', 'storage_size']
@@ -102,7 +102,7 @@
 
 - name: Validate logging and notification configuration
   ansible.builtin.command:
-    argv: [python3, -c, "import json,sys; from install_helpers import validate_public_configuration; validate_public_configuration(json.load(sys.stdin))"]
+    argv: [python3, -c, "import json,sys; from install_helpers import validate_resolved_configuration; validate_resolved_configuration(json.load(sys.stdin))"]
     chdir: "{{ playbook_dir }}"
     stdin: "{{ {'schema_version': schema_version, 'private_cloud': private_cloud} | to_json }}"
   changed_when: false
@@ -219,7 +219,7 @@
       - private_cloud.networking.public_ip_url is match('^https://')
       - private_cloud.networking.managed_records | length > 0 or not private_cloud.stages.networking
       - private_cloud.networking.local_network_cidrs | length > 0
-      - private_cloud.networking.amneziawg.dns | length > 0
+      - private_cloud.networking.amneziawg.dns == [private_cloud.networking.traefik_internal_ip]
       - private_cloud.networking.amneziawg.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
     fail_msg: Networking configuration is invalid
 
@@ -232,12 +232,14 @@
       - private_cloud.media.timezone is match('^[A-Za-z_+-]+/[A-Za-z_+/-]+$')
       - private_cloud.media.quality_profiles.sonarr in ['720p', '1080p', '2160p']
       - private_cloud.media.quality_profiles.radarr in ['720p', '1080p', '2160p']
-      - private_cloud.media.vpn.endpoint_ip is match('^([0-9]{1,3}\.){3}[0-9]{1,3}$')
-      - private_cloud.media.vpn.endpoint_port is integer
-      - private_cloud.media.vpn.endpoint_port >= 1
-      - private_cloud.media.vpn.endpoint_port <= 65535
-      - private_cloud.media.vpn.peer_public_key is match('^[A-Za-z0-9+/]{43}=$')
+      - private_cloud.media.vpn.server_countries | length > 0
+      - private_cloud.media.vpn.server_countries | reject('match', "^[A-Z][A-Za-z .'-]{1,62}$") | list | length == 0
       - private_cloud.media.vpn.address is match('^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$')
+      - private_cloud.media.vpn.endpoint_port in [1637, 47107]
+      - private_cloud.media.vpn.peer_public_key is match('^[A-Za-z0-9+/]{43}=$')
+      - private_cloud.media.vpn.mtu is integer and private_cloud.media.vpn.mtu >= 1280 and private_cloud.media.vpn.mtu <= 1420
+      - private_cloud.media.vpn.dns is match('^([0-9]{1,3}\.){3}[0-9]{1,3}$')
+      - private_cloud.media.vpn.persistent_keepalive is integer and private_cloud.media.vpn.persistent_keepalive >= 0
     fail_msg: Media configuration is invalid
 
 
@@ -898,6 +900,7 @@
     preflight_memory_requests: >-
       {{ [
         ['networking', 'traefik', '256Mi', 1], ['networking', 'amneziawg', '256Mi', 1],
+        ['networking', 'lan_dns', '128Mi', 1],
         ['networking', 'ddns', '64Mi', 1], ['grist', 'forward_auth', '64Mi', 1],
         ['postgres', 'postgres', private_cloud.postgres.max_ram, 1],
         ['meilisearch', 'meilisearch', private_cloud.meilisearch.max_ram, 1],

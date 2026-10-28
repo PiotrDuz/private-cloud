@@ -13,7 +13,7 @@ data:
     .:53 {
         errors
         cache 30
-        forward . 10.128.0.1
+        forward . {{ private_cloud.media.vpn.dns }}
     }
 ---
 apiVersion: apps/v1
@@ -44,19 +44,21 @@ spec:
             - -c
             - while ip rule del table 51820 2>/dev/null; do :; done; while ip -6 rule del table 51820 2>/dev/null; do :; done; exec /gluetun-entrypoint
           env:
-            - {name: VPN_SERVICE_PROVIDER, value: custom}
+            # Gluetun's built-in AirVPN list supplies server addresses and the WireGuard public key, so no lookup leaves the tunnel;
+            # validation compares the live peer key with media.vpn.peer_public_key.
+            - {name: VPN_SERVICE_PROVIDER, value: airvpn}
+            - {name: SERVER_COUNTRIES, value: {{ private_cloud.media.vpn.server_countries | join(',') | to_json }}}
             - {name: VPN_TYPE, value: wireguard}
             - {name: VPN_INTERFACE, value: wg0}
             - {name: DNS_SERVER, value: 'off'}
             # Gluetun creates /tmp/gluetun without search permission, which root cannot use without DAC_OVERRIDE.
             - {name: PUBLICIP_FILE, value: /tmp/gluetun-ip}
             - {name: WIREGUARD_IMPLEMENTATION, value: kernelspace}
-            - {name: WIREGUARD_ENDPOINT_IP, value: {{ private_cloud.media.vpn.endpoint_ip | to_json }}}
-            - {name: WIREGUARD_ENDPOINT_PORT, value: {{ private_cloud.media.vpn.endpoint_port | string | to_json }}}
-            - {name: WIREGUARD_PUBLIC_KEY, value: {{ private_cloud.media.vpn.peer_public_key | to_json }}}
+            - {name: WIREGUARD_ENDPOINT_PORT, value: "{{ private_cloud.media.vpn.endpoint_port }}"}
+            - {name: WIREGUARD_MTU, value: "{{ private_cloud.media.vpn.mtu }}"}
             - {name: WIREGUARD_ADDRESSES, value: {{ private_cloud.media.vpn.address | to_json }}}
             - {name: WIREGUARD_ALLOWED_IPS, value: 0.0.0.0/0}
-            - {name: WIREGUARD_PERSISTENT_KEEPALIVE_INTERVAL, value: 15s}
+            - {name: WIREGUARD_PERSISTENT_KEEPALIVE_INTERVAL, value: "{{ private_cloud.media.vpn.persistent_keepalive }}s"}
             - name: WIREGUARD_PRIVATE_KEY
               valueFrom: {secretKeyRef: {name: media-vpn, key: wireguard-private-key}}
             - name: WIREGUARD_PRESHARED_KEY

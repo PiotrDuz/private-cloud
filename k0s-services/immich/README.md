@@ -29,7 +29,8 @@ The Immich service is managed by `ansible/roles/immich`.
 
 - Immich uses native OIDC with the OpenCloud issuer `https://<opencloud hostname>`.
 - The confidential `immich` client allows the `https://<immich hostname>/auth/login` and `https://<immich hostname>/user-settings` redirects.
-- The client also allows the `app.immich:///oauth-callback` mobile redirect.
+- The client also allows the `https://<immich hostname>/api/oauth/mobile-redirect` mobile redirect.
+- Immich enables the mobile redirect override, because OpenCloud skips web clients with custom-scheme redirects.
 - ID token validation uses `PS256` to match the built-in provider.
 - Provider logout uses the endpoint advertised by discovery when available.
 - Store the client secret as `immich.oidc_client_secret` in the encrypted configuration.

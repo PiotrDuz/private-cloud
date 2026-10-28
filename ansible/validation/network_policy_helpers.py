@@ -28,6 +28,7 @@ def rendered_network_policies(config):
         "private_cloud": config["private_cloud"],
         "private_cloud_alert_smtp_host": config["alert_smtp_host"],
         "private_cloud_alert_smtp_port": config["alert_smtp_port"],
+        "private_cloud_lan_dns_upstreams": config["lan_dns_upstreams"],
     }
     policies = {}
     for template in sorted(REPOSITORY.glob("k0s-services/*/templates/*.yaml.j2")):

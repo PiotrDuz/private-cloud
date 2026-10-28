@@ -43,8 +43,8 @@ spec:
             - {name: IMMICH_OAUTH_SCOPE, value: 'openid email profile'}
             - {name: IMMICH_OAUTH_AUTO_REGISTER, value: 'true'}
             - {name: IMMICH_OAUTH_AUTO_LAUNCH, value: 'true'}
-            - {name: IMMICH_OAUTH_MOBILE_OVERRIDE_ENABLED, value: 'false'}
-            - {name: IMMICH_OAUTH_MOBILE_REDIRECT_URI, value: 'app.immich:///oauth-callback'}
+            - {name: IMMICH_OAUTH_MOBILE_OVERRIDE_ENABLED, value: 'true'}
+            - {name: IMMICH_OAUTH_MOBILE_REDIRECT_URI, value: {{ ('https://' ~ private_cloud.immich.hostname ~ '/api/oauth/mobile-redirect') | to_json }}}
             - {name: IMMICH_OAUTH_ROLE_CLAIM, value: immich_role}
             - {name: IMMICH_OAUTH_STORAGE_LABEL_CLAIM, value: preferred_username}
             - {name: IMMICH_OAUTH_TOKEN_ENDPOINT_AUTH_METHOD, value: client_secret_post}

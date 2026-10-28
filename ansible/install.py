@@ -290,7 +290,6 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
         for key in ("admin_username", "storage_size", "tunnel_cidr"):
             amneziawg[key] = prompt_line(f"AmneziaWG {key}", amneziawg[key])
         amneziawg["listen_port"] = prompt_int("AmneziaWG listen_port", amneziawg["listen_port"])
-        amneziawg["dns"] = prompt_line("AmneziaWG peer DNS servers separated by spaces", " ".join(amneziawg["dns"])).split()
         access_count = prompt_int("AmneziaWG LAN rule count", len(amneziawg["lan_access"]))
         lan_access = []
         for index in range(access_count):
@@ -313,9 +312,12 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
                 media["quality_profiles"][service],
             )
         vpn = media["vpn"]
-        for key in ("gateway_cluster_ip", "endpoint_ip", "peer_public_key", "address"):
+        for key in ("gateway_cluster_ip", "address", "peer_public_key", "dns"):
             vpn[key] = prompt_line(f"Media VPN {key}", vpn[key])
-        vpn["endpoint_port"] = prompt_int("Media VPN endpoint_port", vpn["endpoint_port"])
+        for key in ("endpoint_port", "mtu", "persistent_keepalive"):
+            vpn[key] = prompt_int(f"Media VPN {key}", vpn[key])
+        countries = prompt_line("AirVPN server countries separated by commas", ", ".join(vpn["server_countries"]))
+        vpn["server_countries"] = [value.strip() for value in countries.split(",") if value.strip()]
         media["jellyfin_admin_username"] = prompt_line("Jellyfin administrator username", media["jellyfin_admin_username"])
     if "postgres" in sections:
         for key in ("volume_size", "max_ram"):
@@ -358,7 +360,7 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
             prompt = prompt_int if key == "retention_days" else prompt_line
             cloud["logging"][key] = prompt(f"Logging {key}", cloud["logging"][key])
     if "notifications" in sections:
-        cloud["notifications"]["from_address"] = prompt_line("Alert sender authorized by the SMTP relay", cloud["notifications"]["from_address"])
+        cloud["notifications"]["from_address"] = prompt_line("Alert sender address for mail delivered locally to Stalwart", cloud["notifications"]["from_address"])
     if "boot_integrity" in sections:
         boot = cloud["boot_integrity"]
         pcrs = prompt_line("Boot integrity extra PCRs separated by spaces (1 and 5 only)", " ".join(str(value) for value in boot["extra_pcrs"])).split()
@@ -405,7 +407,6 @@ def discovered_public_configuration() -> dict[str, Any]:
     if lan is not None:
         networking["lan"] = lan
         networking["local_network_cidrs"] = [str(ipaddress.IPv4Interface(lan["address"]).network)]
-        networking["amneziawg"]["dns"] = [lan["gateway"]]
     return configuration
 
 

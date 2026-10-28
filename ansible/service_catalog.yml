@@ -5,12 +5,16 @@ private_cloud_zabbix_psk_identity: private-cloud-zabbix-agent
 private_cloud_zabbix_agent_server_active: 127.0.0.1:31051
 private_cloud_alert_smtp_host: stalwart.private-cloud.svc.cluster.local
 private_cloud_alert_smtp_port: 2525
+# LAN DNS forwards uncached public lookups to these resolvers over DNS-over-TLS.
+private_cloud_lan_dns_upstreams: [1.1.1.1, 1.0.0.1]
+private_cloud_lan_dns_upstream_tls_name: cloudflare-dns.com
 
 # Memory requests reserved per container; preflight budgets these and limits stay burstable.
 private_cloud_memory_requests:
   traefik: 96Mi
   amneziawg: 96Mi
   ddns: 32Mi
+  lan_dns: 32Mi
   forward_auth: 32Mi
   postgres: 384Mi
   meilisearch: 64Mi

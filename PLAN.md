@@ -32,6 +32,7 @@ This file is the source of truth for the desired system state and its major deci
 - [Security](#security)
 - [Networking](#networking)
     * [Public entry and DNS](#public-entry-and-dns)
+    * [LAN DNS](#lan-dns)
     * [Traefik](#traefik)
     * [Host access and service isolation](#host-access-and-service-isolation)
     * [Namespace and host placement](#namespace-and-host-placement)
@@ -125,7 +126,7 @@ This file is the source of truth for the desired system state and its major deci
 - Use OpenCloud's [built-in OIDC provider](https://docs.opencloud.eu/docs/dev/server/services/idp/information/) and directory inside its container for shared login
 - Manage users, passwords, account status, and groups through OpenCloud's [admin area](https://docs.opencloud.eu/docs/user/admin/settings/)
 - Back up OpenCloud identity data, signing keys, and configuration together
-- Use the OpenCloud HTTPS URL as the shared issuer through split DNS
+- Use the OpenCloud HTTPS URL as the shared issuer through the LAN DNS service
 - Register clients for OpenCloud, Immich, AFFiNE, and Grist's authentication helper
 - Store confidential-client secrets in role-owned Kubernetes Secrets and keep public clients secret-free
 - Allow every enabled OpenCloud user to sign into connected applications without separate login allowlists
@@ -276,7 +277,8 @@ This file is the source of truth for the desired system state and its major deci
 - Enable Intel OpenVINO acceleration through the shared i915 Kubernetes device resource
 - Persist the Immich media library on its PV
 - Enable [Immich native OIDC](https://docs.immich.app/administration/oauth/) with OpenCloud for web and mobile clients
-- Register a confidential client with HTTPS `/auth/login`, `/user-settings`, and `app.immich:///oauth-callback` redirects
+- Register a confidential client with HTTPS `/auth/login`, `/user-settings`, and `/api/oauth/mobile-redirect` redirects
+- Use the Immich mobile redirect override because OpenCloud rejects custom-scheme redirects for web clients
 - Automatically register enabled OpenCloud users in Immich and manage administrator grants explicitly
 - Use supported provider logout and manage account permissions within Immich
 - Use native stdout/stderr logging for collection by Alloy
@@ -330,7 +332,9 @@ This file is the source of truth for the desired system state and its major deci
 
 - Route guarded media external traffic and DNS through an AirVPN WireGuard tunnel with per-pod tun2socks helpers
 - Block direct Internet fallback when the VPN fails
-- Pin the WireGuard endpoint to a literal IP and allow only its UDP transport outside the tunnel
+- Select AirVPN servers by configured country from gluetun's built-in server list without DNS outside the tunnel
+- Let gluetun's firewall pin traffic outside the tunnel to the selected server's WireGuard UDP port
+- Cap the gateway NetworkPolicy at the AirVPN WireGuard UDP port on public addresses
 - Route external DNS through the VPN and cluster-local DNS through cluster DNS
 - Disable guarded media IPv6 through the IPv4-only cluster configuration until equivalent capture and filtering exist
 
@@ -378,6 +382,19 @@ This file is the source of truth for the desired system state and its major deci
 
 - Maintain configured public A records with a dedicated Cloudflare DDNS token
 - Derive every service hostname from one base domain
+- Keep the primary domain's mail and web hostnames with the external inbox provider
+- Use `mx-inbound.<domain>` as the Stalwart hostname and `inbound.<domain>` as the forwarding domain
+
+### LAN DNS
+
+- Run a CoreDNS LAN resolver in dns-system on host TCP and UDP 53 for local networks
+- Answer every service hostname and the AmneziaWG UI hostname with the host LAN address
+- Answer cluster DNS with the Traefik Service address so pods skip the router and the host port
+- Point the kubelet upstream resolver at the LAN DNS Service so k0s CoreDNS stays unmodified
+- Forward other queries to public resolvers over DNS-over-TLS
+- Answer Firefox, Apple Private Relay, and DDR encrypted DNS canaries with NXDOMAIN
+- Give AmneziaWG peers the host LAN address as their DNS server
+- Keep the LAN resolver stateless without a dataset
 
 ### Traefik
 
@@ -399,7 +416,7 @@ This file is the source of truth for the desired system state and its major deci
 
 ### Host access and service isolation
 
-- Restrict SSH, the Kubernetes API, and Zabbix TCP 31051 to local networks
+- Restrict SSH, the Kubernetes API, Zabbix TCP 31051, and DNS 53 to local networks
 - Permit only TCP 443, TCP 25, the AmneziaWG UDP port, ICMP, and DHCP from untrusted networks
 - Drop traffic from interfaces other than loopback, the default interface, and pod networking
 - Block obsolete application NodePorts and undeclared host ports
@@ -412,7 +429,7 @@ This file is the source of truth for the desired system state and its major deci
 
 - Place application services, their databases, search dependencies, and Zabbix in private-cloud
 - Place Sonarr, Radarr, Prowlarr, qBittorrent, the VPN gateway, and Jellyfin in media
-- Place Traefik in edge, AmneziaWG in network-access, and Cloudflare DDNS in dns-system
+- Place Traefik in edge, AmneziaWG in network-access, and Cloudflare DDNS and LAN DNS in dns-system
 - Place Alloy and OpenObserve in observability
 - Keep CNI, cluster DNS, and the GPU device plugin in kube-system
 - Keep ZFS, the host firewall, Zabbix Agent, and journal collection support on the host

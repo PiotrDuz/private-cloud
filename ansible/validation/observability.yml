@@ -59,6 +59,8 @@
             'host': private_cloud_zabbix_hostname,
             'sender_address': '127.0.0.1',
             'sender_port': 31051,
+            'psk_identity': private_cloud_zabbix_psk_identity,
+            'psk': private_cloud_secrets.zabbix.agent_psk,
             'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
             'mail': {
               'address': private_cloud.networking.traefik_internal_ip,
