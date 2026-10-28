@@ -47,7 +47,7 @@
       - (private_cloud.redis_affine.keys() | list) == ['max_ram']
       - (private_cloud.affine.keys() | list | sort) == ['admin_email', 'hostname', 'max_ram', 'storage_size']
       - (private_cloud.immich.keys() | list | sort) == ['admin_email', 'hostname', 'machine_learning_accelerator', 'machine_learning_max_ram', 'max_ram', 'storage_size', 'timezone', 'valkey_max_ram']
-      - (private_cloud.stalwart.keys() | list | sort) == ['acme_contact', 'admin_username', 'domain', 'forwarding_domain', 'hostname', 'mailbox_username', 'max_ram', 'relay_host', 'relay_implicit_tls', 'relay_port', 'relay_username', 'storage_size']
+      - (private_cloud.stalwart.keys() | list | sort) == ['acme_contact', 'admin_username', 'domain', 'hostname', 'mailbox_username', 'max_ram', 'relay_host', 'relay_implicit_tls', 'relay_port', 'relay_username', 'storage_size']
       - (private_cloud.zabbix.keys() | list | sort) == ['admin_username', 'storage_size']
       - (private_cloud.logging.keys() | list | sort) == ['alloy_max_ram', 'alloy_storage_size', 'hostname', 'openobserve_max_ram', 'openobserve_storage_size', 'retention_days']
       - (private_cloud.notifications.keys() | list) == ['from_address']
@@ -370,14 +370,11 @@
       - private_cloud.stalwart.storage_size is match('^[1-9][0-9]*[KMGTPE]$')
       - private_cloud.stalwart.max_ram is match('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')
       - private_cloud.stalwart.domain is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
-      - private_cloud.stalwart.forwarding_domain is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
       - private_cloud.stalwart.hostname is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
       - private_cloud.stalwart.relay_host is match('^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$')
-      - private_cloud.stalwart.forwarding_domain != private_cloud.stalwart.domain
-      - private_cloud.stalwart.forwarding_domain.endswith('.' ~ private_cloud.stalwart.domain)
+      - private_cloud.stalwart.relay_host.split('.') | length >= 3
       - private_cloud.stalwart.hostname != private_cloud.stalwart.domain
       - private_cloud.stalwart.hostname.endswith('.' ~ private_cloud.stalwart.domain)
-      - private_cloud.stalwart.hostname != private_cloud.stalwart.forwarding_domain
       - private_cloud.stalwart.acme_contact is match("^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}$")
       - private_cloud.stalwart.relay_username is match("^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}$")
       - private_cloud.stalwart.admin_username is match('^[A-Za-z0-9](?:[A-Za-z0-9._+-]{0,62}[A-Za-z0-9])?$')
@@ -914,7 +911,7 @@
         ['immich', 'immich', private_cloud.immich.max_ram, 1],
         ['immich', 'immich_machine_learning', private_cloud.immich.machine_learning_max_ram, 1],
         ['immich', 'valkey_immich', private_cloud.immich.valkey_max_ram, 1],
-        ['stalwart', 'stalwart', private_cloud.stalwart.max_ram, 1],
+        ['stalwart', 'stalwart', private_cloud.stalwart.max_ram, 1], ['stalwart', 'imap_fetch', '256Mi', 1],
         ['zabbix_server', 'zabbix_server', '1Gi', 1], ['zabbix_server', 'zabbix_web', '512Mi', 1],
         ['logging', 'openobserve', private_cloud.logging.openobserve_max_ram, 1],
         ['logging', 'alloy', private_cloud.logging.alloy_max_ram, 1],

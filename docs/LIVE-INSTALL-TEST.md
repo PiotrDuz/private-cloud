@@ -60,6 +60,11 @@ Host: Hardkernel i3-N305, Ubuntu 26.04.1, 29 GiB RAM. Pool: RAIDZ1 on sda, sdc, 
 | 16 | Zabbix rejected the validator's trapper value: host accepts PSK only, validator sent unencrypted | `validate_alert_delivery.py` sends over TLS-PSK with the agent identity and key |
 | 17 | Recovery alerts were dropped by Stalwart as duplicates: `[Warning] X` and `[RESOLVED] X` share thread name and References | Recovery subject is now `Resolved: {EVENT.NAME}` (`zabbix/notification_helpers.py`) |
 | 18 | Alerts were filed in Junk by the spam filter | Plan sets `MtaStageData.enableSpamFilter` to skip the alert port 2525 |
+| 19 | No WAN traffic reached the host on TCP 25 or 443, so the external inbox could not forward mail | Inbound SMTP removed; an `imap-fetch` sidecar follows the provider INBOX over IMAP IDLE and delivers over loopback with Proxy Protocol v2 naming the original client |
+| 20 | Clients greeting with a bare hostname were refused (`Invalid EHLO domain`) | Follower sends an address literal when the original HELO is not a domain |
+| 21 | Follower script changes did not restart the Stalwart pod | The configuration revision hashes both follower scripts |
+| 22 | Firewall validation saw stale rules: the restart handler ran at play end, and a failed run lost the notification | `flush_handlers` before networking validation; `force_handlers = True` in `ansible.cfg` |
+| 23 | Added a `www.<domain>` homepage | nginx pod in `edge` with a tile per enabled application |
 
 ## Files
 

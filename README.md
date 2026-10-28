@@ -33,7 +33,7 @@ sudo python3 ansible/install.py
 - `networking.lan` holds the host interface, address, and gateway; the installer proposes the discovered values.
 - The Traefik address and the boot-integrity network derive from `networking.lan`.
 - The installer proposes the LAN subnet as the local network and the gateway as the AmneziaWG peer DNS.
-- Subdomains: `cloud`, `onlyoffice`, `grist`, `affine`, `photos`, `jellyfin`, `mx-inbound`, `inbound` for mail forwarding, `logs`, `monitor`, `vpn`, `vpn-admin`, and `www` for the homepage.
+- Subdomains: `cloud`, `onlyoffice`, `grist`, `affine`, `photos`, `jellyfin`, `mx-inbound`, `logs`, `monitor`, `vpn`, `vpn-admin`, and `www` for the homepage.
 - The Vault password is never stored by the installer.
 - The `CREATE tank` authorization is requested only before new pool creation.
 - The installer records a root-only create intent before pool creation and resumes an interrupted create from it.

@@ -76,23 +76,22 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 - [ ] Reserve `private_cloud.networking.lan.address` for the host on the router.
 - [ ] Provide a physical Intel iGPU or supported PCI passthrough before enabling Intel GPU workloads.
 - [ ] Select Immich CPU acceleration and disable the Intel GPU stage on VMware Workstation.
-- [ ] Confirm the ISP provides a reachable public IPv4 address and permits inbound TCP 25.
-- [ ] Forward WAN TCP 25 and TCP 443, plus the configured AmneziaWG UDP port, to the host.
+- [ ] Confirm the ISP provides a reachable public IPv4 address.
+- [ ] Forward WAN TCP 443 and the configured AmneziaWG UDP port to the host.
 - [ ] Point the router's DNS server, or the DNS it hands out over DHCP, at `private_cloud.networking.lan.address`.
-- [ ] Keep a public resolver only as the router's secondary upstream so LAN clients still prefer the host.
+- [ ] Configure no public secondary DNS on the router, because routers mix answers from both upstreams.
 - [ ] Disable DNS rebind protection on the router so private answers for the domain pass through.
 - [ ] Disable manually configured DNS-over-HTTPS or DNS-over-TLS on LAN devices.
 - [ ] Keep the primary domain's `mail` and webmail records with the external inbox provider.
-- [ ] Keep public mail hostname records DNS-only so SMTP reaches the host directly.
 
-## Mail DNS and forwarding
+## Mail DNS and inbox
 
 - [ ] Keep the primary domain's MX records pointed at the external inbox provider.
-- [ ] Point the forwarding domain's MX record at `mx-inbound.<domain>`.
-- [ ] Configure the external inbox to forward accepted messages to `<mailbox_username>@inbound.<domain>`.
+- [ ] Use the same provider account for the relay and the IMAP follower; it reads INBOX at `relay_host` TCP 993.
+- [ ] Leave provider forwarding disabled; the follower copies new INBOX mail into Stalwart.
 - [ ] Publish the SPF, DKIM, and DMARC records required by the external inbox and outbound relay.
 - [ ] Publish and verify the DKIM record configured in Stalwart.
-- [ ] Confirm the forwarding alias delivers mail to `<mailbox_username>@<domain>`.
+- [ ] Send a message to the provider address and confirm it arrives in Stalwart with the original sender's SPF result.
 - [ ] Send a message through the external inbox and confirm it reaches the Stalwart mailbox.
 - [ ] Verify outbound mail uses the configured inbox.eu relay and passes recipient-side authentication checks.
 
@@ -203,12 +202,12 @@ Complete the external prerequisites above before the first installation, or the 
 - Boot integrity: Secure Boot, signed UKI, armed TPM unlock, unattended unlock on the last boot, tripwire, console policy, and update holds.
 - Cluster node, volume, and workload readiness.
 - Service protocols, authenticated APIs, and OpenCloud storage round trips.
-- HTTPS and SMTP STARTTLS certificates chain to Mozilla public roots and expire in more than 14 days.
+- HTTPS certificates chain to Mozilla public roots and expire in more than 14 days.
 - Host DNS resolves every checked hostname to the host address in `networking.lan.address`.
 - LAN DNS answers service hostnames with the host address and encrypted DNS canaries with NXDOMAIN.
 - Cluster DNS answers service hostnames with the Traefik Service address.
 - Cloudflare `1.1.1.1` and Google `8.8.8.8` resolve each managed record to the address returned by `networking.public_ip_url`.
-- The forwarding-domain MX includes the Stalwart hostname.
+- The IMAP follower checked the provider INBOX within the last 15 minutes.
 - The primary-domain MX points away from Stalwart.
 - The primary domain publishes SPF and DMARC records.
 - Traefik, Stalwart, and DDNS use the production Let's Encrypt and Cloudflare endpoints.
@@ -225,9 +224,8 @@ Complete the external prerequisites above before the first installation, or the 
 
 ### Not checked automatically
 
-- [ ] Confirm the router forwards only TCP 25, TCP 443, and the AmneziaWG UDP port from a separate WAN connection.
+- [ ] Confirm the router forwards only TCP 443 and the AmneziaWG UDP port from a separate WAN connection.
 - [ ] Confirm SSH, the Kubernetes API, Zabbix, and former NodePorts are unreachable from WAN.
-- [ ] Confirm the ISP permits inbound and outbound TCP 25.
 - [ ] Confirm LAN DNS from LAN clients other than the host and from AmneziaWG clients.
 - [ ] Publish and verify the DKIM selector, because its name is provider-specific.
 - [ ] Confirm the external inbox forwards real messages to the forwarding address.

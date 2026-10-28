@@ -1,7 +1,6 @@
 """Bounded Alloy and TLS probes."""
 import concurrent.futures
 import re
-import smtplib
 import socket
 import ssl
 import time
@@ -30,19 +29,11 @@ def collect_alloy(configuration):
 def certificate_health(address, certificate):
     try:
         context = ssl.create_default_context()
-        if certificate["protocol"] == "smtp":
-            with smtplib.SMTP(timeout=3) as client:
-                client._host = certificate["hostname"]
-                client.connect(address, 25)
-                client.ehlo()
-                client.starttls(context=context)
-                peer = client.sock.getpeercert()
-        else:
-            with socket.create_connection((address, 443), timeout=3) as connection:
-                with context.wrap_socket(connection, server_hostname=certificate["hostname"]) as secured:
-                    peer = secured.getpeercert()
+        with socket.create_connection((address, 443), timeout=3) as connection:
+            with context.wrap_socket(connection, server_hostname=certificate["hostname"]) as secured:
+                peer = secured.getpeercert()
         return {"valid": 1, "days": (ssl.cert_time_to_seconds(peer["notAfter"]) - time.time()) / 86400}
-    except (OSError, smtplib.SMTPException, ValueError, KeyError):
+    except (OSError, ValueError, KeyError):
         return {"valid": 0, "days": 0}
 
 

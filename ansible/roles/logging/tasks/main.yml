@@ -72,7 +72,7 @@
 - name: Read the OpenObserve ingestion token
   ansible.builtin.uri:
     url: 'http://{{ logging_openobserve_endpoint.resources[0].spec.clusterIP }}:5080/api/default/passcode'
-    url_username: "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain }}"
+    url_username: "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain }}"
     url_password: "{{ private_cloud_secrets.logging.admin_password }}"
     force_basic_auth: true
     return_content: true
@@ -92,7 +92,7 @@
         annotations: {private-cloud.example/managed-by: ansible}
       type: Opaque
       stringData:
-        username: "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain }}"
+        username: "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain }}"
         ingest-password: "{{ logging_ingestion_token.json.data.passcode }}"
   register: logging_ingestion_secret_apply
   no_log: true
@@ -154,9 +154,9 @@
     stdin: >-
       {{ {
         'endpoint': 'http://' ~ logging_endpoints.results[0].resources[0].spec.clusterIP ~ ':5080',
-        'username': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+        'username': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
         'password': private_cloud_secrets.logging.admin_password,
-        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
         'notifications': private_cloud.stages.notifications
       } | to_json }}
   register: logging_openobserve_provision

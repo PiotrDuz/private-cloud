@@ -260,7 +260,9 @@
           lookup('file', role_path ~ '/../../../k0s-services/stalwart/templates/statefulset.yaml.j2') ~
           lookup('file', role_path ~ '/../../../k0s-services/stalwart/templates/configmap.yaml.j2') ~
           lookup('file', role_path ~ '/../../../k0s-services/stalwart/templates/configuration-job.yaml.j2') ~
-          lookup('file', role_path ~ '/../../../k0s-services/stalwart/wait_for_api.py')) | hash('sha256') }}
+          lookup('file', role_path ~ '/../../../k0s-services/stalwart/wait_for_api.py') ~
+          lookup('file', role_path ~ '/../../../k0s-services/stalwart/imap_fetch.py') ~
+          lookup('file', role_path ~ '/../../../k0s-services/stalwart/imap_fetch_helpers.py')) | hash('sha256') }}
   vars:
     stalwart_plan_redacted: true
   no_log: true

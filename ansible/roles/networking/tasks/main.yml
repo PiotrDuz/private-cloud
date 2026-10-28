@@ -87,6 +87,10 @@
     state: started
     daemon_reload: true
 
+# Validation reads the active ruleset, so changed rules must load before it runs.
+- name: Load changed firewall rules
+  ansible.builtin.meta: flush_handlers
+
 - name: Apply networking credentials
   kubernetes.core.k8s:
     kubeconfig: "{{ networking_kubeconfig }}"

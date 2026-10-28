@@ -24,7 +24,6 @@ spec:
             matchLabels: {app.kubernetes.io/name: traefik}
       ports:
         - {protocol: TCP, port: 8080}
-        - {protocol: TCP, port: 25}
 {% if private_cloud.stages.notifications %}
     - from:
         - namespaceSelector:

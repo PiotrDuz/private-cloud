@@ -21,6 +21,9 @@ stalwart_wait_image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a7699
 stalwart_image: stalwartlabs/stalwart:v0.16.26@sha256:254ce5d7f3dbe4bb628ce2c7912e664ecb1c3466db79907f4a44d9a00117776b
 stalwart_cli_image: ghcr.io/stalwartlabs/cli:1.0.13@sha256:9a1e07307d6f890a193322c4b737fc0868405f0f8486a19922cbf362f43884fd
 stalwart_meilisearch_port: 7700
+# The provider's own receiving hosts, whose top Received headers name the original SMTP client.
+stalwart_imap_fetch_receiver_domain: "{{ private_cloud.stalwart.relay_host.split('.', 1)[1] }}"
+stalwart_imap_fetch_state_path: /var/lib/stalwart/imap-fetch/state.json
 stalwart_meilisearch_key_uid: 1dd12a66-c697-46d4-ab19-f8ed968425ec
 stalwart_meilisearch_key_name: stalwart-search
 stalwart_meilisearch_key_actions:

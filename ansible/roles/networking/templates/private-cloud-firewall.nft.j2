@@ -16,7 +16,7 @@ table inet private_cloud {
         iifname {{ ansible_default_ipv4.interface | to_json }} ct state established,related accept
         iifname {{ ansible_default_ipv4.interface | to_json }} fib daddr type local ip saddr @local_networks tcp dport { 22, 53, 6443, 31051 } ct mark set 0x5043 accept
         iifname {{ ansible_default_ipv4.interface | to_json }} fib daddr type local ip saddr @local_networks udp dport 53 ct mark set 0x5043 accept
-        iifname {{ ansible_default_ipv4.interface | to_json }} fib daddr type local tcp dport { 25, 443 } ct mark set 0x5043 accept
+        iifname {{ ansible_default_ipv4.interface | to_json }} fib daddr type local tcp dport 443 ct mark set 0x5043 accept
         iifname {{ ansible_default_ipv4.interface | to_json }} fib daddr type local udp dport {{ private_cloud.networking.amneziawg.listen_port }} ct mark set 0x5043 accept
         iifname {{ ansible_default_ipv4.interface | to_json }} fib daddr type local udp sport 67 udp dport 68 accept
         iifname {{ ansible_default_ipv4.interface | to_json }} fib daddr type local meta l4proto { icmp, ipv6-icmp } accept
@@ -32,7 +32,7 @@ table inet private_cloud {
         ip saddr {{ private_cloud.networking.pod_cidr }} accept
         ip saddr @local_networks tcp dport { 22, 53, 6443, 31051 } accept
         ip saddr @local_networks udp dport 53 accept
-        tcp dport { 25, 443 } accept
+        tcp dport 443 accept
         udp dport {{ private_cloud.networking.amneziawg.listen_port }} accept
         udp sport 67 udp dport 68 accept
         ip protocol icmp accept

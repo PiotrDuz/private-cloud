@@ -8,6 +8,10 @@ metadata:
 data:
   wait_for_api.py: |
 {{ lookup('file', role_path ~ '/../../../k0s-services/stalwart/wait_for_api.py') | indent(4, true) }}
+  imap_fetch.py: |
+{{ lookup('file', role_path ~ '/../../../k0s-services/stalwart/imap_fetch.py') | indent(4, true) }}
+  imap_fetch_helpers.py: |
+{{ lookup('file', role_path ~ '/../../../k0s-services/stalwart/imap_fetch_helpers.py') | indent(4, true) }}
   config.json: |
     {
       "@type": "PostgreSql",

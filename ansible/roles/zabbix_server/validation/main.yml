@@ -77,7 +77,7 @@
         'health': private_cloud.stages.zabbix_agent,
         'certificates': observability_certificates,
         'mail_hostname': private_cloud.stalwart.hostname,
-        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
         'from_address': private_cloud.notifications.from_address,
         'smtp': {
           'host': private_cloud_alert_smtp_host,

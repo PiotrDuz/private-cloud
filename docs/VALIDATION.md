@@ -102,5 +102,5 @@ Validators trust only the distribution's Mozilla root store in `/usr/share/ca-ce
 ## Mail
 
 - Stalwart validation waits for a server endpoint and authenticates the configured mailbox through JMAP.
-- It accepts the forwarding recipient and rejects anonymous external relaying on TCP 25.
-- Global validation checks public SMTP STARTTLS and delivers internal alert messages to that mailbox.
+- It requires the IMAP follower to have checked the provider INBOX within the last 15 minutes.
+- Global validation delivers internal alert messages to that mailbox.

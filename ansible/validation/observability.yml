@@ -21,10 +21,9 @@
         'smtp_host': validation_stalwart_smtp_service.resources[0].spec.clusterIP,
         'smtp_port': private_cloud_alert_smtp_port,
         'sender': private_cloud.notifications.from_address,
-        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
         'accounts': [
-          private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
-          private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
+          private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain
         ],
         'password': private_cloud_secrets.stalwart.mailbox_password
       } | to_json }}
@@ -61,14 +60,13 @@
             'sender_port': 31051,
             'psk_identity': private_cloud_zabbix_psk_identity,
             'psk': private_cloud_secrets.zabbix.agent_psk,
-            'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+            'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
             'mail': {
               'address': private_cloud.networking.traefik_internal_ip,
               'hostname': private_cloud.stalwart.hostname,
               'port': 443,
               'accounts': [
-                private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
-                private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
+                private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain
               ],
               'password': private_cloud_secrets.stalwart.mailbox_password
             }

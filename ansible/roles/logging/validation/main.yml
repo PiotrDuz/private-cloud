@@ -146,10 +146,10 @@
     stdin: >-
       {{ {
         'endpoint': 'http://' ~ logging_validation_services.results[0].resources[0].spec.clusterIP ~ ':5080',
-        'username': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+        'username': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
         'password': private_cloud_secrets.logging.admin_password,
         'notifications': private_cloud.stages.notifications,
-        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
+        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain
       } | to_json }}
   register: logging_validation_alerts
   changed_when: false
@@ -159,7 +159,7 @@
   ansible.builtin.uri:
     url: 'http://{{ logging_validation_services.results[0].resources[0].spec.clusterIP }}:5080/api/default/_search'
     method: POST
-    url_username: "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain }}"
+    url_username: "{{ private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain }}"
     url_password: "{{ private_cloud_secrets.logging.admin_password }}"
     force_basic_auth: true
     body_format: json
@@ -187,15 +187,14 @@
     stdin: >-
       {{ {
         'endpoint': 'http://' ~ logging_validation_services.results[0].resources[0].spec.clusterIP ~ ':5080',
-        'username': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain,
+        'username': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
         'password': private_cloud_secrets.logging.admin_password,
         'mail': {
           'address': private_cloud.networking.traefik_internal_ip,
           'hostname': private_cloud.stalwart.hostname,
           'port': 443,
           'accounts': [
-            private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain,
-            private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
+            private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain
           ],
           'password': private_cloud_secrets.stalwart.mailbox_password
         }

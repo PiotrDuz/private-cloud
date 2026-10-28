@@ -157,21 +157,22 @@ This file is the source of truth for the desired system state and its major deci
 - Use Stalwart's internal directory with native mailbox and administrator passwords
 - Manage mailboxes, aliases, quotas, and permissions in Stalwart
 - Publish JMAP, web access, and management through Traefik HTTPS TCP 443
-- Accept forwarded inbound mail through Traefik SMTP TCP 25 with Proxy Protocol v2
-- Terminate SMTP STARTTLS in Stalwart with an automatically renewed certificate
+- Follow the external INBOX read-only over IMAP IDLE from a sidecar in the Stalwart pod
+- Start after the newest provider message and never flag, move, or delete provider mail
+- Deliver new mail to the mailbox over loopback SMTP with Proxy Protocol v2 naming the original client
+- Take the original client from the provider's own top Received headers so SPF and iprev see the real sender
+- Publish no inbound SMTP port
 - Use Let's Encrypt DNS-01 and a dedicated Cloudflare token for the Stalwart certificate
 - Keep IMAPS 993 and submission ports 465 and 587 unexposed
-- Map forwarding-subdomain recipients to primary-domain Stalwart accounts
 - Configure the inbox.eu SMTP relay
     * Deliver local-domain mail locally and route other outbound mail through inbox.eu
     * Use the configured relay hostname, port, username, and implicit TLS or STARTTLS mode
     * Reject invalid relay certificates
     * Supply the relay password through the Stalwart runtime Secret
     * Use the configured notification sender address for alert emails
-    * Address alerts to `<stalwart.mailbox_username>@inbound.<domain>`
+    * Address alerts to `<stalwart.mailbox_username>@<domain>`
     * Send OpenObserve and Zabbix alerts directly to Stalwart's internal SMTP listener on TCP 2525
     * Use plain SMTP without authentication for internal alerts
-    * Deliver the forwarding alias into `<stalwart.mailbox_username>@<domain>`
     * Restrict internal alert SMTP ingress and egress to OpenObserve, Zabbix, and Stalwart pods
     * Reject anonymous external relaying on the internal SMTP listener
 - Support JMAP access, SMTP forwarding, filtering, outbound relay, and automatic certificate renewal
@@ -384,7 +385,7 @@ This file is the source of truth for the desired system state and its major deci
 - Derive every service hostname from one base domain
 - Keep the primary domain's mail with the external inbox provider
 - Serve a homepage at `www.<domain>` with a tile for each enabled application UI
-- Use `mx-inbound.<domain>` as the Stalwart hostname and `inbound.<domain>` as the forwarding domain
+- Use `mx-inbound.<domain>` as the Stalwart hostname
 
 ### LAN DNS
 
@@ -399,11 +400,10 @@ This file is the source of truth for the desired system state and its major deci
 
 ### Traefik
 
-- Deploy Traefik with host TCP 443 for HTTPS and host TCP 25 for SMTP
+- Deploy Traefik with host TCP 443 for HTTPS
 - Publish application services as ClusterIP endpoints behind exact Traefik host rules
 - Configure Traefik routes through the file provider without Kubernetes API access
 - Obtain Traefik HTTPS certificates with Cloudflare DNS-01
-- Proxy SMTP TCP 25 to Stalwart without terminating STARTTLS
 - Give Traefik a quota-controlled backup dataset and a dedicated 10Ti PV/PVC
 - Enable structured Traefik service and access logs on stdout
 - Disable the Traefik dashboard and leave unknown HTTPS hosts without a route
@@ -419,7 +419,7 @@ This file is the source of truth for the desired system state and its major deci
 ### Host access and service isolation
 
 - Restrict SSH, the Kubernetes API, Zabbix TCP 31051, and DNS 53 to local networks
-- Permit only TCP 443, TCP 25, the AmneziaWG UDP port, ICMP, and DHCP from untrusted networks
+- Permit only TCP 443, the AmneziaWG UDP port, ICMP, and DHCP from untrusted networks
 - Drop traffic from interfaces other than loopback, the default interface, and pod networking
 - Block obsolete application NodePorts and undeclared host ports
 - Label managed namespaces and enforce default-deny ingress and egress with explicit exceptions

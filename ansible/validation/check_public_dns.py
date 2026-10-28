@@ -25,9 +25,6 @@ def main():
 
 
 def require_mail_records(resolver, mail):
-    exchangers = resolve(resolver, mail["forwarding_domain"], "MX")
-    if mail["hostname"] not in exchangers:
-        raise RuntimeError(f"{resolver}: MX for {mail['forwarding_domain']} does not include {mail['hostname']}")
     primary = resolve(resolver, mail["domain"], "MX")
     if not primary or mail["hostname"] in primary:
         raise RuntimeError(f"{resolver}: MX for {mail['domain']} must point at the external inbox provider")

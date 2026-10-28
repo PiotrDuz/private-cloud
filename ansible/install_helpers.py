@@ -144,7 +144,6 @@ SERVICE_SUBDOMAINS = {
 }
 AMNEZIAWG_UI_SUBDOMAIN = "vpn-admin"
 HOMEPAGE_SUBDOMAIN = "www"
-MAIL_FORWARDING_SUBDOMAIN = "inbound"
 DERIVED_KEYS = {
     ("networking",): {"acme_email", "managed_records", "traefik_internal_ip", "traefik_cluster_ip", "lan_dns_cluster_ip", "zabbix_hostname", "homepage_hostname"},
     ("networking", "amneziawg"): {"hostname", "ui_hostname", "dns"},
@@ -154,7 +153,7 @@ DERIVED_KEYS = {
     ("grist",): {"hostname", "default_email"},
     ("affine",): {"hostname", "admin_email"},
     ("immich",): {"hostname", "timezone", "admin_email"},
-    ("stalwart",): {"domain", "forwarding_domain", "hostname", "acme_contact"},
+    ("stalwart",): {"domain", "hostname", "acme_contact"},
     ("logging",): {"hostname"},
     ("boot_integrity",): {"interface", "host_address", "gateway_ip"},
 }
@@ -358,7 +357,6 @@ def resolve_public_configuration(configuration: Mapping[str, Any]) -> dict[str, 
     cloud["immich"].update({"hostname": hostnames["immich"], "timezone": timezone, "admin_email": admin_email})
     cloud["stalwart"].update({
         "domain": domain,
-        "forwarding_domain": f"{MAIL_FORWARDING_SUBDOMAIN}.{domain}",
         "hostname": hostnames["stalwart"],
         "acme_contact": admin_email,
     })
@@ -674,22 +672,20 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Every public application hostname must be unique")
     stalwart = cloud["stalwart"]
     expected_stalwart = {
-        "storage_size", "max_ram", "domain", "forwarding_domain", "hostname",
+        "storage_size", "max_ram", "domain", "hostname",
         "acme_contact", "admin_username", "mailbox_username", "relay_host", "relay_port", "relay_implicit_tls", "relay_username",
     }
     if not isinstance(stalwart, dict) or set(stalwart) != expected_stalwart:
         raise InstallerError("Stalwart configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(stalwart.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(stalwart.get("max_ram", ""))):
         raise InstallerError("Invalid Stalwart size configuration")
-    for key in ("domain", "forwarding_domain", "hostname", "relay_host"):
+    for key in ("domain", "hostname", "relay_host"):
         if not isinstance(stalwart.get(key), str) or not DOMAIN_PATTERN.fullmatch(stalwart[key]):
             raise InstallerError(f"Invalid stalwart.{key}")
-    if stalwart["forwarding_domain"] == stalwart["domain"] or not stalwart["forwarding_domain"].endswith("." + stalwart["domain"]):
-        raise InstallerError("Stalwart forwarding_domain must be a subdomain of domain")
     if stalwart["hostname"] == stalwart["domain"] or not stalwart["hostname"].endswith("." + stalwart["domain"]):
         raise InstallerError("Stalwart hostname must be a subdomain of domain")
-    if stalwart["hostname"] == stalwart["forwarding_domain"]:
-        raise InstallerError("Stalwart hostname and forwarding_domain must differ")
+    if stalwart["relay_host"].count(".") < 2:
+        raise InstallerError("Stalwart relay_host must be a host inside the provider domain, such as mail.inbox.eu")
     for key in ("acme_contact", "relay_username"):
         if not isinstance(stalwart.get(key), str) or not EMAIL_PATTERN.fullmatch(stalwart[key]):
             raise InstallerError(f"Invalid stalwart.{key}")

@@ -6,7 +6,7 @@ import socket
 import sys
 import urllib.parse
 
-from http_helpers import https_certificate_days, https_get, smtp_tls
+from http_helpers import https_certificate_days, https_get
 
 
 MINIMUM_CERTIFICATE_DAYS = 14
@@ -37,10 +37,6 @@ def main():
         days = https_certificate_days(address, host)
         require_fresh(host, days)
         results.append({"host": host, "status": status, "certificate_days": days})
-    if config.get("smtp_host"):
-        days = smtp_tls(address, config["smtp_host"])
-        require_fresh(config["smtp_host"], days)
-        results.append({"host": config["smtp_host"], "port": 25, "starttls": True, "certificate_days": days})
     print(json.dumps({"checked": results}, separators=(",", ":")))
 
 

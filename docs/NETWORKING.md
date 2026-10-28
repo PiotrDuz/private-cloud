@@ -31,7 +31,6 @@ The host installs a persistent nftables table without flushing kube-router rules
 | Source | Host port | Purpose |
 | --- | --- | --- |
 | Any source | TCP `443` | Traefik HTTPS. |
-| Any source | TCP `25` | Traefik SMTP proxy. |
 | Any source | Configured UDP port | AmneziaWG. |
 | Configured local networks | TCP `22` | SSH. |
 | Configured local networks | TCP and UDP `53` | LAN DNS. |
@@ -40,7 +39,7 @@ The host installs a persistent nftables table without flushing kube-router rules
 
 Traffic from interfaces other than loopback, the default interface, `kube-bridge`, and pod `veth` links is dropped first. All other new traffic to the host is dropped, apart from required DHCP, ICMP, loopback, established traffic, and pod-to-node traffic. Direct external forwarding to pod and service CIDRs is dropped unless it belongs to an approved marked connection.
 
-The home router remains outside this repository. It must forward WAN TCP `443`, WAN TCP `25`, and the configured AmneziaWG UDP port to the host address. It must not forward SSH, DNS, the Kubernetes API, Zabbix, former application NodePorts, or any media service.
+The home router remains outside this repository. It must forward WAN TCP `443` and the configured AmneziaWG UDP port to the host address. It must not forward SSH, DNS, the Kubernetes API, Zabbix, former application NodePorts, or any media service.
 
 ## LAN DNS
 
@@ -62,7 +61,7 @@ The `lan-dns` CoreDNS Deployment in `dns-system` is the split-DNS resolver for L
 
 ## Traefik entry
 
-Traefik binds host TCP `443` and TCP `25` from a pod in `edge`.
+Traefik binds host TCP `443` from a pod in `edge`.
 
 - HTTPS uses exact `Host` rules from file-provider routes and Cloudflare DNS-01 certificates.
 - Each routed service publishes its route as a `traefik-route-<service>` ConfigMap in `edge`.
@@ -130,26 +129,27 @@ The stateless `forward-auth` Deployment in `edge` runs oauth2-proxy v7.15.5 for 
 
 ## Inbound mail and Stalwart TLS
 
-The external inbox remains the primary Internet receiver and forwards accepted messages to the configured forwarding-domain address. The inbound path is:
+The external inbox remains the only Internet receiver; no inbound SMTP port is published. The inbound path is:
 
-`Internet sender → external inbox → forwarding-domain MX → router TCP 25 forward → Traefik hostPort 25 → raw TCP proxy with Proxy Protocol v2 → Stalwart ClusterIP TCP 25`
+`Internet sender → external inbox → IMAP IDLE follower in the Stalwart pod → Stalwart SMTP TCP 25 on loopback with Proxy Protocol v2`
 
-Port `25` is required for the forwarding service's server-to-server SMTP delivery. The repository does not expose submission ports `465` or `587`, IMAPS `993`, or a direct Stalwart HTTPS port.
+- The `imap-fetch` container follows the provider INBOX read-only over IMAPS TCP `993`.
+- It starts after the newest message and stores the last delivered UID on the Stalwart dataset.
+- It never sets flags on, moves, or deletes provider messages.
+- It takes the original client address and HELO from the provider's own top `Received` headers.
+- It stops at the first `Received` header written outside the provider domain, so senders cannot forge the client.
+- Stalwart trusts Proxy Protocol only from loopback, so it runs SPF, iprev, DKIM, DMARC, and the spam filter against the original client.
+- Without a public client in those headers, the message is delivered as loopback and SPF does not pass.
+- Temporary Stalwart failures are retried; permanent rejections are logged and skipped.
 
 JMAP, web access, and administration use the mail hostname on Traefik HTTPS TCP `443`. Stalwart relays non-local outbound messages through the configured external `inbox.eu` SMTP service.
 
-Stalwart accepts STARTTLS on SMTP TCP `25`, trusts Proxy Protocol only from the configured pod network, and performs its own message filtering. Its HTTP listener trusts forwarded headers from any source, so a network policy limits TCP `8080` to Traefik and the Stalwart configuration Job. The host firewall therefore does not restrict SMTP to forwarding-service CIDRs.
-
-Stalwart owns its mail certificate lifecycle. It uses a dedicated Cloudflare DNS token to complete Let's Encrypt DNS-01 challenges, install the certificate for the configured mail hostname, and renew it before expiry. Traefik neither terminates SMTP TLS nor supplies Stalwart's certificate.
-
-The Stalwart certificate token and DDNS token are separate credentials:
+Stalwart owns its mail certificate lifecycle. It uses a dedicated Cloudflare DNS token to complete Let's Encrypt DNS-01 challenges for the mail hostname. The Stalwart certificate token and DDNS token are separate credentials:
 
 - The Stalwart token proves DNS control during certificate issuance and renewal.
 - The DDNS token updates the configured public A records when the WAN address changes.
 
-The primary receiving domain's MX records remain pointed at the external inbox provider. The forwarding domain's MX record points at the Stalwart mail hostname, whose A record is maintained by DDNS.
-
-The operator must still publish and verify SPF, DKIM, and DMARC records appropriate to the external receiving and outbound-relay design. The home address needs no PTR record because outbound mail leaves through the relay.
+The primary domain's MX records point at the external inbox provider. The operator must still publish SPF, DKIM, and DMARC records for the external receiving and outbound-relay design. The home address needs no PTR record because outbound mail leaves through the relay.
 
 ## Guarded media egress
 
@@ -210,7 +210,7 @@ A CronJob in `dns-system` discovers the current public IPv4 address and updates 
 
 Each run corrects the record content, sets `proxied` to false, and sets the TTL to 300 seconds. It refuses any discovered address that is not a public IPv4 address.
 
-DDNS changes DNS records only. It does not configure the router, create NAT rules, bypass CGNAT, or make an ISP-blocked TCP `25` reachable.
+DDNS changes DNS records only. It does not configure the router, create NAT rules, or bypass CGNAT.
 
 ## Allowed connection matrix
 
@@ -218,7 +218,7 @@ Everything omitted is denied. Each entry permits connection initiation in the st
 
 | Source | Destination | Allowed scope |
 | --- | --- | --- |
-| WAN | Traefik | TCP `443` and TCP `25`. |
+| WAN | Traefik | TCP `443`. |
 | WAN | AmneziaWG | Configured UDP port. |
 | Local networks | Host | TCP `22`, `6443`, and `31051`. |
 | LAN / AmneziaWG client | Traefik | TCP `443`. |
@@ -229,7 +229,7 @@ Everything omitted is denied. Each entry permits connection initiation in the st
 | Traefik | Homepage | TCP `8080`. |
 | Traefik | Stalwart HTTP | TCP `8080`. |
 | Immich machine learning | Model download endpoints | TCP `443` to public addresses. |
-| Traefik | Stalwart | TCP `25` with Proxy Protocol v2. |
+| Stalwart IMAP follower | External inbox | IMAPS TCP `993` to public addresses. |
 | Guarded media pod | Media VPN gateway | Proxy and DNS ports only. |
 | Media VPN gateway | AirVPN WireGuard servers | UDP `1637` to public addresses; gluetun pins the selected server. |
 | Media integrations | Declared arr / qBittorrent APIs | Required API ports only. |
@@ -250,7 +250,7 @@ Traefik, Jellyfin, and each enabled application have separate quota-controlled d
 
 Repository implementation is not evidence of live enforcement. Before exposure:
 
-- Confirm the router forwards only TCP `25`, TCP `443`, and the AmneziaWG UDP port.
+- Confirm the router forwards only TCP `443` and the AmneziaWG UDP port.
 - Verify all other host and former NodePort paths fail from WAN and LAN.
 - Verify SSH, Kubernetes API, and Zabbix work only from configured local networks.
 - Test every hostname from WAN, LAN, and AmneziaWG.

@@ -14,7 +14,7 @@
 - name: Verify public service and local administration firewall paths
   ansible.builtin.assert:
     that:
-      - networking_validation_firewall_rules.stdout is search('tcp dport \{ 25, 443 \}')
+      - networking_validation_firewall_rules.stdout is search('tcp dport 443 ')
       - networking_validation_firewall_rules.stdout is search('udp dport ' ~ (private_cloud.networking.amneziawg.listen_port | string))
       - networking_validation_firewall_rules.stdout is search('iifname "lo" accept')
       - networking_validation_firewall_rules.stdout is search('ip saddr @local_networks udp dport 53 accept')

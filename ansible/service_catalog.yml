@@ -31,6 +31,7 @@ private_cloud_memory_requests:
   immich_machine_learning: 384Mi
   valkey_immich: 32Mi
   stalwart: 96Mi
+  imap_fetch: 32Mi
   zabbix_server: 160Mi
   zabbix_web: 64Mi
   openobserve: 256Mi

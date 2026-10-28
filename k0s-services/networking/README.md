@@ -2,7 +2,7 @@
 
 The networking services are managed by `ansible/roles/networking`.
 
-- Traefik binds host TCP `443` for HTTPS and TCP `25` for SMTP.
+- Traefik binds host TCP `443` for HTTPS.
 - Application route ConfigMaps in `edge` use exact configured hostnames.
 - Traefik reads routes only through the Grist route ConfigMap.
 - Traefik uses Cloudflare DNS-01 for web certificates with explicit public resolvers.

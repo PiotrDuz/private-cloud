@@ -80,7 +80,6 @@ spec:
                   optional: true
           ports:
             - {name: management, containerPort: 8080, protocol: TCP}
-            - {name: smtp, containerPort: 25, protocol: TCP}
 {% if private_cloud.stages.notifications %}
             - {name: alert-smtp, containerPort: {{ private_cloud_alert_smtp_port }}, protocol: TCP}
 {% endif %}
@@ -108,7 +107,38 @@ spec:
             - {name: config, mountPath: /etc/stalwart/config.json, subPath: config.json, readOnly: true}
             - {name: data, mountPath: /var/lib/stalwart}
             - {name: temporary, mountPath: /tmp}
+        # Follows the external inbox and hands new mail to the SMTP listener with the original client in Proxy Protocol.
+        - name: imap-fetch
+          image: {{ stalwart_wait_image }}
+          imagePullPolicy: IfNotPresent
+          command: [python3, -u, /imap-fetch/imap_fetch.py]
+          securityContext:
+            runAsNonRoot: true
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
+            - {name: IMAP_HOST, value: {{ private_cloud.stalwart.relay_host | to_json }}}
+            - {name: IMAP_USERNAME, value: {{ private_cloud.stalwart.relay_username | to_json }}}
+            - name: IMAP_PASSWORD
+              valueFrom: {secretKeyRef: {name: stalwart-runtime-credentials, key: INBOX_EU_SMTP_PASSWORD}}
+            - {name: RECIPIENT, value: {{ (private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.domain) | to_json }}}
+            - {name: RECEIVER_DOMAIN, value: {{ stalwart_imap_fetch_receiver_domain | to_json }}}
+            - {name: STATE_PATH, value: {{ stalwart_imap_fetch_state_path | to_json }}}
+          resources:
+            requests: {cpu: 10m, memory: {{ private_cloud_memory_requests.imap_fetch }}}
+            limits: {memory: 256Mi}
+          volumeMounts:
+            - {name: imap-fetch, mountPath: /imap-fetch, readOnly: true}
+            - {name: data, mountPath: /var/lib/stalwart}
       volumes:
+        - name: imap-fetch
+          configMap:
+            name: stalwart-config
+            items: [{key: imap_fetch.py, path: imap_fetch.py}, {key: imap_fetch_helpers.py, path: imap_fetch_helpers.py}]
         - name: api-check
           configMap:
             name: stalwart-config

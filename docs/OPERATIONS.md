@@ -125,7 +125,6 @@ Traefik renews HTTPS certificates automatically; Stalwart renews its SMTP STARTT
 | Weekly check | What to inspect |
 | --- | --- |
 | Traefik HTTPS | Expiry and hostname validity on each application hostname at TCP 443. |
-| Stalwart SMTP | Expiry and hostname validity using STARTTLS on the mail hostname at TCP 25. |
 | Renewal logs | ACME failures, DNS challenge errors, and rejected Cloudflare tokens. |
 | Mail delivery | Delivery queues, relay failures, forwarding failures, and rejected recipients. |
 

@@ -51,7 +51,7 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 - [ ] Validate Jellyfin library scans, playback, and metadata downloads.
 - [x] Require publicly trusted certificates with more than 14 days remaining.
 - [ ] Observe a completed Let's Encrypt renewal for Traefik and Stalwart.
-- [x] Validate forwarding-domain MX, SPF, and DMARC records through public resolvers.
+- [x] Validate primary-domain MX, SPF, and DMARC records through public resolvers.
 - [ ] Validate the provider-specific DKIM record.
 - [ ] Validate host firewall reachability from WAN and local networks.
 

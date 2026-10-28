@@ -28,16 +28,27 @@
   changed_when: false
   no_log: true
 
-- name: Validate anonymous provider forwarding and reject external SMTP relaying
-  ansible.builtin.command:
-    argv: [python3, "{{ playbook_dir }}/validation/check_inbound_mail.py"]
-    stdin: >-
-      {{ {
-        'address': private_cloud.networking.traefik_internal_ip,
-        'sender': private_cloud.notifications.from_address,
-        'recipient': private_cloud.stalwart.mailbox_username ~ '@' ~ private_cloud.stalwart.forwarding_domain
-      } | to_json }}
+- name: Read the external inbox follower state
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ stalwart_kubeconfig }}"
+    namespace: "{{ stalwart_namespace }}"
+    pod: stalwart-0
+    container: imap-fetch
+    command: cat {{ stalwart_imap_fetch_state_path }}
+  register: stalwart_validation_imap_fetch
+  until: stalwart_validation_imap_fetch.rc | default(1) == 0
+  retries: 12
+  delay: 10
   changed_when: false
+
+# The follower rewrites its state after every IDLE cycle, so a stale timestamp means it cannot reach the provider.
+- name: Require the external inbox follower to be connected
+  ansible.builtin.assert:
+    that:
+      - (stalwart_validation_imap_fetch.stdout | from_json).uidvalidity is integer
+      - (stalwart_validation_imap_fetch.stdout | from_json).last_uid is integer
+      - (now(utc=true).timestamp() | int) - (stalwart_validation_imap_fetch.stdout | from_json).checked < 900
+    fail_msg: The IMAP follower has not checked the external inbox in the last 15 minutes.
 
 - name: Read the Stalwart search key
   kubernetes.core.k8s_info:
