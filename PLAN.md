@@ -382,7 +382,8 @@ This file is the source of truth for the desired system state and its major deci
 
 - Maintain configured public A records with a dedicated Cloudflare DDNS token
 - Derive every service hostname from one base domain
-- Keep the primary domain's mail and web hostnames with the external inbox provider
+- Keep the primary domain's mail with the external inbox provider
+- Serve a homepage at `www.<domain>` with a tile for each enabled application UI
 - Use `mx-inbound.<domain>` as the Stalwart hostname and `inbound.<domain>` as the forwarding domain
 
 ### LAN DNS
@@ -406,6 +407,7 @@ This file is the source of truth for the desired system state and its major deci
 - Give Traefik a quota-controlled backup dataset and a dedicated 10Ti PV/PVC
 - Enable structured Traefik service and access logs on stdout
 - Disable the Traefik dashboard and leave unknown HTTPS hosts without a route
+- Run a stateless nginx homepage in edge from a generated ConfigMap
 - Run a stateless [oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy) helper in edge for Grist's OpenCloud OIDC login
 - Keep the helper's OIDC client secret and cookie-signing secret in Kubernetes Secrets
 - Configure ForwardAuth to pass the authenticated email to Grist through `X-Forwarded-User`

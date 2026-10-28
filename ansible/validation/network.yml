@@ -36,7 +36,8 @@
           {'stage': 'stalwart', 'host': private_cloud.stalwart.hostname, 'path': '/.well-known/jmap'},
           {'stage': 'zabbix_server', 'host': private_cloud.networking.zabbix_hostname},
           {'stage': 'logging', 'host': private_cloud.logging.hostname},
-          {'stage': 'networking', 'host': private_cloud.networking.amneziawg.ui_hostname}
+          {'stage': 'networking', 'host': private_cloud.networking.amneziawg.ui_hostname},
+          {'stage': 'networking', 'host': private_cloud.networking.homepage_hostname}
         ] | selectattr('stage', 'in', private_cloud.stages | dict2items | selectattr('value', 'equalto', true) | map(attribute='key') | list) | list,
         'smtp_host': private_cloud.stalwart.hostname if private_cloud.stages.stalwart else none
       } | to_json }}

@@ -24,16 +24,16 @@ sudo python3 ansible/install.py
 - `/tank/secure/backup/private-cloud-config/private-cloud.secrets.yml` stores Ansible Vault ciphertext.
 - The installer stores both files on a root-only dataset with a 10MiB quota.
 - Initial installation stages configuration under `/run/private-cloud` until the dataset is mounted.
-- `ansible/config/private-cloud.example.yml` documents the configuration contract at public schema version 16 and secrets schema version 9.
+- `ansible/config/private-cloud.example.yml` documents the configuration contract at public schema version 17 and secrets schema version 9.
 - The stored configuration holds base values; the installer expands them into the full contract before each Ansible run.
 - Every service hostname is a fixed subdomain of `private_cloud.domain`, such as `cloud.<domain>` for OpenCloud.
-- The Cloudflare managed records are the hostnames of enabled stages; `vpn-admin.<domain>` stays private.
+- The Cloudflare managed records are the hostnames of enabled stages plus `www.<domain>`; `vpn-admin.<domain>` stays private.
 - `private_cloud.admin_email` serves as the ACME contact and the application administrator email.
 - `private_cloud.timezone` applies to every service; the installer proposes the host timezone.
 - `networking.lan` holds the host interface, address, and gateway; the installer proposes the discovered values.
 - The Traefik address and the boot-integrity network derive from `networking.lan`.
 - The installer proposes the LAN subnet as the local network and the gateway as the AmneziaWG peer DNS.
-- Subdomains: `cloud`, `onlyoffice`, `grist`, `affine`, `photos`, `jellyfin`, `mail`, `inbound` for mail forwarding, `logs`, `monitor`, `vpn`, and `vpn-admin`.
+- Subdomains: `cloud`, `onlyoffice`, `grist`, `affine`, `photos`, `jellyfin`, `mx-inbound`, `inbound` for mail forwarding, `logs`, `monitor`, `vpn`, `vpn-admin`, and `www` for the homepage.
 - The Vault password is never stored by the installer.
 - The `CREATE tank` authorization is requested only before new pool creation.
 - The installer records a root-only create intent before pool creation and resumes an interrupted create from it.

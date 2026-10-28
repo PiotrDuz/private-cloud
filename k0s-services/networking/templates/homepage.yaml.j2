@@ -1,0 +1,198 @@
+{% set homepage_apps = [
+  {'stage': 'opencloud', 'name': 'OpenCloud', 'about': 'Files and sharing', 'url': 'https://' ~ private_cloud.opencloud.hostname ~ '/', 'color': '#1f6feb'},
+  {'stage': 'affine', 'name': 'AFFiNE', 'about': 'Notes and whiteboards', 'url': 'https://' ~ private_cloud.affine.hostname ~ '/', 'color': '#8250df'},
+  {'stage': 'grist', 'name': 'Grist', 'about': 'Spreadsheets and databases', 'url': 'https://' ~ private_cloud.grist.hostname ~ '/', 'color': '#1a7f37'},
+  {'stage': 'immich', 'name': 'Immich', 'about': 'Photos and videos', 'url': 'https://' ~ private_cloud.immich.hostname ~ '/', 'color': '#bf3989'},
+  {'stage': 'media', 'name': 'Jellyfin', 'about': 'Movies and series', 'url': 'https://' ~ private_cloud.media.hostname ~ '/', 'color': '#0969da'},
+  {'stage': 'stalwart', 'name': 'Stalwart', 'about': 'Mail administration', 'url': 'https://' ~ private_cloud.stalwart.hostname ~ '/admin/', 'color': '#bc4c00'},
+  {'stage': 'logging', 'name': 'OpenObserve', 'about': 'Logs', 'url': 'https://' ~ private_cloud.logging.hostname ~ '/', 'color': '#9a6700'},
+  {'stage': 'zabbix_server', 'name': 'Zabbix', 'about': 'Monitoring and alerts', 'url': 'https://' ~ private_cloud.networking.zabbix_hostname ~ '/', 'color': '#cf222e'},
+  {'stage': 'networking', 'name': 'VPN admin', 'about': 'AmneziaWG peers, LAN only', 'url': 'https://' ~ private_cloud.networking.amneziawg.ui_hostname ~ '/', 'color': '#57606a'},
+] | selectattr('stage', 'in', private_cloud.stages | dict2items | selectattr('value') | map(attribute='key') | list) | list %}
+{% set homepage_html %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ private_cloud.stalwart.domain }}</title>
+<style>
+:root { --bg: #f6f8fa; --tile: #ffffff; --text: #1f2328; --muted: #59636e; --border: #d1d9e0; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --tile: #151b23; --text: #f0f6fc; --muted: #9198a1; --border: #3d444d; } }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 960px; margin: 0 auto; padding: 48px 16px; }
+h1 { margin: 0 0 32px; font-size: 28px; font-weight: 600; }
+ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
+a { display: flex; gap: 14px; align-items: center; height: 100%; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--tile); color: inherit; text-decoration: none; transition: transform .15s, box-shadow .15s; }
+a:hover, a:focus-visible { transform: translateY(-2px); box-shadow: 0 6px 18px rgb(0 0 0 / .12); outline: none; }
+.icon { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; color: #fff; font-weight: 700; font-size: 20px; }
+.name { font-weight: 600; }
+.about { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+<h1>{{ private_cloud.stalwart.domain }}</h1>
+<ul>
+{% for app in homepage_apps %}
+<li><a href="{{ app.url }}"><span class="icon" style="background: {{ app.color }}">{{ app.name[0] }}</span><span><span class="name">{{ app.name }}</span><br><span class="about">{{ app.about }}</span></span></a></li>
+{% endfor %}
+</ul>
+</main>
+</body>
+</html>
+{% endset %}
+{% set homepage_nginx %}
+server {
+    listen 8080;
+    server_tokens off;
+    root /usr/share/nginx/html;
+    add_header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    location = /healthz { access_log off; return 204; }
+    location / { try_files /index.html =404; }
+}
+{% endset %}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: homepage
+  namespace: edge
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homepage
+  namespace: edge
+data:
+  default.conf: |
+{{ homepage_nginx | indent(4, true) }}
+  index.html: |
+{{ homepage_html | indent(4, true) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homepage
+  namespace: edge
+  labels:
+    app.kubernetes.io/name: homepage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: homepage
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: homepage
+      annotations:
+        private-cloud.example/config-checksum: "{{ (homepage_nginx ~ homepage_html) | hash('sha256') }}"
+    spec:
+      serviceAccountName: homepage
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: homepage
+          image: {{ networking_homepage_image }}
+          imagePullPolicy: IfNotPresent
+          command: [nginx, -g, daemon off;]
+          securityContext:
+            runAsNonRoot: true
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports:
+            - {name: http, containerPort: 8080, protocol: TCP}
+          resources:
+            requests: {cpu: 10m, memory: {{ private_cloud_memory_requests.homepage }}, ephemeral-storage: 16Mi}
+            limits: {memory: 64Mi, ephemeral-storage: 64Mi}
+          readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 30, timeoutSeconds: 3}
+          volumeMounts:
+            - {name: config, mountPath: /etc/nginx/conf.d, readOnly: true}
+            - {name: html, mountPath: /usr/share/nginx/html, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: config
+          configMap: {name: homepage, items: [{key: default.conf, path: default.conf}]}
+        - name: html
+          configMap: {name: homepage, items: [{key: index.html, path: index.html}]}
+        - {name: tmp, emptyDir: {sizeLimit: 16Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: homepage
+  namespace: edge
+  labels:
+    app.kubernetes.io/name: homepage
+spec:
+  selector:
+    app.kubernetes.io/name: homepage
+  ports:
+    - {name: http, port: 8080, targetPort: http, protocol: TCP}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: homepage
+  namespace: edge
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: homepage}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports:
+        - {protocol: TCP, port: 8080}
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: homepage-traefik-egress
+  namespace: edge
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: traefik}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: homepage}
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-route-homepage
+  namespace: edge
+  labels: {private-cloud.example/traefik-route: "true"}
+data:
+  homepage.yaml: |
+    http:
+      routers:
+        homepage:
+          entryPoints: [websecure]
+          rule: Host(`{{ private_cloud.networking.homepage_hostname }}`)
+          service: homepage
+          tls:
+            certResolver: cloudflare
+      services:
+        homepage:
+          loadBalancer:
+            servers:
+              - url: http://homepage.edge.svc.cluster.local:8080

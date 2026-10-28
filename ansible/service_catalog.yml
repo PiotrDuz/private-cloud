@@ -16,6 +16,7 @@ private_cloud_memory_requests:
   ddns: 32Mi
   lan_dns: 32Mi
   forward_auth: 32Mi
+  homepage: 16Mi
   postgres: 384Mi
   meilisearch: 64Mi
   tika: 256Mi

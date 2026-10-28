@@ -2,7 +2,9 @@
 networking_kubeconfig: /run/private-cloud/kubeconfig
 networking_traefik_image: traefik:v3.7.13@sha256:f86a2cab1b5c649070c49f883c743dd32d8485a56e3368c5f93b9e91f1e91259
 networking_forward_auth_image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5@sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916
+networking_homepage_image: nginxinc/nginx-unprivileged:1.31.6-alpine-slim@sha256:ac4d9c7e457c6510b95ac72dd84b27f7cc68ecb9a83fbd44f05a6460cf08aba4
 networking_traefik_route_services:
+  - homepage
   - opencloud
   - onlyoffice
   - grist

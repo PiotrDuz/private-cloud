@@ -143,9 +143,10 @@ SERVICE_SUBDOMAINS = {
     "zabbix_server": "monitor",
 }
 AMNEZIAWG_UI_SUBDOMAIN = "vpn-admin"
+HOMEPAGE_SUBDOMAIN = "www"
 MAIL_FORWARDING_SUBDOMAIN = "inbound"
 DERIVED_KEYS = {
-    ("networking",): {"acme_email", "managed_records", "traefik_internal_ip", "traefik_cluster_ip", "lan_dns_cluster_ip", "zabbix_hostname"},
+    ("networking",): {"acme_email", "managed_records", "traefik_internal_ip", "traefik_cluster_ip", "lan_dns_cluster_ip", "zabbix_hostname", "homepage_hostname"},
     ("networking", "amneziawg"): {"hostname", "ui_hostname", "dns"},
     ("media",): {"hostname", "timezone"},
     ("onlyoffice",): {"hostname"},
@@ -338,13 +339,15 @@ def resolve_public_configuration(configuration: Mapping[str, Any]) -> dict[str, 
         raise InstallerError("Invalid networking.cluster_dns_ip") from error
     stages = cloud["stages"] if isinstance(cloud.get("stages"), dict) else {}
     hostnames = {stage: f"{label}.{domain}" for stage, label in SERVICE_SUBDOMAINS.items()}
+    homepage_hostname = f"{HOMEPAGE_SUBDOMAIN}.{domain}"
     networking.update({
         "acme_email": admin_email,
-        "managed_records": [hostname for stage, hostname in hostnames.items() if stages.get(stage)],
+        "managed_records": [hostname for stage, hostname in hostnames.items() if stages.get(stage)] + ([homepage_hostname] if stages.get("networking") else []),
         "traefik_internal_ip": str(lan_address.ip),
         "traefik_cluster_ip": str(cluster_dns_address + 2),
         "lan_dns_cluster_ip": str(cluster_dns_address + 1),
         "zabbix_hostname": hostnames["zabbix_server"],
+        "homepage_hostname": homepage_hostname,
     })
     networking["amneziawg"].update({"hostname": hostnames["networking"], "ui_hostname": f"{AMNEZIAWG_UI_SUBDOMAIN}.{domain}", "dns": [str(lan_address.ip)]})
     cloud["media"].update({"hostname": hostnames["media"], "timezone": timezone})
@@ -428,7 +431,7 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
     if not RAM_PATTERN.fullmatch(str(k0s.get("host_reserve_ram", ""))) or ram_to_bytes(k0s["host_reserve_ram"]) < ram_to_bytes(storage["arc_max"]) + 1073741824:
         raise InstallerError("k0s.host_reserve_ram must cover ZFS ARC and at least 1Gi for host services")
     networking = cloud["networking"]
-    expected_networking = {"storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "managed_records", "pod_cidr", "service_cidr", "cluster_dns_ip", "local_network_cidrs", "traefik_internal_ip", "traefik_cluster_ip", "lan_dns_cluster_ip", "zabbix_hostname", "amneziawg"}
+    expected_networking = {"storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "managed_records", "pod_cidr", "service_cidr", "cluster_dns_ip", "local_network_cidrs", "traefik_internal_ip", "traefik_cluster_ip", "lan_dns_cluster_ip", "zabbix_hostname", "homepage_hostname", "amneziawg"}
     if not isinstance(networking, dict) or set(networking) != expected_networking:
         raise InstallerError("Networking configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(networking.get("storage_size", ""))):
@@ -437,6 +440,8 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Invalid networking.acme_email")
     if not DOMAIN_PATTERN.fullmatch(str(networking.get("zabbix_hostname", ""))):
         raise InstallerError("Invalid networking.zabbix_hostname")
+    if not DOMAIN_PATTERN.fullmatch(str(networking.get("homepage_hostname", ""))):
+        raise InstallerError("Invalid networking.homepage_hostname")
     if not re.fullmatch(r"[0-9a-fA-F]{32}", str(networking.get("cloudflare_zone_id", ""))):
         raise InstallerError("Invalid networking.cloudflare_zone_id")
     if not re.fullmatch(r"https://[^\s/]+(?:/[^\s]*)?", str(networking.get("public_ip_url", ""))):
@@ -739,7 +744,7 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
     }
     enabled_hostnames = [hostname for stage, hostname in public_hostnames.items() if stages[stage]]
     if stages["networking"]:
-        enabled_hostnames.append(amneziawg["ui_hostname"])
+        enabled_hostnames += [amneziawg["ui_hostname"], networking["homepage_hostname"]]
     if len(enabled_hostnames) != len(set(enabled_hostnames)):
         raise InstallerError("Enabled public service hostnames must be unique")
     missing_records = sorted(set(public_hostnames[stage] for stage in public_hostnames if stages[stage]) - set(managed_records))

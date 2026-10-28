@@ -31,7 +31,7 @@
       - (private_cloud.stages.keys() | list | sort) == ['affine', 'bleve', 'boot_integrity', 'grist', 'immich', 'intel_gpu', 'k0s', 'logging', 'manticore', 'media', 'meilisearch', 'networking', 'notifications', 'onlyoffice', 'opencloud', 'postgres', 'redis_affine', 'stalwart', 'tika', 'zabbix_agent', 'zabbix_server', 'zfs']
       - (private_cloud.storage.keys() | list | sort) == ['arc_max', 'disks']
       - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'host_reserve_ram', 'images_quota']
-      - (private_cloud.networking.keys() | list | sort) == ['acme_email', 'amneziawg', 'cloudflare_zone_id', 'cluster_dns_ip', 'lan_dns_cluster_ip', 'local_network_cidrs', 'managed_records', 'pod_cidr', 'public_ip_url', 'service_cidr', 'storage_size', 'traefik_cluster_ip', 'traefik_internal_ip', 'zabbix_hostname']
+      - (private_cloud.networking.keys() | list | sort) == ['acme_email', 'amneziawg', 'cloudflare_zone_id', 'cluster_dns_ip', 'homepage_hostname', 'lan_dns_cluster_ip', 'local_network_cidrs', 'managed_records', 'pod_cidr', 'public_ip_url', 'service_cidr', 'storage_size', 'traefik_cluster_ip', 'traefik_internal_ip', 'zabbix_hostname']
       - (private_cloud.networking.amneziawg.keys() | list | sort) == ['admin_username', 'dns', 'hostname', 'lan_access', 'listen_port', 'storage_size', 'tunnel_cidr', 'ui_hostname']
       - (private_cloud.media.keys() | list | sort) == ['hostname', 'jellyfin_admin_username', 'max_ram', 'quality_profiles', 'storage_size', 'timezone', 'vpn']
       - (private_cloud.media.quality_profiles.keys() | list | sort) == ['radarr', 'sonarr']
@@ -901,7 +901,7 @@
       {{ [
         ['networking', 'traefik', '256Mi', 1], ['networking', 'amneziawg', '256Mi', 1],
         ['networking', 'lan_dns', '128Mi', 1],
-        ['networking', 'ddns', '64Mi', 1], ['grist', 'forward_auth', '64Mi', 1],
+        ['networking', 'ddns', '64Mi', 1], ['networking', 'homepage', '64Mi', 1], ['grist', 'forward_auth', '64Mi', 1],
         ['postgres', 'postgres', private_cloud.postgres.max_ram, 1],
         ['meilisearch', 'meilisearch', private_cloud.meilisearch.max_ram, 1],
         ['tika', 'tika', private_cloud.tika.max_ram, 1],

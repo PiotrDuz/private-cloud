@@ -100,6 +100,16 @@ Pods resolve the public hostname to the Traefik Service on TCP `443`. Service tr
 - AmneziaWG reaches the same pod port through hostPort translation of the host address.
 - Application policies do not allow the untranslated Service or host address on TCP `443`.
 
+## Homepage
+
+The stateless `homepage` Deployment in `edge` serves `https://www.<domain>` with nginx.
+
+- The networking role renders the page from enabled stages; it has no data or credentials.
+- Each tile links to an application UI; Stalwart links to `/admin/`.
+- OnlyOffice has no tile because users open documents through OpenCloud.
+- The `vpn-admin` tile works only from local networks and VPN peers.
+- The pod accepts TCP `8080` from Traefik only and has no egress.
+
 ## OpenCloud and Grist authentication
 
 OpenCloud runs its built-in provider in `private-cloud` and publishes `https://<opencloud-hostname>` through Traefik. Applications and the Grist helper reach the issuer through the Traefik pod on TCP `8443` after hostPort translation.
@@ -216,6 +226,7 @@ Everything omitted is denied. Each entry permits connection initiation in the st
 | Jellyfin | metadata and artwork providers | TCP `443` after cluster DNS. |
 | OIDC-enabled applications / oauth2-proxy helper | OpenCloud issuer | TCP `8443` to the Traefik pod after hostPort translation. |
 | Traefik | oauth2-proxy helper | TCP `4180`. |
+| Traefik | Homepage | TCP `8080`. |
 | Traefik | Stalwart HTTP | TCP `8080`. |
 | Immich machine learning | Model download endpoints | TCP `443` to public addresses. |
 | Traefik | Stalwart | TCP `25` with Proxy Protocol v2. |
