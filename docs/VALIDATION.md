@@ -64,7 +64,7 @@ Validators trust only the distribution's Mozilla root store in `/usr/share/ca-ce
 - It requires separate administrator and ingestion Secrets, with Alloy mounting only the ingestion Secret.
 - The missing-heartbeat rule is an SQL aggregate that returns a row only when the count is zero.
 - It waits for the host heartbeat and delivers a temporary alert to the configured Stalwart mailbox when notifications are enabled.
-- The Zabbix server validator checks API access, the monitored host, templates, the storage dashboard, and notification settings.
+- The Zabbix server validator checks API access, the monitored host, templates, the dashboard pages, and notification settings.
 - It requires the monitored host to use PSK for agent connections.
 - The Zabbix Agent validator checks the service, listener, item keys, collectors, SMART wrapper, PSK file, and certificates.
 - It checks the Alloy endpoint only when the logging stage is enabled.

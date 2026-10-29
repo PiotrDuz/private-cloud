@@ -11,7 +11,8 @@ zabbix_pv_capacity: 10Ti
 zabbix_postgres_service: postgres
 zabbix_kubeconfig: /run/private-cloud/kubeconfig
 zabbix_host_group: Private cloud
-zabbix_dashboard_name: Private cloud ZFS storage
+zabbix_dashboard_name: Private cloud
+zabbix_pool_name: tank
 zabbix_template_choices:
   - [Linux by Zabbix agent active]
   - [SMART by Zabbix agent active 2, SMART by Zabbix agent 2 active]

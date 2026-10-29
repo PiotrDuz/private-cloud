@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the live Zabbix API, host templates, dashboard, and configured mail route."""
+"""Check the live Zabbix API, host templates, dashboard pages, and configured mail route."""
 import json
 import sys
 import urllib.request
@@ -50,8 +50,11 @@ def main():
             "output": ["dashboardid", "name"],
             "selectPages": "extend",
             "filter": {"name": [config["dashboard"]]},
-        }), "managed storage dashboard")
+        }), "managed dashboard")
         pages = dashboard.get("pages", [])
+        expected_pages = ["Overview", "Storage", "Dataset capacity", "Disks"] + (["Services"] if config["health"] else [])
+        if [page.get("name") for page in pages] != expected_pages:
+            raise RuntimeError("The managed Zabbix dashboard pages differ from " + ", ".join(expected_pages))
         capacity_pages = [page for page in pages if page.get("name") == "Dataset capacity"]
         if len(capacity_pages) != 1:
             raise RuntimeError("The managed Zabbix dashboard has no unique Dataset capacity page")

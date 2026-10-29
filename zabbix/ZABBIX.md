@@ -21,6 +21,15 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - Zabbix Agent and the host object authenticate with a PSK stored in the encrypted configuration.
 - `zabbix-zfs-template.yaml` defines ZFS items, discovery, and alerts.
 - `zabbix-memory-ecc-template.yaml` defines ECC items, discovery, and alerts.
+- `configure_dashboards.py` maintains the Private cloud dashboard from the host's live items.
+
+## Dashboard
+
+- Overview shows problems, CPU, memory, pool gauges, key status values, and host graphs.
+- Storage shows pool throughput, operations, vdev state, scrub results, and ARC usage.
+- Dataset capacity shows the enabled datasets by quota utilization and allocation.
+- Disks shows SMART temperature, power-on hours, utilization, and I/O rates.
+- Services shows certificate days left and Alloy retries and drops when the agent stage is enabled.
 
 ## SMART dependency
 

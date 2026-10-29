@@ -32,6 +32,9 @@ def main() -> int:
         )
         return 128 - result.returncode
     if result.returncode >= 128 or result.returncode & 7:
+        if len(arguments) == 5 and "," in arguments[3]:
+            # Discovery probes every disk for RAID controllers; a failure only means there is none.
+            return result.returncode
         log_collector_errors(
             "smart",
             [

@@ -507,7 +507,8 @@ This file is the source of truth for the desired system state and its major deci
     * Alert on unfixed ECC error
     * Warn on ECC error that has been fixed
 - Link active Linux, SMART, ZFS, and ECC templates to `private-cloud-zabbix`, the Zabbix host name from the service catalog
-- Maintain the Dataset capacity dashboard from the enabled dataset catalog
+- Maintain the Private cloud dashboard with Overview, Storage, Dataset capacity, Disks, and Services pages
+    * Build the Dataset capacity page from the enabled dataset catalog
 - Alert on stale collectors, old snapshots, overdue scrubs, and unavailable ECC telemetry
 - Email Warning, Average, High, and Disaster problems directly to Stalwart when notifications are enabled
 - Use native stdout/stderr for Zabbix containers
