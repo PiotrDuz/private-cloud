@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: affine-config
+  namespace: private-cloud
+  labels: {app.kubernetes.io/name: affine}
+data:
+  config.json: {{ affine_server_config | to_json | to_json }}

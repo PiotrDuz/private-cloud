@@ -12,3 +12,7 @@ affine_pvc_name: affine-data
 affine_pv_capacity: 10Ti
 affine_pgvector_version: 0.8.2
 affine_kubeconfig: /run/private-cloud/kubeconfig
+# Unauthenticated visitors get the sign-in page instead of a browser-local demo workspace.
+affine_server_config:
+  flags:
+    allowGuestDemoWorkspace: false

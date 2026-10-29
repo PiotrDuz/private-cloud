@@ -104,7 +104,7 @@ Pods resolve the public hostname to the Traefik Service on TCP `443`. Service tr
 The stateless `homepage` Deployment in `edge` serves `https://www.<domain>` with nginx.
 
 - The networking role renders the page from enabled stages; it has no data or credentials.
-- Each tile is an icon linking to an application UI; the name appears only as a tooltip.
+- Each tile is an icon with the service name below it, linking to the application UI.
 - The Apps section holds OpenCloud, AFFiNE, Grist, Immich, and Jellyfin.
 - The Administration section holds Stalwart `/admin/`, OpenObserve, Zabbix, and `vpn-admin`.
 - OnlyOffice has no tile because users open documents through OpenCloud.

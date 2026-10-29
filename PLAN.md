@@ -384,7 +384,7 @@ This file is the source of truth for the desired system state and its major deci
 - Maintain configured public A records with a dedicated Cloudflare DDNS token
 - Derive every service hostname from one base domain
 - Keep the primary domain's mail with the external inbox provider
-- Serve a homepage at `www.<domain>` with an icon tile for each enabled application UI, split into apps and administration
+- Serve a homepage at `www.<domain>` with a named icon tile for each enabled application UI, split into apps and administration
 - Use `mx-inbound.<domain>` as the Stalwart hostname
 
 ### LAN DNS

@@ -11,17 +11,17 @@
 } %}
 {% set homepage_sections = [
   {'name': 'Apps', 'apps': [
-    {'stage': 'opencloud', 'name': 'OpenCloud files', 'icon': 'cloud', 'url': 'https://' ~ private_cloud.opencloud.hostname ~ '/', 'color': '#1f6feb'},
-    {'stage': 'affine', 'name': 'AFFiNE notes', 'icon': 'notes', 'url': 'https://' ~ private_cloud.affine.hostname ~ '/', 'color': '#8250df'},
-    {'stage': 'grist', 'name': 'Grist spreadsheets', 'icon': 'sheet', 'url': 'https://' ~ private_cloud.grist.hostname ~ '/', 'color': '#1a7f37'},
-    {'stage': 'immich', 'name': 'Immich photos', 'icon': 'photo', 'url': 'https://' ~ private_cloud.immich.hostname ~ '/', 'color': '#bf3989'},
-    {'stage': 'media', 'name': 'Jellyfin media', 'icon': 'play', 'url': 'https://' ~ private_cloud.media.hostname ~ '/', 'color': '#0969da'},
+    {'stage': 'opencloud', 'name': 'OpenCloud', 'icon': 'cloud', 'url': 'https://' ~ private_cloud.opencloud.hostname ~ '/', 'color': '#1f6feb'},
+    {'stage': 'affine', 'name': 'AFFiNE', 'icon': 'notes', 'url': 'https://' ~ private_cloud.affine.hostname ~ '/', 'color': '#8250df'},
+    {'stage': 'grist', 'name': 'Grist', 'icon': 'sheet', 'url': 'https://' ~ private_cloud.grist.hostname ~ '/', 'color': '#1a7f37'},
+    {'stage': 'immich', 'name': 'Immich', 'icon': 'photo', 'url': 'https://' ~ private_cloud.immich.hostname ~ '/', 'color': '#bf3989'},
+    {'stage': 'media', 'name': 'Jellyfin', 'icon': 'play', 'url': 'https://' ~ private_cloud.media.hostname ~ '/', 'color': '#0969da'},
   ]},
   {'name': 'Administration', 'apps': [
-    {'stage': 'stalwart', 'name': 'Stalwart mail administration', 'icon': 'mail', 'url': 'https://' ~ private_cloud.stalwart.hostname ~ '/admin/', 'color': '#bc4c00'},
-    {'stage': 'logging', 'name': 'OpenObserve logs', 'icon': 'logs', 'url': 'https://' ~ private_cloud.logging.hostname ~ '/', 'color': '#9a6700'},
-    {'stage': 'zabbix_server', 'name': 'Zabbix monitoring', 'icon': 'pulse', 'url': 'https://' ~ private_cloud.networking.zabbix_hostname ~ '/', 'color': '#cf222e'},
-    {'stage': 'networking', 'name': 'AmneziaWG VPN administration', 'icon': 'shield', 'url': 'https://' ~ private_cloud.networking.amneziawg.ui_hostname ~ '/', 'color': '#57606a'},
+    {'stage': 'stalwart', 'name': 'Stalwart', 'icon': 'mail', 'url': 'https://' ~ private_cloud.stalwart.hostname ~ '/admin/', 'color': '#bc4c00'},
+    {'stage': 'logging', 'name': 'OpenObserve', 'icon': 'logs', 'url': 'https://' ~ private_cloud.logging.hostname ~ '/', 'color': '#9a6700'},
+    {'stage': 'zabbix_server', 'name': 'Zabbix', 'icon': 'pulse', 'url': 'https://' ~ private_cloud.networking.zabbix_hostname ~ '/', 'color': '#cf222e'},
+    {'stage': 'networking', 'name': 'VPN admin', 'icon': 'shield', 'url': 'https://' ~ private_cloud.networking.amneziawg.ui_hostname ~ '/', 'color': '#57606a'},
   ]},
 ] %}
 {% set homepage_stages = private_cloud.stages | dict2items | selectattr('value') | map(attribute='key') | list %}
@@ -41,10 +41,12 @@ main { max-width: 720px; margin: 0 auto; padding: 48px 16px; }
 h1 { margin: 0 0 32px; font-size: 28px; font-weight: 600; }
 h2 { margin: 0 0 12px; color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 section + section { margin-top: 40px; }
-ul { display: flex; flex-wrap: wrap; gap: 16px; margin: 0; padding: 0; list-style: none; }
-a { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 18px; color: #fff; transition: transform .15s, box-shadow .15s; }
-a:hover, a:focus-visible { transform: translateY(-3px); box-shadow: 0 8px 20px rgb(0 0 0 / .18); outline: none; }
-a:focus-visible { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--text); }
+ul { display: flex; flex-wrap: wrap; gap: 20px 16px; margin: 0; padding: 0; list-style: none; }
+a { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 88px; color: var(--text); font-size: 13px; text-align: center; text-decoration: none; }
+.tile { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 18px; color: #fff; transition: transform .15s, box-shadow .15s; }
+a:hover .tile, a:focus-visible .tile { transform: translateY(-3px); box-shadow: 0 8px 20px rgb(0 0 0 / .18); }
+a:focus-visible { outline: none; }
+a:focus-visible .tile { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--text); }
 svg { width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 </style>
 </head>
@@ -58,7 +60,7 @@ svg { width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width:
 <h2>{{ section.name }}</h2>
 <ul>
 {% for app in apps %}
-<li><a href="{{ app.url }}" title="{{ app.name }}" aria-label="{{ app.name }}" style="background: {{ app.color }}"><svg viewBox="0 0 24 24" aria-hidden="true">{{ homepage_icons[app.icon] }}</svg></a></li>
+<li><a href="{{ app.url }}"><span class="tile" style="background: {{ app.color }}"><svg viewBox="0 0 24 24" aria-hidden="true">{{ homepage_icons[app.icon] }}</svg></span>{{ app.name }}</a></li>
 {% endfor %}
 </ul>
 </section>
