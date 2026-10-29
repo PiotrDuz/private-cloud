@@ -26,7 +26,7 @@ data:
           headers:
             customRequestHeaders:
               Forwarded: ""
-        # oauth2-proxy answers 202 with the verified email in X-Forwarded-User, or redirects the browser to OpenCloud sign-in.
+        # oauth2-proxy answers 202 with the verified email in X-Forwarded-User, or redirects the browser to Stalwart sign-in.
         forward-auth:
           forwardAuth:
             address: http://forward-auth.edge.svc.cluster.local:4180/

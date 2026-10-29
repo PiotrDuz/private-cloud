@@ -251,8 +251,10 @@
   ansible.builtin.set_fact:
     stalwart_secret_revision: >-
       {{ stalwart_applied_runtime_secret.resources[0].metadata.resourceVersion }}-{{
-      (private_cloud_secrets.stalwart.admin_password ~ "\n" ~ private_cloud_secrets.stalwart.mailbox_password)
-      | private_cloud_hmac(private_cloud_secrets.storage.encryption_passphrase) }}
+      ([private_cloud_secrets.stalwart.admin_password, private_cloud_secrets.stalwart.mailbox_password] +
+       (['grist', 'affine', 'immich'] | select('in', private_cloud.stages | dict2items | selectattr('value') | map(attribute='key') | list)
+        | map('extract', private_cloud_secrets) | map(attribute='oidc_client_secret') | list))
+      | join("\n") | private_cloud_hmac(private_cloud_secrets.storage.encryption_passphrase) }}
     stalwart_configuration_revision: >-
       {{ (lookup('template', 'plan.ndjson.j2') ~
           stalwart_image ~ stalwart_cli_image ~ stalwart_wait_image ~

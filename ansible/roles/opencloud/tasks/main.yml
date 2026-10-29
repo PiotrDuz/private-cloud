@@ -128,29 +128,6 @@
   when: not opencloud_secret_present | bool
   no_log: true
 
-- name: Apply OpenCloud identity client configuration
-  kubernetes.core.k8s:
-    kubeconfig: "{{ opencloud_kubeconfig }}"
-    state: present
-    definition: "{{ lookup('template', 'identity-secret.yml.j2') | from_yaml }}"
-  no_log: true
-
-- name: Read the applied OpenCloud identity secret revision
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ opencloud_kubeconfig }}"
-    api_version: v1
-    kind: Secret
-    name: opencloud-identity
-    namespace: "{{ opencloud_namespace }}"
-  register: opencloud_identity_secret
-  changed_when: false
-  no_log: true
-
-- name: Record the OpenCloud identity secret revision for the pod template
-  ansible.builtin.set_fact:
-    opencloud_identity_secret_revision: "{{ opencloud_identity_secret.resources[0].metadata.resourceVersion }}"
-  no_log: true
-
 - name: Apply the OpenCloud WOPI secret
   kubernetes.core.k8s:
     kubeconfig: "{{ opencloud_kubeconfig }}"
@@ -240,6 +217,25 @@
   retries: 60
   delay: 5
   changed_when: false
+
+- name: Bind the built-in OpenCloud administrator to the Stalwart administrator address
+  ansible.builtin.command:
+    argv: [python3, "{{ role_path }}/files/bind_admin.py"]
+    stdin: >-
+      {{ {
+        'kubeconfig': opencloud_kubeconfig,
+        'namespace': opencloud_namespace,
+        'service': opencloud_service_name,
+        'port': 9200,
+        'admin_username': opencloud_admin_username,
+        'email': private_cloud.opencloud.admin_email
+      } | to_json }}
+  register: opencloud_admin_binding
+  until: opencloud_admin_binding.rc == 0
+  retries: 6
+  delay: 10
+  changed_when: (opencloud_admin_binding.stdout | from_json).changed
+  no_log: true
 
 - name: Validate OpenCloud after installation
   ansible.builtin.include_tasks: "{{ role_path }}/validation/main.yml"

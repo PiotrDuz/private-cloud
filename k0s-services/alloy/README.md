@@ -18,8 +18,8 @@ Alloy is managed by `ansible/roles/logging` through the `logging` stage.
 
 ## Configuration and limits
 
-- Set `private_cloud.logging.alloy_storage_size` for the dataset quota.
-- Set `private_cloud.logging.alloy_max_ram` for the container memory limit.
+- `private_cloud.logging.alloy_storage_size` sets the dataset quota.
+- `private_cloud.logging.alloy_max_ram` sets the container memory limit.
 - The write-ahead log has a six-hour maximum segment age.
 - Retries use a one-second to 30-second backoff with 120 attempts.
 - Collection is best effort during source rotation, crashes, and prolonged OpenObserve outages.
@@ -27,13 +27,7 @@ Alloy is managed by `ansible/roles/logging` through the `logging` stage.
 
 ## Severity parsing
 
-- Parse structured levels, timestamped PostgreSQL and Rust logs, and Immich console prefixes.
-- Use `unknown` for unclassified messages without treating them as alert severities.
-- Drop empty lines because OpenObserve rejects any batch that contains one.
-- Preserve the Kubernetes timestamp when the source has no parsed application timestamp.
-
-## Operations
-
-- Check the host heartbeat before treating a quiet stream as healthy.
-- Check source positions and write-ahead-log growth before the Alloy quota fills.
-- Verify collection resumes after an Alloy restart and a bounded OpenObserve outage.
+- Alloy parses structured levels, timestamped PostgreSQL and Rust logs, and Immich console prefixes.
+- Unclassified messages get `unknown`, which no alert treats as a severity.
+- Alloy drops empty lines because OpenObserve rejects any batch that contains one.
+- The Kubernetes timestamp stays when the source has no parsed application timestamp.

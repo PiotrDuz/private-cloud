@@ -15,6 +15,23 @@ data:
           service: stalwart
           tls:
             certResolver: cloudflare
+{% if private_cloud.stages.opencloud | bool %}
+        # OpenCloud Web exchanges and refreshes tokens from the browser, which needs CORS on the OAuth endpoints.
+        stalwart-oauth:
+          entryPoints: [websecure]
+          rule: Host(`{{ private_cloud.stalwart.hostname }}`) && PathPrefix(`/auth/`)
+          middlewares: [strip-forwarded, stalwart-oauth-cors]
+          service: stalwart
+          tls:
+            certResolver: cloudflare
+      middlewares:
+        stalwart-oauth-cors:
+          headers:
+            accessControlAllowOriginList: [{{ ("https://" ~ private_cloud.opencloud.hostname) | to_json }}]
+            accessControlAllowMethods: [GET, POST, OPTIONS]
+            accessControlAllowHeaders: [Authorization, Content-Type]
+            accessControlMaxAge: 600
+{% endif %}
       services:
         stalwart:
           loadBalancer:

@@ -4,9 +4,8 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 
 ## Installation
 
-- Enable `private_cloud.stages.zabbix_agent` in the public configuration.
+- The `zabbix_agent` stage in the public configuration enables this integration.
 - The Zabbix hostname is `monitor.<domain>`; set the active server through the constants in `ansible/service_catalog.yml`.
-- Run `sudo python3 ansible/install.py` from the repository root.
 - The agent listens on localhost and uses unencrypted local transport.
 
 ## Runtime assets
@@ -53,16 +52,7 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - `memory.ecc.metrics` reports corrected and uncorrected ECC counters.
 - The native SMART plugin reports disk discovery and health.
 
-## Local verification
+## Collector checks
 
-```bash
-sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py --inventory /etc/zabbix/private-cloud-datasets.json metrics | python3 -m json.tool
-sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py --inventory /etc/zabbix/private-cloud-datasets.json snapshots | python3 -m json.tool
-sudo -u zabbix /usr/local/libexec/zabbix/memory-ecc-collector.py | python3 -m json.tool
-sudo zabbix_agent2 -t zfs.metrics
-sudo zabbix_agent2 -t zfs.snapshots
-sudo zabbix_agent2 -t memory.ecc.metrics
-sudo zabbix_agent2 -t smart.disk.discovery
-```
-
-An empty SMART discovery result is expected when virtual hardware does not expose physical-drive SMART data.
+- The collectors and agent keys can be run by hand; the commands are in the operations runbook.
+- An empty SMART discovery result is expected when virtual hardware does not expose physical-drive SMART data.

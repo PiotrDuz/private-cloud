@@ -1,5 +1,5 @@
 ---
-- name: Verify OpenCloud serves its configured OIDC issuer document
+- name: Verify OpenCloud advertises Stalwart as its OIDC issuer
   ansible.builtin.command:
     argv: [python3, "{{ playbook_dir }}/validation/check_application.py"]
     stdin: >-
@@ -10,7 +10,7 @@
         'remote_port': 9200,
         'path': '/.well-known/openid-configuration',
         'json_keys': ['authorization_endpoint', 'token_endpoint', 'jwks_uri'],
-        'json_equal': {'issuer': 'https://' ~ private_cloud.opencloud.hostname}
+        'json_equal': {'issuer': 'https://' ~ private_cloud.stalwart.hostname}
       } | to_json }}
   register: opencloud_validation_oidc
   changed_when: false

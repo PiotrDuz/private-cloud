@@ -2,9 +2,8 @@
 
 The Stalwart service is managed by `ansible/roles/stalwart`.
 
-- Configure `private_cloud.stalwart` in the public configuration.
-- Store database, mailbox, administrator, relay, and Cloudflare credentials in the encrypted configuration.
-- Run `sudo python3 ansible/install.py` from the repository root.
+- The installer reads `private_cloud.stalwart` from the public configuration.
+- The encrypted configuration holds database, mailbox, administrator, relay, and Cloudflare credentials.
 - The dataset is `tank/secure/backup/k0s/services/stalwart`.
 - The dataset has a quota and a dedicated `10Ti` PV.
 - PostgreSQL stores metadata and the PV stores message blobs.
@@ -42,7 +41,23 @@ The Stalwart service is managed by `ansible/roles/stalwart`.
 
 - Stalwart uses the internal directory with native mailbox and administrator passwords.
 - The `Authentication` singleton leaves `directoryId` null.
-- Manage mailboxes, aliases, quotas, permissions, and app passwords in Stalwart.
+- Mailboxes, aliases, quotas, permissions, and app passwords live in Stalwart.
+
+## OIDC provider
+
+- Stalwart is the OpenID Connect provider for OpenCloud, Grist, AFFiNE, and Immich.
+- The issuer is `https://<stalwart-hostname>`.
+- Every Stalwart account can sign in to every enabled application.
+- The plan pins ES256 ID token signatures so applications verify them against the published JWKS.
+- The plan upserts one `OAuthClient` per enabled application with its exact redirect URIs.
+- OpenCloud registers public `web`, `OpenCloudDesktop`, `OpenCloudAndroid`, and `OpenCloudIOS` clients.
+- Grist, AFFiNE, and Immich register confidential clients with secrets from the encrypted configuration.
+- Loopback redirects match any port, so the desktop client works with its random callback port.
+- Stalwart 0.16.26 rejects the desktop client's dynamic registration, which then falls back to its registered client ID.
+- ID tokens carry `sub`, `preferred_username`, and `email`; userinfo adds `name` and `email_verified`.
+- Access tokens are opaque, so OpenCloud validates them through the userinfo endpoint.
+- A Traefik router adds CORS for `/auth/` so OpenCloud Web can exchange tokens from the browser.
+- The plan upserts clients and never deletes clients added outside the installer.
 
 ## Logging
 
@@ -52,14 +67,8 @@ The Stalwart service is managed by `ansible/roles/stalwart`.
 ## Mailbox lifecycle
 
 - Stalwart 0.16 has no account-level enabled flag.
-- Suspend, resume, and delete are operator actions through `stalwart-cli`.
-- Run the commands against `https://mx-inbound.<domain>`.
-- Authenticate with native administrator credentials through `STALWART_USER` and `STALWART_PASSWORD`.
-- List the account id with `stalwart-cli query Account --where name=<username>`.
-- Suspend an account with `stalwart-cli update Account <id> --field 'permissions={"@type":"Merge","disabledPermissions":{"authenticate":true,"authenticateWithAlias":true}}'`.
-- Resume an account with `stalwart-cli update Account <id> --field 'permissions={"@type":"Inherit"}'`.
-- Delete an account with `stalwart-cli delete Account --ids <id>`.
-- Suspension keeps the mailbox, aliases, and stored mail.
+- Suspension removes the authentication permissions and keeps the mailbox, aliases, and stored mail.
+- A suspended account cannot sign in to any application.
 - Deletion removes the mailbox and its aliases.
 
 ## Filtering

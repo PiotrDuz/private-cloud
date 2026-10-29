@@ -3,10 +3,8 @@
 The AFFiNE service is managed by `ansible/roles/affine`.
 
 - Ansible renders the `templates/*.yaml.j2` workload files during deployment.
-
-- Configure `private_cloud.affine` in the public configuration.
-- Store the database password and OIDC client secret in the encrypted configuration.
-- Run `sudo python3 ansible/install.py` from the repository root.
+- The installer reads `private_cloud.affine` from the public configuration.
+- The encrypted configuration holds the database password and OIDC client secret.
 - The service dataset is `tank/secure/backup/k0s/services/affine`.
 - The dataset uses the configured quota.
 - The local PV and PVC advertise a fixed `10Ti` capacity.
@@ -20,10 +18,10 @@ The AFFiNE service is managed by `ansible/roles/affine`.
 - The service listens inside the cluster on port `3010`.
 - A ClusterIP service exposes TCP `3010` only inside the cluster.
 - Traefik publishes the configured hostname through HTTPS.
-- The `affine-config` ConfigMap disables the guest demo workspace, so visitors land on the sign-in page.
+- Visitors land on the sign-in page because the guest demo workspace is disabled.
 - `AFFINE_SERVER_EXTERNAL_URL` sets the public `https://<hostname>` origin for generated links and OAuth redirects.
 - The route ConfigMap preserves WebSocket connections.
-- The installer creates the first administrator from `private_cloud.admin_email` before applying the route ConfigMap.
+- The installer creates the first administrator as the managed Stalwart mailbox account before applying the route ConfigMap.
 - The installer skips the claim when AFFiNE reports `initialized`.
 - The administrator password must contain 16 to 32 characters.
 - The server and the preparation Job drop all capabilities and disable privilege escalation.
@@ -32,16 +30,15 @@ The AFFiNE service is managed by `ansible/roles/affine`.
 - The pod annotation carries the credentials Secret revision to restart the pod on rotation.
 - The AFFiNE role enables and verifies `vector` in its database.
 
-## OpenCloud OIDC
+## Stalwart OIDC
 
-- Configure native OIDC through the AFFiNE administration settings.
-- Use the OpenCloud HTTPS URL as issuer with client ID `affine`.
-- The role stores the client secret in `affine-credentials` as `OIDC_CLIENT_SECRET`.
-- Register the HTTPS `/oauth/callback` redirect in OpenCloud.
-- Use `sub`, `email`, and `name` claims with `openid profile email` scope.
-- Set `claim_email_verified` to the absent `opencloud_admin_controlled_email` claim.
-- Enable `oauth.providers.oidc.allowPrivateNetwork` for the trusted issuer origin.
-- Keep workspace permissions and administrator grants within AFFiNE.
-- Keep the self-hosted OIDC workspace within ten seats.
-
-The pinned release's [OIDC claim mapping](https://github.com/toeverything/AFFiNE/blob/v0.27.3/packages/backend/server/src/plugins/oauth/providers/oidc.ts) accepts an absent verification claim and rejects an explicit false value. OpenCloud email identities must remain controlled by administrators.
+- The role renders `config.json` into the `affine-credentials` Secret and mounts it at `/app/config.json`.
+- The file disables the guest demo workspace and configures the OIDC provider.
+- The provider uses the Stalwart issuer with the confidential client `affine`.
+- Stalwart allows only the `https://<affine hostname>/oauth/callback` redirect.
+- Claims map `sub`, `email`, and `name` with the `openid email profile` scope.
+- `allowPrivateNetwork` lets the server reach the issuer, which LAN DNS resolves to a private address.
+- The first sign-in of a Stalwart account creates its AFFiNE user.
+- The first administrator is the managed Stalwart mailbox account, so its sign-in links to the claimed account.
+- Workspace permissions and administrator grants stay within AFFiNE.
+- The self-hosted workspace allows ten seats.

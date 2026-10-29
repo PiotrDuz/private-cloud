@@ -16,3 +16,25 @@
 {"@type":"update","object":"MtaOutboundStrategy","value":{"route":{"match":{"0":{"if":"is_local_domain(rcpt_domain)","then":"'local'"}},"else":"'inbox-eu'"}}}
 {"@type":"update","object":"SpamSettings","value":{"enable":true,"trustContacts":true,"trustReplies":true,"scoreSpam":5.0,"scoreReject":0.0,"scoreDiscard":0.0}}
 {"@type":"update","object":"Authentication","value":{"directoryId":null}}
+{% set cloud_url = 'https://' ~ private_cloud.opencloud.hostname %}
+{% set oauth_clients = [
+  {'stage': 'opencloud', 'clientId': 'web', 'description': 'OpenCloud Web', 'redirectUris': [cloud_url ~ '/', cloud_url ~ '/oidc-callback.html', cloud_url ~ '/oidc-silent-redirect.html']},
+  {'stage': 'opencloud', 'clientId': 'OpenCloudDesktop', 'description': 'OpenCloud Desktop', 'redirectUris': ['http://127.0.0.1', 'http://localhost']},
+  {'stage': 'opencloud', 'clientId': 'OpenCloudAndroid', 'description': 'OpenCloud Android', 'redirectUris': ['oc://android.opencloud.eu']},
+  {'stage': 'opencloud', 'clientId': 'OpenCloudIOS', 'description': 'OpenCloud iOS', 'redirectUris': ['oc://ios.opencloud.eu']},
+  {'stage': 'grist', 'clientId': 'grist-forward-auth', 'description': 'Grist', 'secret': 'grist', 'redirectUris': ['https://' ~ private_cloud.grist.hostname ~ '/oauth2/callback']},
+  {'stage': 'affine', 'clientId': 'affine', 'description': 'AFFiNE', 'secret': 'affine', 'redirectUris': ['https://' ~ private_cloud.affine.hostname ~ '/oauth/callback']},
+  {'stage': 'immich', 'clientId': 'immich', 'description': 'Immich', 'secret': 'immich', 'redirectUris': ['https://' ~ private_cloud.immich.hostname ~ '/auth/login', 'https://' ~ private_cloud.immich.hostname ~ '/user-settings', 'https://' ~ private_cloud.immich.hostname ~ '/api/oauth/mobile-redirect']},
+] | selectattr('stage', 'in', private_cloud.stages | dict2items | selectattr('value') | map(attribute='key') | list) %}
+{% set oauth_values = {} %}
+{% for client in oauth_clients %}
+{% set redirects = {} %}
+{% for uri in client.redirectUris %}{% set _ = redirects.update({uri: true}) %}{% endfor %}
+{% set _ = oauth_values.update({client.clientId: {
+  'clientId': client.clientId, 'description': client.description,
+  'secret': (('' if stalwart_plan_redacted | default(false) else private_cloud_secrets[client.secret].oidc_client_secret) if client.secret is defined else none),
+  'redirectUris': redirects
+}}) %}
+{% endfor %}
+{"@type":"update","object":"OidcProvider","value":{"signatureAlgorithm":"es256"}}
+{"@type":"upsert","object":"OAuthClient","matchOn":["clientId"],"value":{{ oauth_values | to_json }}}

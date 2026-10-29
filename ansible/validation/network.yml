@@ -29,11 +29,12 @@
         'sites': [
           {'stage': 'media', 'host': private_cloud.media.hostname},
           {'stage': 'onlyoffice', 'host': private_cloud.onlyoffice.hostname},
-          {'stage': 'opencloud', 'host': private_cloud.opencloud.hostname, 'path': '/.well-known/openid-configuration', 'issuer': 'https://' ~ private_cloud.opencloud.hostname},
+          {'stage': 'opencloud', 'host': private_cloud.opencloud.hostname},
           {'stage': 'grist', 'host': private_cloud.grist.hostname},
           {'stage': 'affine', 'host': private_cloud.affine.hostname},
           {'stage': 'immich', 'host': private_cloud.immich.hostname},
           {'stage': 'stalwart', 'host': private_cloud.stalwart.hostname, 'path': '/.well-known/jmap'},
+          {'stage': 'stalwart', 'host': private_cloud.stalwart.hostname, 'path': '/.well-known/openid-configuration', 'issuer': 'https://' ~ private_cloud.stalwart.hostname},
           {'stage': 'zabbix_server', 'host': private_cloud.networking.zabbix_hostname},
           {'stage': 'logging', 'host': private_cloud.logging.hostname},
           {'stage': 'networking', 'host': private_cloud.networking.amneziawg.ui_hostname},

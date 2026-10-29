@@ -14,7 +14,6 @@ spec:
       labels: {app.kubernetes.io/name: affine}
       annotations:
         private-cloud.example/secret-revision: "{{ affine_secret_revision }}"
-        private-cloud.example/config-checksum: "{{ affine_server_config | to_json | hash('sha256') }}"
     spec:
       serviceAccountName: affine
       automountServiceAccountToken: false
@@ -65,9 +64,11 @@ spec:
           volumeMounts:
             - {name: data, mountPath: /root/.affine/storage, subPath: storage}
             - {name: data, mountPath: /root/.affine/config, subPath: config}
-            - {name: config, mountPath: /app/config.json, subPath: config.json, readOnly: true}
+            - {name: server-config, mountPath: /app/config.json, subPath: config.json, readOnly: true}
       volumes:
         - name: data
           persistentVolumeClaim: {claimName: affine-data}
-        - name: config
-          configMap: {name: affine-config}
+        - name: server-config
+          secret:
+            secretName: affine-credentials
+            items: [{key: config.json, path: config.json}]

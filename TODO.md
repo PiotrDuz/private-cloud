@@ -6,10 +6,10 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 
 ## Authentication implementation
 
-- [x] Replace the identity installer configuration with OpenCloud's built-in services.
-- [x] Register OpenCloud, Grist helper, AFFiNE, and Immich clients without separate login allowlists.
-- [x] Update OIDC network policies and issuer routing to OpenCloud.
-- [x] Replace Stalwart OIDC configuration with native mailbox authentication.
+- [x] Make Stalwart the shared OIDC provider for OpenCloud, Grist, AFFiNE, and Immich.
+- [x] Register the application OAuth clients in Stalwart without separate login allowlists.
+- [x] Update issuer routing and add CORS on the Stalwart OAuth endpoints.
+- [x] Automate AFFiNE OIDC and bind the OpenCloud administrator to the Stalwart mailbox account.
 - [x] Remove Jellyfin SSO installation and configure native password login.
 - [x] Update setup documentation and monitoring inventory for the new authentication target.
 - [x] Define manual native account deletion and data removal in the operations runbook.
@@ -33,15 +33,14 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 ## Runtime validation gaps
 
 - [ ] Verify that ZFS unlock and k0s startup succeed after an actual reboot.
-- [ ] Validate OpenCloud, Grist, AFFiNE, and Immich sign-in with the built-in provider.
+- [ ] Validate OpenCloud mobile sign-in through Stalwart.
 - [ ] Validate provider claims, confidential clients, callbacks, and supported logout flows.
-- [ ] Validate email-based sign-in with OpenCloud's unverified email claims.
 - [ ] Validate manual disabling, deletion, and re-enabling in each application.
 - [ ] Verify account deletion removes user-owned data while disabling preserves it.
 - [ ] Verify shared user-owned resources are deleted and other users' resources remain intact.
 - [ ] Verify revoked browser sessions, mobile sessions, API keys, refresh tokens, and WebSocket access.
-- [ ] Verify ordinary logout leaves the OpenCloud account enabled.
-- [ ] Validate OpenCloud identity configuration and data recovery together.
+- [ ] Verify ordinary logout leaves the Stalwart account enabled.
+- [ ] Validate Stalwart identity and application data recovery together.
 - [ ] Validate Jellyfin password login and native Quick Connect.
 - [x] Validate split DNS from the host.
 - [ ] Validate LAN DNS from other LAN clients and VPN clients.
@@ -76,9 +75,8 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 - [ ] Verify the installer claims Immich, AFFiNE, and Jellyfin administrators before their routes are published.
 - [ ] Verify Traefik serves every route from route ConfigMaps without Kubernetes API access.
 - [ ] Verify the Zabbix route ConfigMap appears only after the administrator password is set.
-- [ ] Verify oauth2-proxy login on the Grist host with a fresh OpenCloud session.
-- [ ] Verify Grist logout through `/oauth2/sign_out` ends the OpenCloud session and lands on the sign-in page.
-- [ ] Verify the OpenCloud end-session path and `id_token_hint` handling with OpenCloud 7.2.4.
+- [ ] Verify oauth2-proxy login on the Grist host with a fresh Stalwart sign-in.
+- [ ] Verify Grist logout through `/oauth2/sign_out` lands on the Stalwart sign-in page.
 - [ ] Verify WOPI proof-key verification between OnlyOffice 9.4.0.1 and OpenCloud 7.2.4.
 - [ ] Fall back to `COLLABORATION_APP_PROOF_DISABLE=true` if proof-key verification fails.
 - [ ] Verify OnlyOffice rejects a foreign WOPI host.

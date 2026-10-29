@@ -13,6 +13,7 @@ data:
       connect-src:
         - "'self'"
         - "blob:"
+        - "https://{{ private_cloud.stalwart.hostname }}/"
         - "https://raw.githubusercontent.com/opencloud-eu/awesome-apps/"
         - "https://update.opencloud.eu/"
       default-src:
@@ -24,6 +25,7 @@ data:
       frame-src:
         - "'self'"
         - "blob:"
+        - "https://{{ private_cloud.stalwart.hostname }}/"
         - "https://embed.diagrams.net/"
         - "https://{{ private_cloud.onlyoffice.hostname }}/"
       img-src:

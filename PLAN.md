@@ -123,15 +123,17 @@ This file is the source of truth for the desired system state and its major deci
 
 ## Shared identity
 
-- Use OpenCloud's [built-in OIDC provider](https://docs.opencloud.eu/docs/dev/server/services/idp/information/) and directory inside its container for shared login
-- Manage users, passwords, account status, and groups through OpenCloud's [admin area](https://docs.opencloud.eu/docs/user/admin/settings/)
-- Back up OpenCloud identity data, signing keys, and configuration together
-- Use the OpenCloud HTTPS URL as the shared issuer through the LAN DNS service
-- Register clients for OpenCloud, Immich, AFFiNE, and Grist's authentication helper
+- Use Stalwart's [OpenID Connect provider](https://stalw.art/docs/auth/oauth/openid-connect) and internal directory for shared login
+- Manage accounts, passwords, and suspension in Stalwart
+- Use the Stalwart HTTPS URL as the shared issuer through the LAN DNS service
+- Register OAuth clients in Stalwart for OpenCloud, Immich, AFFiNE, and Grist's authentication helper
+    * Pin ES256 ID token signatures for verification through the published JWKS
+    * Add CORS on the Stalwart OAuth endpoints for OpenCloud Web
 - Store confidential-client secrets in role-owned Kubernetes Secrets and keep public clients secret-free
-- Allow every enabled OpenCloud user to sign into connected applications without separate login allowlists
+- Allow every Stalwart account to sign into connected applications without separate login allowlists
+- Make the managed Stalwart mailbox account the administrator of OpenCloud, Grist, AFFiNE, and Immich
 - Keep permissions and administrator grants within each application
-- Delete accounts manually in OpenCloud and each downstream application
+- Delete accounts manually in Stalwart and each downstream application
 - Remove user-owned data and revoke credentials during each application's account deletion
 - Preserve data when disabling accounts and preserve resources owned by other users during deletion
 - Keep Stalwart, Jellyfin, the ARR stack, Zabbix, OpenObserve, and the AmneziaWG UI on native passwords
@@ -205,8 +207,9 @@ This file is the source of truth for the desired system state and its major deci
 ## OpenCloud
 
 - Deploy OpenCloud with its own dataset under tank/secure/backup/k0s/services/opencloud, 10Ti PV, and quota
-- Authenticate OpenCloud web, desktop, and mobile clients through its built-in OIDC provider
-- Use the built-in directory for user identities and roles
+- Authenticate OpenCloud web, desktop, and mobile clients through Stalwart OIDC
+- Create built-in directory users on first sign-in and match them by email
+- Bind the built-in administrator to the managed Stalwart mailbox account
 - Configure OpenCloud to use Apache Tika for content extraction
 - Configure the search service to use the Bleve backend
 - Configure supported cache stores to use in-memory storage
@@ -221,10 +224,10 @@ This file is the source of truth for the desired system state and its major deci
 - Deploy Grist with its own dataset under tank/secure/backup/k0s/services/grist, 10Ti PV, and quota
 - Create a Grist database, login role, and credentials Secret in the shared PostgreSQL service
 - Persist Grist documents on its PV and isolate formulas with Pyodide
-- Use [Grist forwarded-header authentication](https://support.getgrist.com/install/forwarded-headers/) through Traefik and an OpenCloud OIDC ForwardAuth helper
+- Use [Grist forwarded-header authentication](https://support.getgrist.com/install/forwarded-headers/) through Traefik and a Stalwart OIDC ForwardAuth helper
     * Set `GRIST_FORWARD_AUTH_HEADER=X-Forwarded-User` to receive the authenticated user's email
     * Authenticate every Grist request through the helper and route its sign-in, callback, and logout endpoints on the Grist hostname
-- Use administrator-controlled OpenCloud email identities for Grist accounts and keep document permissions in Grist
+- Use Stalwart account addresses for Grist accounts and keep document permissions in Grist
 - Use a single Grist team site for the supported forwarded-header login flow
 - Limit Grist access to authenticated browser sessions without API-key access
 - Accept Grist user-facing traffic only from Traefik and discard client-supplied identity headers
@@ -248,10 +251,10 @@ This file is the source of truth for the desired system state and its major deci
 
 - Deploy AFFiNE with its own dataset under tank/secure/backup/k0s/services/affine, 10Ti PV, and quota
 - Create an AFFiNE database with pgvector enabled in the shared PostgreSQL service
-- Configure [AFFiNE OIDC sign-in](https://affine.pro/enterprise) with OpenCloud through its administration settings
+- Configure [AFFiNE OIDC sign-in](https://affine.pro/enterprise) with Stalwart through its server configuration file
     * Keep the self-hosted OIDC sign-in licence-free within ten seats
 - Configure its confidential client, issuer, email claims, and HTTPS `/oauth/callback` redirect
-- Permit AFFiNE's OIDC client to reach only the trusted OpenCloud issuer when it resolves to a private address
+- Permit AFFiNE's OIDC client to reach only the trusted Stalwart issuer when it resolves to a private address
 - Configure the server-side indexer to use Manticore Search
 - Use the independent `redis-affine` service
 - Prepare the fresh AFFiNE database schema before the server starts
@@ -277,10 +280,10 @@ This file is the source of truth for the desired system state and its major deci
 - Deploy the Immich machine-learning service for face detection and recognition
 - Enable Intel OpenVINO acceleration through the shared i915 Kubernetes device resource
 - Persist the Immich media library on its PV
-- Enable [Immich native OIDC](https://docs.immich.app/administration/oauth/) with OpenCloud for web and mobile clients
+- Enable [Immich native OIDC](https://docs.immich.app/administration/oauth/) with Stalwart for web and mobile clients
 - Register a confidential client with HTTPS `/auth/login`, `/user-settings`, and `/api/oauth/mobile-redirect` redirects
-- Use the Immich mobile redirect override because OpenCloud rejects custom-scheme redirects for web clients
-- Automatically register enabled OpenCloud users in Immich and manage administrator grants explicitly
+- Use the Immich mobile redirect override so mobile sign-in returns through an HTTPS redirect
+- Automatically register Stalwart users in Immich and manage administrator grants explicitly
 - Use supported provider logout and manage account permissions within Immich
 - Use native stdout/stderr logging for collection by Alloy
 - Run container root inside a Kubernetes user namespace
@@ -372,7 +375,7 @@ This file is the source of truth for the desired system state and its major deci
     * Limit Alloy Kubernetes API access to workload discovery and event collection
 - Enforce namespace default-deny policies with explicit service and port exceptions
 - Keep application credentials in role-owned Kubernetes Secrets and persistent plaintext secrets out of the repository
-- Use OpenCloud as the shared identity source for OIDC-enabled applications while retaining application-specific authorization
+- Use Stalwart as the shared identity source for OIDC-enabled applications while retaining application-specific authorization
 - Keep host and Kubernetes administration on their own credentials and workload identities
 - Keep ingestion credentials separate from OpenObserve administrator credentials
 - Keep media VPN isolation independent of log collection
@@ -408,7 +411,7 @@ This file is the source of truth for the desired system state and its major deci
 - Enable structured Traefik service and access logs on stdout
 - Disable the Traefik dashboard and leave unknown HTTPS hosts without a route
 - Run a stateless nginx homepage in edge from a generated ConfigMap
-- Run a stateless [oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy) helper in edge for Grist's OpenCloud OIDC login
+- Run a stateless [oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy) helper in edge for Grist's Stalwart OIDC login
 - Keep the helper's OIDC client secret and cookie-signing secret in Kubernetes Secrets
 - Configure ForwardAuth to pass the authenticated email to Grist through `X-Forwarded-User`
 - Strip incoming identity headers before authentication and forward only the helper's verified identity
@@ -424,7 +427,7 @@ This file is the source of truth for the desired system state and its major deci
 - Block obsolete application NodePorts and undeclared host ports
 - Label managed namespaces and enforce default-deny ingress and egress with explicit exceptions
 - Permit application dependencies only through declared service ports and namespace selectors
-- Permit OIDC-enabled services and the edge ForwardAuth helper to reach OpenCloud for discovery, token exchange, user information, and signing keys
+- Permit OIDC-enabled services and the edge ForwardAuth helper to reach Stalwart for discovery, token exchange, user information, and signing keys
 - Permit provider logout callbacks only for supported and configured flows
 
 ### Namespace and host placement

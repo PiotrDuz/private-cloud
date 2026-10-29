@@ -12,4 +12,3 @@ grist_pvc_name: grist-data
 grist_pv_capacity: 10Ti
 grist_kubeconfig: /run/private-cloud/kubeconfig
 grist_postgres_service: postgres
-grist_opencloud_end_session_path: /signin/v1/identifier/_/endsession

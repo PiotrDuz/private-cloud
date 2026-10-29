@@ -33,9 +33,9 @@ def port_forward(kubeconfig, namespace, service, port):
             process.wait()
 
 
-def request_json(address, method, path, payload=None, allowed=(200,), name="application"):
+def request_json(address, method, path, payload=None, allowed=(200,), name="application", headers=None):
     connection = http.client.HTTPConnection(*address, timeout=30)
-    headers = {}
+    headers = dict(headers or {})
     body = None
     if payload is not None:
         body = json.dumps(payload)
@@ -49,3 +49,19 @@ def request_json(address, method, path, payload=None, allowed=(200,), name="appl
     if response.status not in allowed:
         raise RuntimeError(f"{name} {method} {path} returned HTTP {response.status}")
     return json.loads(text) if text else None
+
+
+def opencloud_app_token(kubeconfig, namespace, target, username, expiration):
+    """The OpenCloud auth-app service issues short-lived tokens that work as Basic auth passwords."""
+    command = [
+        "k0s", "kubectl", "--kubeconfig", kubeconfig, "--namespace", namespace, "exec", target, "-c", "opencloud", "--",
+        "opencloud", "auth-app", "create", "--user-name=" + username, "--expiration=" + expiration,
+    ]
+    result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=45)
+    if result.returncode:
+        raise RuntimeError("OpenCloud could not create an app token for " + username)
+    for line in (result.stdout + "\n" + result.stderr).splitlines():
+        key, separator, value = line.strip().partition(":")
+        if separator and key.strip().casefold() == "token" and value.strip():
+            return value.strip()
+    raise RuntimeError("OpenCloud app token creation returned no token")

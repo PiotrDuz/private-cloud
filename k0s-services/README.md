@@ -10,7 +10,7 @@
 - [OpenCloud](opencloud/README.md) provides shared OIDC login from the `private-cloud` namespace.
 - The Grist oauth2-proxy helper runs in the `edge` namespace through the networking stage.
 - The `www.<domain>` homepage runs in the `edge` namespace through the networking stage.
-- Use logging sidecars only for applications without native stdout or stderr configuration.
+- Logging sidecars serve only applications without native stdout or stderr configuration.
 - Alloy and OpenObserve run in the `observability` namespace through the logging stage.
 
 ## Runtime security
@@ -26,5 +26,5 @@
 
 ## Resource policy
 
-- Keep CPU requests for scheduling and omit CPU limits from every container.
+- Every container sets a CPU request for scheduling and no CPU limit.
 - Retain memory, ephemeral-storage, and GPU limits where configured.

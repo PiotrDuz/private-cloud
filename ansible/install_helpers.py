@@ -149,7 +149,7 @@ DERIVED_KEYS = {
     ("networking", "amneziawg"): {"hostname", "ui_hostname", "dns"},
     ("media",): {"hostname", "timezone"},
     ("onlyoffice",): {"hostname"},
-    ("opencloud",): {"hostname"},
+    ("opencloud",): {"hostname", "admin_email"},
     ("grist",): {"hostname", "default_email"},
     ("affine",): {"hostname", "admin_email"},
     ("immich",): {"hostname", "timezone", "admin_email"},
@@ -352,9 +352,12 @@ def resolve_public_configuration(configuration: Mapping[str, Any]) -> dict[str, 
     cloud["media"].update({"hostname": hostnames["media"], "timezone": timezone})
     for stage in ("onlyoffice", "opencloud", "logging"):
         cloud[stage]["hostname"] = hostnames[stage]
-    cloud["grist"].update({"hostname": hostnames["grist"], "default_email": admin_email})
-    cloud["affine"].update({"hostname": hostnames["affine"], "admin_email": admin_email})
-    cloud["immich"].update({"hostname": hostnames["immich"], "timezone": timezone, "admin_email": admin_email})
+    # Stalwart is the sign-in provider, so application administrators are the managed mailbox account.
+    administrator = f"{cloud['stalwart'].get('mailbox_username')}@{domain}"
+    cloud["opencloud"]["admin_email"] = administrator
+    cloud["grist"].update({"hostname": hostnames["grist"], "default_email": administrator})
+    cloud["affine"].update({"hostname": hostnames["affine"], "admin_email": administrator})
+    cloud["immich"].update({"hostname": hostnames["immich"], "timezone": timezone, "admin_email": administrator})
     cloud["stalwart"].update({
         "domain": domain,
         "hostname": hostnames["stalwart"],
@@ -600,13 +603,15 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
     if not isinstance(onlyoffice.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(onlyoffice["hostname"]):
         raise InstallerError("Invalid onlyoffice.hostname")
     opencloud = cloud["opencloud"]
-    expected_opencloud = {"storage_size", "max_ram", "hostname"}
+    expected_opencloud = {"storage_size", "max_ram", "hostname", "admin_email"}
     if not isinstance(opencloud, dict) or set(opencloud) != expected_opencloud:
         raise InstallerError("OpenCloud configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(opencloud.get("storage_size", ""))) or not RAM_PATTERN.fullmatch(str(opencloud.get("max_ram", ""))):
         raise InstallerError("Invalid OpenCloud size configuration")
     if not isinstance(opencloud.get("hostname"), str) or not DOMAIN_PATTERN.fullmatch(opencloud["hostname"]):
         raise InstallerError("Invalid opencloud.hostname")
+    if not EMAIL_PATTERN.fullmatch(str(opencloud["admin_email"])):
+        raise InstallerError("Invalid opencloud.admin_email")
     if opencloud["hostname"] == onlyoffice["hostname"]:
         raise InstallerError("OpenCloud and OnlyOffice endpoints must differ")
     grist = cloud["grist"]

@@ -9,6 +9,20 @@ This runbook lists work that cannot be automated in this repository. Repository 
 - [ ] Use a long random LUKS passphrase and store it offline as the recovery passphrase.
 - [ ] Keep the `tank` pool disks out of the installer's partitioning.
 - [ ] Give the Ubuntu administrator account a long random password; the console accepts it only after a TPM wipe.
+- [ ] Install the collections and run the installer from an interactive root terminal:
+
+```bash
+sudo ansible-galaxy collection install -r ansible/requirements.yml
+sudo python3 ansible/install.py
+```
+
+- [ ] Do not use the installer for unattended operating-system or OpenZFS upgrades.
+
+## Reboot verification
+
+- [ ] Reboot the host under supervision after the first successful installation.
+- [ ] Reapply the configuration after reboot to verify native ZFS mounts and k0s ordering.
+- [ ] Select `validate` in the installer to check the installed system and alert delivery.
 
 ## Boot integrity
 
@@ -126,23 +140,12 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 
 ## Identity
 
-- [ ] Sign in to OpenCloud with the initialized administrator account.
-- [ ] Manage users, passwords, account status, and groups through the OpenCloud admin area.
-- [ ] Assign each user a unique administrator-controlled email address.
-- [ ] Keep local administrator access in downstream applications.
+- [ ] Sign in to OpenCloud, Grist, AFFiNE, and Immich with the managed Stalwart mailbox account and its stored password.
+- [ ] Confirm that account is the administrator in OpenCloud, Grist, AFFiNE, and Immich.
+- [ ] Create a Stalwart account for each person at `https://<stalwart-hostname>/admin/`.
+- [ ] Confirm a new account can sign in to OpenCloud, Grist, AFFiNE, and Immich.
 - [ ] Assign application permissions and administrator grants within each application.
-- [ ] Confirm newly enabled users can sign into Grist, AFFiNE, and Immich.
 - [ ] Use Grist only from a browser session because API keys are unsupported.
-
-### AFFiNE OIDC
-
-- [ ] In the AFFiNE administration panel, add a generic OAuth2/OIDC provider.
-- [ ] Set the issuer URL to `https://<opencloud-hostname>`.
-- [ ] Set the client id to `affine` and the secret to `private_cloud_secrets.affine.oidc_client_secret`.
-- [ ] Allow the redirect URI `https://<affine-hostname>/oauth/callback`.
-- [ ] Set claims to `sub`, `email`, and `name` with scope `openid profile email`.
-- [ ] Set `claim_email_verified` to `opencloud_admin_controlled_email` in the OIDC provider arguments.
-- [ ] Enable `oauth.providers.oidc.allowPrivateNetwork` for the configured OpenCloud issuer.
 - [ ] Note the ten-seat limit for the self-hosted AFFiNE workspace.
 
 ### Jellyfin native login
@@ -162,9 +165,8 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 
 ## First administrators
 
-- [ ] Sign in to Immich with `private_cloud.admin_email` and the stored Immich administrator password.
-- [ ] Sign in to AFFiNE with `private_cloud.admin_email` and the stored AFFiNE administrator password.
 - [ ] Sign in to Jellyfin with `private_cloud.media.jellyfin_admin_username` and the stored Jellyfin administrator password.
+- [ ] Keep the stored Immich and AFFiNE administrator passwords for their local login forms.
 - [ ] Record any generated password printed once by the installer.
 - [ ] Change the passwords inside each application if desired.
 
@@ -174,14 +176,40 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 - [ ] Test LAN DNS from LAN and VPN clients.
 - [ ] Confirm SSH, the Kubernetes API, and Zabbix are unavailable from WAN networks.
 - [ ] Confirm the DKIM record resolves publicly.
-- [ ] Verify inbound SMTP preserves the sender address through Proxy Protocol.
+- [ ] Verify the IMAP follower preserves the original sender address in Stalwart.
 - [ ] Interrupt the AirVPN WireGuard tunnel and confirm guarded media apps lose external access.
 - [ ] Confirm each AmneziaWG peer can reach only its approved LAN destinations.
 - [ ] Confirm the AmneziaWG UI is unreachable from WAN.
 
 ## Deployment acceptance
 
-- [ ] Complete the deployment acceptance checklist in [NETWORKING.md](NETWORKING.md#deployment-acceptance).
+Repository implementation is not evidence of live enforcement. Before exposure:
+
+- [ ] Confirm the router forwards only TCP `443` and the AmneziaWG UDP port.
+- [ ] Verify all other host and former NodePort paths fail from WAN and LAN.
+- [ ] Verify SSH, Kubernetes API, and Zabbix work only from configured local networks.
+- [ ] Test every hostname from WAN, LAN, and AmneziaWG.
+- [ ] Verify LAN clients resolve service hostnames to the host address and pods to the Traefik Service.
+- [ ] Verify Firefox and Apple devices on the LAN fall back to the LAN resolver.
+- [ ] Verify OpenCloud, Grist, AFFiNE, and Immich complete a Stalwart OIDC login.
+- [ ] Verify Grist login, the `/oauth2/callback` exchange, and logout through oauth2-proxy.
+- [ ] Verify Grist rejects forged `X-Forwarded-User` headers from clients.
+- [ ] Validate Traefik and Stalwart certificate issuance and renewal paths against the real Let's Encrypt service.
+- [ ] Confirm Immich, AFFiNE, and Jellyfin answer with the installer-claimed administrators once published.
+- [ ] Send a message to the external inbox and confirm the IMAP follower delivers it to Stalwart.
+- [ ] Confirm Proxy Protocol preserves the sender address in Stalwart.
+- [ ] Verify Stalwart filtering and outbound relay behavior.
+- [ ] Interrupt the AirVPN WireGuard tunnel and confirm guarded apps lose Internet and external DNS.
+- [ ] Confirm Immich machine learning downloads models over TCP `443`.
+- [ ] Confirm Jellyfin downloads metadata over IPv4 and cannot initiate IPv6 connections.
+- [ ] Confirm Jellyfin streaming and local scanning continue during media VPN failure.
+- [ ] Verify the AmneziaWG LAN ceiling, per-peer UI firewall entries, and full-tunnel Internet egress.
+- [ ] Verify the AmneziaWG UI rejects clients outside local networks and the VPN.
+- [ ] Verify AmneziaWG peers cannot reach the pod or service CIDRs.
+- [ ] Confirm qBittorrent reports `tun0` as its bound interface.
+- [ ] Verify Jellyfin transcoding uses the Intel GPU.
+- [ ] Confirm OpenObserve is reachable only through its configured hostname.
+- [ ] Confirm Alloy has no public route and accepts only its documented internal health path.
 - [ ] Run the installer `validate` action after operator setup is finished.
 
 ## Live validation

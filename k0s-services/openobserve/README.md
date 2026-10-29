@@ -25,10 +25,4 @@ OpenObserve is managed by `ansible/roles/logging` through the `logging` stage.
 - OpenObserve reports missing host heartbeats through its own managed alert.
 - The Stalwart forwarding alias is the OpenObserve administrator identity and alert recipient.
 - Changing that alias does not rename an existing OpenObserve administrator.
-
-## Operations
-
-- Search the `logs` stream in the OpenObserve UI.
-- Check the host heartbeat before treating a quiet stream as healthy.
-- Inspect OpenObserve internal logs and notification failures directly during delivery incidents.
-- Treat OpenObserve state and log history as disposable no-backup data.
+- OpenObserve state and log history are disposable no-backup data.

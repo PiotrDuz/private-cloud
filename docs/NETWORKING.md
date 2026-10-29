@@ -12,7 +12,7 @@ The cluster uses default-deny pod networking, a restricted host firewall, Traefi
 
 | Namespace / zone | Responsibility | Boundary |
 | --- | --- | --- |
-| `private-cloud` | Applications, OpenCloud identity, and dependencies. | Explicit application flows only. |
+| `private-cloud` | Applications, Stalwart identity, and dependencies. | Explicit application flows only. |
 | `media` | Jellyfin, Sonarr, Radarr, Prowlarr, and qBittorrent. | Jellyfin accepts only Traefik ingress and exits directly for metadata; guarded apps exit through AirVPN WireGuard. |
 | `edge` | Traefik HTTPS and SMTP entry plus the Grist oauth2-proxy helper. | Only approved application listeners are reachable. |
 | `network-access` | AmneziaWG server, peer forwarding, and its wg-easy UI. | Configured LAN ceiling, per-peer UI firewall, and public Internet egress. |
@@ -86,7 +86,7 @@ Traefik binds host TCP `443` from a pod in `edge`.
 
 Public DNS resolves enabled application names to the home WAN address. LAN DNS resolves the same names to the host address in `networking.lan.address` for LAN and AmneziaWG clients, and to the Traefik Service for pods.
 
-OpenCloud uses its configured HTTPS URL as the issuer. LAN clients and pods reach that hostname through Traefik, so the issuer matches for browsers and services.
+Stalwart's configured HTTPS URL is the shared OIDC issuer. LAN clients and pods reach that hostname through Traefik, so the issuer matches for browsers and services.
 
 OpenObserve is published through its configured exact HTTPS hostname. Alloy has no public route. When notifications are enabled, OpenObserve and Zabbix send alerts directly to Stalwart's internal SMTP listener on TCP `2525`.
 
@@ -111,23 +111,26 @@ The stateless `homepage` Deployment in `edge` serves `https://www.<domain>` with
 - The `vpn-admin` tile works only from local networks and VPN peers.
 - The pod accepts TCP `8080` from Traefik only and has no egress.
 
-## OpenCloud and Grist authentication
+## Stalwart sign-in and Grist authentication
 
-OpenCloud runs its built-in provider in `private-cloud` and publishes `https://<opencloud-hostname>` through Traefik. Applications and the Grist helper reach the issuer through the Traefik pod on TCP `8443` after hostPort translation.
+Stalwart runs the OIDC provider in `private-cloud` and publishes `https://<stalwart-hostname>` through Traefik. Applications and the Grist helper reach the issuer through the Traefik pod on TCP `8443` after hostPort translation.
+
+- A separate router adds CORS headers on Stalwart's `/auth/` paths for the OpenCloud origin only.
+- OpenCloud Web exchanges and refreshes tokens from the browser through that router.
 
 The stateless `forward-auth` Deployment in `edge` runs oauth2-proxy v7.15.5 for Grist and uses the confidential client `grist-forward-auth`.
 
 - Traefik applies the `strip-identity-headers` and `forward-auth` middlewares to the Grist router.
 - The `forward-auth` middleware calls oauth2-proxy on TCP `4180` and passes the verified email as `X-Forwarded-User`.
-- Unauthenticated browsers are redirected to OpenCloud sign-in.
+- Unauthenticated browsers are redirected to Stalwart sign-in.
 - A router in the Grist route ConfigMap sends `/oauth2/` on the Grist host to oauth2-proxy without ForwardAuth.
 - oauth2-proxy serves the OIDC callback at `/oauth2/callback`.
 - The helper has no email or domain login allowlist.
 - Grist trusts `X-Forwarded-User` on every request through `GRIST_IGNORE_SESSION=true`.
 - Access is browser-only and Grist API keys do not work.
-- Logout calls `/oauth2/sign_out`, which redirects to the OpenCloud end-session endpoint and then to the OpenCloud sign-in page.
+- Logout calls `/oauth2/sign_out`, which clears the helper cookie and returns to Stalwart sign-in.
 - There is no `/signed-out` route on the Grist host.
-- Every enabled OpenCloud user can authenticate without a separate login allowlist.
+- Every Stalwart account can authenticate without a separate login allowlist.
 
 ## Inbound mail and Stalwart TLS
 
@@ -226,7 +229,7 @@ Everything omitted is denied. Each entry permits connection initiation in the st
 | LAN / AmneziaWG client | Traefik | TCP `443`. |
 | Traefik | Approved web backends / Jellyfin | Declared backend ports only. |
 | Jellyfin | metadata and artwork providers | TCP `443` after cluster DNS. |
-| OIDC-enabled applications / oauth2-proxy helper | OpenCloud issuer | TCP `8443` to the Traefik pod after hostPort translation. |
+| OIDC-enabled applications / oauth2-proxy helper | Stalwart issuer | TCP `8443` to the Traefik pod after hostPort translation. |
 | Traefik | oauth2-proxy helper | TCP `4180`. |
 | Traefik | Homepage | TCP `8080`. |
 | Traefik | Stalwart HTTP | TCP `8080`. |
@@ -247,33 +250,3 @@ Everything omitted is denied. Each entry permits connection initiation in the st
 ## Storage
 
 Traefik, Jellyfin, and each enabled application have separate quota-controlled datasets under `tank/secure/backup/k0s/services` and dedicated `10Ti` PVs. Sonarr, Radarr, Prowlarr, qBittorrent, and the shared media library use `tank/secure/no-backup/k0s/services`. Jellyfin mounts the library read-only; import and download workloads receive only their required write mounts.
-
-## Deployment acceptance
-
-Repository implementation is not evidence of live enforcement. Before exposure:
-
-- Confirm the router forwards only TCP `443` and the AmneziaWG UDP port.
-- Verify all other host and former NodePort paths fail from WAN and LAN.
-- Verify SSH, Kubernetes API, and Zabbix work only from configured local networks.
-- Test every hostname from WAN, LAN, and AmneziaWG.
-- Verify LAN clients resolve service hostnames to the host address and pods to the Traefik Service.
-- Verify Firefox and Apple devices on the LAN fall back to the LAN resolver.
-- Verify OpenCloud, Grist, AFFiNE, and Immich complete an OpenCloud OIDC login.
-- Verify Grist login, the `/oauth2/callback` exchange, and logout through oauth2-proxy and the OpenCloud end-session endpoint.
-- Verify Grist rejects forged `X-Forwarded-User` headers from clients.
-- Validate Traefik and Stalwart certificate issuance and renewal paths against the real Let's Encrypt service.
-- Confirm Immich, AFFiNE, and Jellyfin answer with the installer-claimed administrators once published.
-- Send a message to the external inbox and confirm its SMTP forward reaches Stalwart.
-- Confirm Proxy Protocol preserves the sender address in Stalwart.
-- Verify Stalwart filtering and outbound relay behavior.
-- Interrupt the AirVPN WireGuard tunnel and confirm guarded apps lose Internet and external DNS.
-- Confirm Immich machine learning downloads models over TCP `443`.
-- Confirm Jellyfin downloads metadata over IPv4 and cannot initiate IPv6 connections.
-- Confirm Jellyfin streaming and local scanning continue during media VPN failure.
-- Verify the AmneziaWG LAN ceiling, per-peer UI firewall entries, and full-tunnel Internet egress.
-- Verify the AmneziaWG UI rejects clients outside local networks and the VPN.
-- Verify AmneziaWG peers cannot reach the pod or service CIDRs.
-- Confirm qBittorrent reports `tun0` as its bound interface.
-- Verify Jellyfin transcoding uses the Intel GPU.
-- Confirm OpenObserve is reachable only through its configured hostname.
-- Confirm Alloy has no public route and accepts only its documented internal health path.

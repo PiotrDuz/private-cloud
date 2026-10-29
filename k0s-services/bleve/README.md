@@ -2,8 +2,7 @@
 
 The Bleve storage is managed by `ansible/roles/bleve`.
 
-- Configure `private_cloud.bleve` in the public configuration.
-- Run `sudo python3 ansible/install.py` from the repository root.
+- The installer reads `private_cloud.bleve` from the public configuration.
 - The service dataset is `tank/secure/backup/k0s/services/bleve`.
 - The dataset uses the configured quota.
 - The local PV and PVC advertise a fixed `10Ti` capacity.

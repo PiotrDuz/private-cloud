@@ -14,20 +14,20 @@ injectResponseHeaders:
       - claimSource:
           claim: email
 providers:
-  - id: opencloud
+  - id: stalwart
     provider: oidc
-    name: OpenCloud
+    name: Stalwart
     clientID: grist-forward-auth
     clientSecretFile: /run/secrets/forward-auth/oidc-client-secret
     scope: openid profile email
     code_challenge_method: S256
     oidcConfig:
-      issuerURL: {{ ("https://" ~ private_cloud.opencloud.hostname) | to_json }}
+      issuerURL: {{ ("https://" ~ private_cloud.stalwart.hostname) | to_json }}
       emailClaim: email
       userIDClaim: email
       audienceClaims: [aud]
       insecureSkipNonce: false
-      # OpenCloud never sets email_verified; administrators assign every address.
+      # Stalwart sends email_verified only from userinfo; every address is an administrator-created Stalwart account.
       insecureAllowUnverifiedEmail: true
 {% endset %}
 apiVersion: v1
@@ -91,7 +91,7 @@ spec:
             - --trusted-proxy-ip={{ private_cloud.networking.pod_cidr }}
             - --redirect-url={{ "https://" ~ private_cloud.grist.hostname ~ "/oauth2/callback" }}
             - --whitelist-domain={{ private_cloud.grist.hostname }}
-            - --whitelist-domain={{ private_cloud.opencloud.hostname }}
+            - --whitelist-domain={{ private_cloud.stalwart.hostname }}
             - --email-domain=*
             - --skip-provider-button=true
             - --cookie-name=__Host-grist-auth

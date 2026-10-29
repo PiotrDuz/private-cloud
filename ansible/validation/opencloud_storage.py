@@ -11,13 +11,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from admin_bootstrap_helpers import opencloud_app_token  # noqa: E402
 from kube_forward_helpers import find_free_port, wait_for_forward  # noqa: E402
 
 
 def main():
     config = json.load(sys.stdin)
     pod = ready_pod(config)
-    token = create_admin_token(config, pod)
+    token = opencloud_app_token(config["kubeconfig"], config["namespace"], pod, config["admin_username"], "5m")
     local_port, forward = start_port_forward(config)
     try:
         verify_storage(config, local_port, token)
@@ -47,23 +48,6 @@ def ready_pod(config):
                 any(item.get("name") == "opencloud" and item.get("ready") for item in statuses)):
             return metadata["name"]
     raise RuntimeError("OpenCloud has no non-terminating Ready pod")
-
-
-def create_admin_token(config, pod):
-    command = [
-        "k0s", "kubectl", "--kubeconfig", config["kubeconfig"],
-        "--namespace", config["namespace"], "exec", pod, "-c", "opencloud", "--",
-        "opencloud", "auth-app", "create",
-        "--user-name=" + config["admin_username"], "--expiration=5m",
-    ]
-    result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=45)
-    if result.returncode:
-        raise RuntimeError("OpenCloud could not create an app token for its configured administrator")
-    for line in (result.stdout + "\n" + result.stderr).splitlines():
-        key, separator, value = line.strip().partition(":")
-        if separator and key.strip().casefold() == "token" and value.strip():
-            return value.strip()
-    raise RuntimeError("OpenCloud administrator token creation returned no token")
 
 
 def start_port_forward(config):

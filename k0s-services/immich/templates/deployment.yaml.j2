@@ -36,7 +36,7 @@ spec:
           env:
             - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
             - {name: IMMICH_OAUTH_ENABLED, value: 'true'}
-            - {name: IMMICH_OAUTH_ISSUER_URL, value: {{ ('https://' ~ private_cloud.opencloud.hostname) | to_json }}}
+            - {name: IMMICH_OAUTH_ISSUER_URL, value: {{ ('https://' ~ private_cloud.stalwart.hostname) | to_json }}}
             - {name: IMMICH_OAUTH_CLIENT_ID, value: immich}
             - name: IMMICH_OAUTH_CLIENT_SECRET
               valueFrom: {secretKeyRef: {name: immich-credentials, key: IMMICH_OAUTH_CLIENT_SECRET}}

@@ -41,7 +41,7 @@
       - (private_cloud.tika.keys() | list | sort) == ['max_ram', 'storage_size']
       - (private_cloud.bleve.keys() | list) == ['storage_size']
       - (private_cloud.onlyoffice.keys() | list | sort) == ['hostname', 'max_ram', 'storage_size']
-      - (private_cloud.opencloud.keys() | list | sort) == ['hostname', 'max_ram', 'storage_size']
+      - (private_cloud.opencloud.keys() | list | sort) == ['admin_email', 'hostname', 'max_ram', 'storage_size']
       - (private_cloud.grist.keys() | list | sort) == ['default_email', 'hostname', 'max_ram', 'storage_size']
       - (private_cloud.manticore.keys() | list | sort) == ['max_ram', 'storage_size']
       - (private_cloud.redis_affine.keys() | list) == ['max_ram']
@@ -135,8 +135,9 @@
     that:
       - private_cloud.immich.admin_email is match("^[^@\\s]+@[^@\\s]+\\.[A-Za-z]{2,63}$")
       - private_cloud.affine.admin_email is match("^[^@\\s]+@[^@\\s]+\\.[A-Za-z]{2,63}$")
+      - private_cloud.opencloud.admin_email is match("^[^@\\s]+@[^@\\s]+\\.[A-Za-z]{2,63}$")
       - private_cloud.media.jellyfin_admin_username is match('^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,30}[A-Za-z0-9])?$')
-    fail_msg: immich.admin_email, affine.admin_email, and media.jellyfin_admin_username must be valid
+    fail_msg: immich.admin_email, affine.admin_email, opencloud.admin_email, and media.jellyfin_admin_username must be valid
 
 - name: Require networking whenever k0s is enabled
   ansible.builtin.assert:

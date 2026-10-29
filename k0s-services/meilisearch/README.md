@@ -2,11 +2,10 @@
 
 The Meilisearch service is managed by `ansible/roles/meilisearch`.
 
-- Configure `private_cloud.meilisearch` in the public configuration.
-- Store the master key in the encrypted configuration.
-- Use the master key only for administration.
+- The installer reads `private_cloud.meilisearch` from the public configuration.
+- The encrypted configuration holds the master key.
+- Only administration uses the master key.
 - The Stalwart role creates a scoped `st_*` search key for Stalwart.
-- Run `sudo python3 ansible/install.py` from the repository root.
 - The service dataset is `tank/secure/backup/k0s/services/meilisearch`.
 - The dataset uses the configured quota.
 - The local PV and PVC advertise a fixed `10Ti` capacity.
@@ -16,4 +15,4 @@ The Meilisearch service is managed by `ansible/roles/meilisearch`.
 
 - Ansible renders the `templates/*.yaml.j2` workload files during deployment.
 
-- Emit JSON logs to stderr through `MEILI_EXPERIMENTAL_LOGS_MODE=json`.
+- Meilisearch emits JSON logs to stderr through `MEILI_EXPERIMENTAL_LOGS_MODE=json`.

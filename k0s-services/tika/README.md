@@ -2,8 +2,7 @@
 
 The Apache Tika service is managed by `ansible/roles/tika`.
 
-- Configure `private_cloud.tika` in the public configuration.
-- Run `sudo python3 ansible/install.py` from the repository root.
+- The installer reads `private_cloud.tika` from the public configuration.
 - Ansible renders the `templates/*.yaml.j2` workload files during deployment.
 - The service dataset is `tank/secure/backup/k0s/services/tika`.
 - The dataset uses the configured quota.

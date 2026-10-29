@@ -4,10 +4,9 @@ The OpenCloud service is managed by `ansible/roles/opencloud`.
 
 - Ansible renders the `templates/*.yaml.j2` workload files during deployment.
 
-- Configure `private_cloud.opencloud` in the public configuration.
-- Store the administrator password and the WOPI secret in the encrypted configuration.
-- Change the initialized administrator password through OpenCloud UI or CLI.
-- Run `sudo python3 ansible/install.py` from the repository root.
+- The installer reads `private_cloud.opencloud` from the public configuration.
+- The encrypted configuration holds the administrator password and the WOPI secret.
+- The initial administrator password protects the built-in directory account, which signs in only through Stalwart.
 - The service dataset is `tank/secure/backup/k0s/services/opencloud`.
 - The dataset uses the configured quota.
 - The local PV and PVC advertise a fixed `10Ti` capacity.
@@ -32,16 +31,14 @@ The OpenCloud service is managed by `ansible/roles/opencloud`.
 
 ## Shared identity
 
-- OpenCloud runs its [built-in OIDC provider](https://docs.opencloud.eu/docs/dev/server/services/idp/information/) and directory.
-- The issuer is `https://<opencloud-hostname>`.
-- Public clients are `web`, `OpenCloudDesktop`, `OpenCloudAndroid`, and `OpenCloudIOS`.
-- Enabled applications register confidential clients `grist-forward-auth`, `affine`, and `immich`.
-- The role renders clients into the `opencloud-identity` Kubernetes Secret.
-- The init container copies `idp.yaml` into the backed-up configuration directory with mode `0600`.
-- Client configuration changes trigger an OpenCloud rollout.
-- Generated signing keys and directory data stay on the OpenCloud dataset.
-- Manage users, passwords, account status, groups, and roles through the OpenCloud admin area.
-- Assign unique administrator-controlled email addresses before downstream sign-in.
-- Every enabled user can sign into connected applications without a separate login allowlist.
-- Manage downstream permissions and administrator grants within each application.
-- Restore identity data, signing keys, and configuration from the same recovery point.
+- Stalwart is the OpenID Connect provider; OpenCloud's built-in provider does not run.
+- `OC_OIDC_ISSUER` names the Stalwart issuer and the proxy rewrites discovery to it.
+- The first sign-in of a Stalwart account creates its user in the built-in directory.
+- The `email` claim matches the directory `mail` attribute, so an address maps to one user.
+- New users receive the default user role.
+- The installer sets the built-in administrator's address to the managed Stalwart mailbox account.
+- That account therefore signs in as the OpenCloud administrator.
+- The installer authenticates that change with a ten-minute app token from the `auth-app` service.
+- The proxy validates opaque Stalwart access tokens through the userinfo endpoint.
+- The content security policy allows OpenCloud Web to reach the Stalwart origin.
+- Directory data stays on the OpenCloud dataset.

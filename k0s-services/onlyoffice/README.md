@@ -2,10 +2,9 @@
 
 The OnlyOffice service is managed by `ansible/roles/onlyoffice`.
 
-- Configure `private_cloud.onlyoffice` in the public configuration.
-- Store the JWT secret in the encrypted configuration.
+- The installer reads `private_cloud.onlyoffice` from the public configuration.
+- The encrypted configuration holds the JWT secret.
 - The OpenCloud WOPI signing secret is never mounted into OnlyOffice.
-- Run `sudo python3 ansible/install.py` from the repository root.
 - The service dataset is `tank/secure/backup/k0s/services/onlyoffice`.
 - The dataset uses the configured quota.
 - The local PV and PVC advertise a fixed `10Ti` capacity.

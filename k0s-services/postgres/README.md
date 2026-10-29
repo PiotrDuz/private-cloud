@@ -2,9 +2,8 @@
 
 The PostgreSQL service is managed by `ansible/roles/postgres`.
 
-- Configure `private_cloud.postgres` in the public configuration.
-- Store the administrator password in the encrypted configuration.
-- Run `sudo python3 ansible/install.py` from the repository root.
+- The installer reads `private_cloud.postgres` from the public configuration.
+- The encrypted configuration holds the administrator password.
 - The service dataset is `tank/secure/backup/k0s/services/postgres`.
 - The dataset quota and reservation use the configured volume size.
 - The local PV and PVC advertise a fixed `10Ti` capacity.
@@ -18,4 +17,4 @@ The PostgreSQL service is managed by `ansible/roles/postgres`.
 
 - Ansible renders the `templates/*.yaml.j2` workload files during deployment.
 
-- Send logs to stderr with an explicit timestamp and process prefix and disable the file collector.
+- PostgreSQL logs to stderr with an explicit timestamp and process prefix, without the file collector.

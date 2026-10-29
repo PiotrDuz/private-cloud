@@ -50,12 +50,12 @@ Validators trust only the distribution's Mozilla root store in `/usr/share/ca-ce
 ## AFFiNE
 
 - The validator requests `/info` and checks pgvector in its database.
-- OpenCloud sign-in and workspace creation remain operator acceptance checks.
+- Stalwart sign-in and workspace creation remain operator acceptance checks.
 
 ## Immich
 
 - The validator checks the server ping, machine-learning ping and inference, Valkey round trip, and PostgreSQL extensions.
-- OpenCloud sign-in and media upload remain operator acceptance checks.
+- Stalwart sign-in and media upload remain operator acceptance checks.
 
 ## Logging and Zabbix
 

@@ -4,9 +4,8 @@ The Zabbix server and web frontend are managed by `ansible/roles/zabbix_server`.
 
 - Ansible renders the `templates/*.yaml.j2` workload files during deployment.
 
-- Configure `private_cloud.zabbix` in the public configuration.
-- Store database and administrator passwords and the agent PSK in the encrypted configuration.
-- Run `sudo python3 ansible/install.py` from the repository root.
+- The installer reads `private_cloud.zabbix` from the public configuration.
+- The encrypted configuration holds database and administrator passwords and the agent PSK.
 - The service dataset is `tank/secure/backup/k0s/services/zabbix`.
 - The dataset uses the configured quota.
 - The local PV and PVC advertise a fixed `10Ti` capacity.

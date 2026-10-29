@@ -8,7 +8,9 @@ Open Zabbix at `monitor.<domain>` and review **Monitoring → Problems** for `pr
 
 | View | Critical checks | Response |
 | --- | --- | --- |
-| Private cloud ZFS storage → Dataset capacity | Quota utilization and current leaf allocation. | Investigate at 80%; act before 90%. |
+| Private cloud → Overview | Problems, CPU, memory, pool capacity, and host graphs. | Start every check here. |
+| Private cloud → Dataset capacity | Quota utilization and current leaf allocation. | Investigate at 80%; act before 90%. |
+| Private cloud → Disks | SMART temperature, power-on hours, and disk utilization. | Investigate rising temperatures and saturated disks. |
 | Latest data → ZFS pool | Usage, online state, permanent errors, and read/write/checksum errors. | Prioritize degraded storage, permanent errors, and 90% usage. |
 | Latest data → Linux | CPU, available RAM, swap, disk latency, and filesystem space. | Investigate sustained saturation and growing pressure. |
 | Latest data → SMART | Health, temperature, and media errors. | Investigate failing health and rising errors. |
@@ -22,6 +24,18 @@ Open Zabbix at `monitor.<domain>` and review **Monitoring → Problems** for `pr
 - Use ZFS quota utilization rather than advertised 10Ti PV capacity.
 - Watch PostgreSQL growth because applications share its dataset.
 - Check all enabled datasets because the capacity widget displays only the top seven.
+
+Run the collectors and agent keys by hand when Zabbix shows no data:
+
+```bash
+sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py --inventory /etc/zabbix/private-cloud-datasets.json metrics | python3 -m json.tool
+sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py --inventory /etc/zabbix/private-cloud-datasets.json snapshots | python3 -m json.tool
+sudo -u zabbix /usr/local/libexec/zabbix/memory-ecc-collector.py | python3 -m json.tool
+sudo zabbix_agent2 -t zfs.metrics
+sudo zabbix_agent2 -t zfs.snapshots
+sudo zabbix_agent2 -t memory.ecc.metrics
+sudo zabbix_agent2 -t smart.disk.discovery
+```
 
 ## Incidents and logs
 
@@ -44,6 +58,7 @@ sudo k0s kubectl get events -A --sort-by=.metadata.creationTimestamp
 sudo k0s kubectl logs -n private-cloud statefulset/stalwart --since=1h --tail=500
 sudo k0s kubectl logs -n edge deployment/traefik --since=1h --tail=500
 sudo k0s kubectl logs -n media deployment/qbittorrent -c file-logs --since=1h --tail=500
+sudo k0s kubectl logs -n media deployment/jellyfin -c jellyfin --since=1h --tail=500
 sudo journalctl -u k0scontroller.service --since='1 hour ago'
 ```
 
@@ -55,20 +70,27 @@ Use `kubectl logs --previous` with the affected pod and container after a crash.
 - Confirm OpenObserve removes expired data after the 14-day retention period.
 - Check OpenObserve and Alloy quotas before storage or buffers fill.
 - Check the ephemeral kubelet quota because CRI logs use `/tank/secure/k0s/kubelet/logs`.
+- Check the host heartbeat before treating a quiet log stream as healthy.
+- Check Alloy source positions and write-ahead-log growth before the Alloy quota fills.
+- Confirm collection resumes after an Alloy restart or an OpenObserve outage.
+- Treat OpenObserve state and log history as disposable no-backup data.
 - Check container rotation, host journal limits, qBittorrent and OnlyOffice rotation, and FFmpeg pruning separately.
 
-## OpenCloud and OIDC
+## Accounts and sign-in
 
-OpenCloud's built-in provider and directory supply shared login for Grist, AFFiNE, and Immich.
+Stalwart accounts are the shared login for OpenCloud, Grist, AFFiNE, and Immich. Jellyfin, Zabbix, OpenObserve, the arr applications, and the AmneziaWG UI keep their own logins.
 
-- Manage accounts and groups in the OpenCloud admin area.
-- Use unique administrator-controlled email identities for downstream accounts.
-- Check discovery at `https://<opencloud-hostname>/.well-known/openid-configuration` after changes.
-- Reapply to update enabled client registrations and callback hostnames.
-- Keep directory data, signing keys, and generated configuration together during recovery.
+- Create, suspend, and delete accounts in the Stalwart administration at `https://<stalwart-hostname>/admin/`.
+- Give each person one Stalwart account; its address is their identity in every connected application.
+- A new account can sign in to every connected application; the first sign-in creates the application account.
+- The managed mailbox account is the administrator of OpenCloud, Grist, AFFiNE, and Immich.
+- Grant administrator rights and sharing to other users inside each application.
+- Check discovery at `https://<stalwart-hostname>/.well-known/openid-configuration` after changes.
+- Reapply to update OAuth client registrations and callback hostnames.
+- Restore Stalwart, OpenCloud, and the application datasets from the same recovery point.
 - Restore the public configuration and Vault ciphertext from the same recovery point.
 - Restore and mount `tank/secure/backup/private-cloud-config` before reapplying.
-- The initial OpenCloud administrator password and OIDC client secrets are not rotatable through the installer.
+- OIDC client secrets are not rotatable through the installer.
 - The Immich, AFFiNE, Jellyfin, and AmneziaWG UI administrator passwords are bootstrap credentials and are not rotatable.
 - Change those passwords inside each application after the installer claims the instance.
 - Rotatable groups cover enabled service database passwords, mail credentials, Cloudflare tokens, and the AirVPN WireGuard keys.
@@ -77,7 +99,16 @@ OpenCloud's built-in provider and directory supply shared login for Grist, AFFiN
 - A PSK rotation updates the Zabbix host object and restarts the agent on the same run.
 - PostgreSQL, Zabbix, and OpenObserve administrator passwords and the ZFS passphrase are not rotatable.
 
-OpenCloud does not attest email verification. AFFiNE's [supported claim mapping](https://github.com/toeverything/AFFiNE/blob/v0.27.3/packages/backend/server/src/plugins/oauth/providers/oidc.ts) for `claim_email_verified` names an absent claim so its supported OIDC mapping accepts administrator-controlled email identities; administrators must keep these addresses unique and prevent reassignment while downstream accounts exist.
+Stalwart 0.16 has no enabled flag on accounts. Manage them with `stalwart-cli` against `https://<stalwart-hostname>`, authenticating with the administrator through `STALWART_USER` and `STALWART_PASSWORD`:
+
+```bash
+stalwart-cli query Account --where name=<username>
+stalwart-cli update Account <id> --field 'permissions={"@type":"Merge","disabledPermissions":{"authenticate":true,"authenticateWithAlias":true}}'
+stalwart-cli update Account <id> --field 'permissions={"@type":"Inherit"}'
+stalwart-cli delete Account --ids <id>
+```
+
+The commands find, suspend, resume, and delete an account. Suspension keeps the mailbox and ends sign-in to every connected application.
 
 ## Media VPN
 
@@ -91,23 +122,24 @@ OpenCloud does not attest email verification. AFFiNE's [supported claim mapping]
 
 Account deletion is manual in each application; OIDC does not synchronize account or data deletion.
 
-- Disable the user in OpenCloud and each application where they have an account.
+- Suspend the Stalwart account first; it ends sign-in to OpenCloud, Grist, AFFiNE, and Immich.
+- Disable the user in each application with its own login.
 - Revoke their sessions, API keys, and refresh tokens through each application's supported controls.
 - Delete their accounts and user-owned data in each application.
 - Remove owned documents, workspaces, attachments, and media explicitly when account deletion leaves them behind.
 - Preserve resources owned by other users while removing the deleted user's memberships.
 - Confirm asynchronous data deletion completes before closing the task.
-- Complete deletion in OpenCloud after downstream cleanup.
+- Delete the Stalwart account after downstream cleanup.
 
 ### Application cleanup
 
 | Application | Disable while preserving data | Delete account and revoke credentials |
 | --- | --- | --- |
-| OpenCloud | Disable the account in the admin area. | Remove owned spaces and files, shares, app passwords, and sessions before deleting the user. |
-| Grist | Disable OpenCloud login and remove site access. | Delete owned documents, remove memberships, and delete the Grist account after resolving ownership. |
-| AFFiNE | Disable OpenCloud login and remove workspace access. | Delete owned workspaces and attachments, revoke sessions and tokens, and delete the AFFiNE account. |
-| Immich | Disable OpenCloud login and revoke active sessions. | Revoke API keys and devices, delete the user in Administration, and confirm the queued library deletion completes. |
-| Stalwart | Deny authentication permissions while retaining mailbox data. | Revoke app passwords and API keys, delete the account and aliases, and confirm mail and blob cleanup completes. |
+| OpenCloud | Suspend the Stalwart account, or disable the user in the admin area. | Remove owned spaces and files, shares, app passwords, and sessions before deleting the user. |
+| Grist | Suspend the Stalwart account and remove site access. | Delete owned documents, remove memberships, and delete the Grist account after resolving ownership. |
+| AFFiNE | Suspend the Stalwart account and remove workspace access. | Delete owned workspaces and attachments, revoke sessions and tokens, and delete the AFFiNE account. |
+| Immich | Suspend the Stalwart account and revoke active sessions. | Revoke API keys and devices, delete the user in Administration, and confirm the queued library deletion completes. |
+| Stalwart | Deny authentication permissions while retaining mailbox data; this ends sign-in everywhere. | Revoke app passwords and API keys, delete the account and aliases, and confirm mail and blob cleanup completes. |
 | Jellyfin | Disable the user in the dashboard. | Revoke devices, sessions, and applicable API keys, then delete the user while preserving the shared media library. |
 | ARR, Zabbix, OpenObserve | Disable or remove access through native controls. | Revoke native credentials and tokens and remove personal resources through each service's controls. |
 | AmneziaWG | Disable the client in the UI. | Delete the client in the UI to revoke its key. |
@@ -169,6 +201,7 @@ Backup automation and independent outage monitoring are not configured by this r
 - Keep encryption keys and configuration recovery material outside this host.
 - Periodically restore an independent backup and record the result.
 - After reboot, confirm datasets are mounted, pods are ready, and monitoring has resumed.
+- Back up the Manticore dataset and review its release notes before changing the pinned image.
 
 ## Boot integrity updates
 

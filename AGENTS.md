@@ -39,6 +39,7 @@
 ## Writing documentation rules
 
 - In lists and bullet points, use single, short sentences to show intent; avoid additional explanations.
+- Only `docs/SETUP.md` and `docs/OPERATIONS.md` give operator instructions; READMEs and other docs describe behavior.
 
 ## Writing scripts rules
 

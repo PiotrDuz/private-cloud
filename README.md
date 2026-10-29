@@ -2,21 +2,15 @@
 
 The supported installer collects the full configuration and runs one unattended Ansible playbook.
 
-## Prerequisites
+## Requirements
 
-- Use Ubuntu for all stages or Debian with the Zabbix Agent stage disabled.
-- Use OpenZFS userland and kernel modules version 2.3 or newer.
-- Install Python 3, PyYAML, Ansible, and the Python Kubernetes client.
-- Install the collections from `ansible/requirements.yml`.
-- Run the installer from an interactive root terminal.
-- Enable the Intel integrated GPU in firmware for the default Immich OpenVINO acceleration.
+- The host runs Ubuntu, or Debian with the Zabbix Agent stage disabled.
+- OpenZFS userland and kernel modules are version 2.3 or newer.
+- The installer needs Python 3, PyYAML, Ansible, the Python Kubernetes client, and the collections in `ansible/requirements.yml`.
+- The installer runs from an interactive root terminal.
+- The default Immich OpenVINO acceleration needs the Intel integrated GPU enabled in firmware.
 
-The ZFS role enforces the OpenZFS 2.3 minimum before it changes storage because the PostgreSQL dataset uses the [`prefetch` property](https://openzfs.github.io/openzfs-docs/man/v2.3/7/zfsprops.7.html).
-
-```bash
-sudo ansible-galaxy collection install -r ansible/requirements.yml
-sudo python3 ansible/install.py
-```
+The ZFS role enforces the OpenZFS 2.3 minimum before it changes storage because the PostgreSQL dataset uses the [`prefetch` property](https://openzfs.github.io/openzfs-docs/man/v2.3/7/zfsprops.7.html). Installation steps are in [the operator setup runbook](docs/SETUP.md).
 
 ## Configuration
 
@@ -28,7 +22,8 @@ sudo python3 ansible/install.py
 - The stored configuration holds base values; the installer expands them into the full contract before each Ansible run.
 - Every service hostname is a fixed subdomain of `private_cloud.domain`, such as `cloud.<domain>` for OpenCloud.
 - The Cloudflare managed records are the hostnames of enabled stages plus `www.<domain>`; `vpn-admin.<domain>` stays private.
-- `private_cloud.admin_email` serves as the ACME contact and the application administrator email.
+- `private_cloud.admin_email` is the ACME contact address.
+- The managed Stalwart mailbox account, `<stalwart.mailbox_username>@<domain>`, is the application administrator.
 - `private_cloud.timezone` applies to every service; the installer proposes the host timezone.
 - `networking.lan` holds the host interface, address, and gateway; the installer proposes the discovered values.
 - The Traefik address and the boot-integrity network derive from `networking.lan`.
@@ -53,8 +48,8 @@ sudo python3 ansible/install.py
 - Zabbix host settings are in `ansible/service_catalog.yml`.
 - The logging stage deploys Alloy and OpenObserve in `observability`.
 - The notifications stage enables OpenObserve SMTP and Zabbix email actions.
-- OpenCloud provides shared OIDC login for Grist, AFFiNE, and Immich.
-- The edge oauth2-proxy helper authenticates Grist browser sessions through OpenCloud.
+- Stalwart provides shared OIDC login for OpenCloud, Grist, AFFiNE, and Immich.
+- The edge oauth2-proxy helper authenticates Grist browser sessions through Stalwart.
 - The media stage keeps the ARR stack and shared media library on `no-backup` datasets.
 - Redis for AFFiNE, Intel GPU support, and Immich are independent installer stages.
 - Immich uses the shared PostgreSQL service with pgvector and VectorChord.
@@ -73,18 +68,11 @@ sudo python3 ansible/install.py
 - Disk discovery falls back to physical device paths when serial IDs are unavailable.
 - The k0s stage creates the workload and infrastructure namespaces.
 
-## Reboot verification
-
-- Reboot the host under supervision after the first successful installation.
-- Reapply the configuration after reboot to verify native ZFS mounts and k0s ordering.
-- Select `validate` in the installer to check the installed system and alert delivery.
-- Do not use the installer for unattended operating-system or OpenZFS upgrades.
-
 ## Operations
 
-- Use [the operations runbook](docs/OPERATIONS.md) for monitoring and incident investigation.
-- Treat backups, router/NAT configuration, external monitoring, and live acceptance as operator work tracked in [the operator setup runbook](docs/SETUP.md).
-- Read [the networking architecture and boundaries](docs/NETWORKING.md) for the implemented VPN, ingress, firewall, identity, and media isolation design.
+- [The operator setup runbook](docs/SETUP.md) covers installation, backups, router/NAT configuration, external monitoring, and live acceptance.
+- [The operations runbook](docs/OPERATIONS.md) covers monitoring, accounts, and incident investigation.
+- [The networking architecture](docs/NETWORKING.md) describes the VPN, ingress, firewall, identity, and media isolation design.
 
 The memory preflight budgets the container requests in `ansible/service_catalog.yml`; configured `max_ram` values are burstable limits above that budget.
 
