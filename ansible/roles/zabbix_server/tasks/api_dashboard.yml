@@ -7,7 +7,7 @@
         'host_id': zabbix_host_id, 'host': private_cloud_zabbix_hostname,
         'group_id': zabbix_group_id, 'dashboard': zabbix_dashboard_name,
         'datasets': private_cloud_monitored_dataset_names,
-        'pool': zabbix_pool_name, 'interface': private_cloud.networking.lan.interface,
+        'pool': zabbix_pool_name, 'interface': ansible_facts.default_ipv4.interface,
         'health': private_cloud.stages.zabbix_agent,
         'alloy': private_cloud.stages.logging and private_cloud.stages.zabbix_agent
       } | to_json }}
