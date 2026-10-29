@@ -65,6 +65,16 @@ Host: Hardkernel i3-N305, Ubuntu 26.04.1, 29 GiB RAM. Pool: RAIDZ1 on sda, sdc, 
 | 21 | Follower script changes did not restart the Stalwart pod | The configuration revision hashes both follower scripts |
 | 22 | Firewall validation saw stale rules: the restart handler ran at play end, and a failed run lost the notification | `flush_handlers` before networking validation; `force_handlers = True` in `ansible.cfg` |
 | 23 | Added a `www.<domain>` homepage | nginx pod in `edge` with a tile per enabled application |
+| 24 | Grist sign-in failed with 500 for every user: oauth2-proxy rejects OpenCloud ID tokens because OpenCloud never sets `email_verified` | `insecureAllowUnverifiedEmail` in the forward-auth OIDC config; addresses are administrator-controlled |
+| 25 | Grist 1.7.16 showed a critical update banner | Pinned `gristlabs/grist:1.7.21` |
+| 26 | Immich machine learning was OOM-killed at 3Gi; OpenVINO GPU buffers are shmem charged to the container | Default `machine_learning_max_ram` is `4Gi` |
+| 27 | qBittorrent anonymous mode was off: the seed used the legacy `Bittorrent\AnonymousMode` key that qBittorrent 5 ignores | `Session\AnonymousModeEnabled=true` seeded, reapplied on start, and validated |
+| 28 | Hourly false `Some command to the disk failed` for the USB system disk: Zabbix also discovers it as SCSI, which the bridge rejects | SMART wrapper queries a SCSI request with the type `smartctl --scan` detects |
+| 29 | Removed SMTP certificate kept raising a High alert every hour | Certificate items no longer probed are deleted with their triggers |
+| 30 | Built-in `Zabbix server` host reported its agent unavailable forever | Installer unlinks the passive Linux template from it |
+| 31 | Alloy dropped whole batches: OpenObserve rejects a batch containing an empty line | Alloy drops empty lines |
+| 32 | Jellyfin transcoded in software although it holds the Intel GPU | Init script enables Quick Sync when `intel_gpu` is enabled |
+| 33 | Homepage tiles redesigned | Icon-only tiles in Apps and Administration sections |
 
 ## Files
 

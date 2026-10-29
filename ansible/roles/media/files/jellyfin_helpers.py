@@ -18,6 +18,21 @@ def configure_network(path, known_proxies):
     return write_xml(path, root)
 
 
+def configure_encoding(path, acceleration):
+    root = read_xml(path, 'EncodingOptions')
+    set_value(root, 'HardwareAccelerationType', acceleration)
+    if acceleration == 'qsv':
+        set_value(root, 'QsvDevice', '/dev/dri/renderD128')
+        set_value(root, 'EnableHardwareEncoding', 'true')
+        for key in ('EnableDecodingColorDepth10Hevc', 'EnableDecodingColorDepth10Vp9'):
+            set_value(root, key, 'true')
+        codecs = clear_element(root, 'HardwareDecodingCodecs')
+        # These codecs decode on every Intel GPU generation with QSV support.
+        for codec in ('h264', 'hevc', 'mpeg2video', 'vc1', 'vp9'):
+            ET.SubElement(codecs, 'string').text = codec
+    return write_xml(path, root)
+
+
 def configure_library(path, location=None):
     root = read_xml(path, 'LibraryOptions')
     if location and root.find('PathInfos') is None:

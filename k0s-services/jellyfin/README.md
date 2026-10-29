@@ -8,6 +8,7 @@ The Jellyfin templates are managed by `ansible/roles/media` through the `media` 
 - Give the dataset a quota and a dedicated `10Ti` PV.
 - Mount the shared `media-library-data` claim read-only at `/media`.
 - Request one shared `gpu.intel.com/i915` allocation for transcoding.
+- Enable Intel Quick Sync transcoding when the `intel_gpu` stage is enabled.
 - Publish the configured hostname through Traefik HTTPS.
 - Apply the route ConfigMap only after the installer completes the startup wizard.
 - The installer creates the administrator named by `private_cloud.media.jellyfin_admin_username` with `private_cloud_secrets.media.jellyfin_admin_password`.

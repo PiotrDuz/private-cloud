@@ -18,6 +18,7 @@ The Immich service is managed by `ansible/roles/immich`.
 - Immich machine learning downloads face-detection and recognition models on demand.
 - `machine_learning_accelerator: openvino` selects the Intel OpenVINO machine-learning image.
 - OpenVINO requests one shared `gpu.intel.com/i915` resource.
+- GPU buffers count against the container memory, so OpenVINO needs `machine_learning_max_ram` of at least `4Gi`.
 - A ClusterIP service exposes TCP `2283` only inside the cluster.
 - Traefik publishes the configured hostname through HTTPS.
 - The installer creates the first administrator from `private_cloud.admin_email` before applying the route ConfigMap.

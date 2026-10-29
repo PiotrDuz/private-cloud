@@ -147,6 +147,11 @@ data:
     loki.process "normalize" {
       forward_to = [loki.write.openobserve.receiver]
       stage.decolorize {}
+      // OpenObserve rejects a whole batch that contains an empty line.
+      stage.drop {
+        expression = `^\s*$`
+        drop_counter_reason = "empty_line"
+      }
       stage.json {
         expressions = {severity = "level", alternate_severity = "severity", short_severity = "lvl", event_type = "type"}
       }

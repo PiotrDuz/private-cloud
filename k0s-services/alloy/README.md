@@ -29,6 +29,7 @@ Alloy is managed by `ansible/roles/logging` through the `logging` stage.
 
 - Parse structured levels, timestamped PostgreSQL and Rust logs, and Immich console prefixes.
 - Use `unknown` for unclassified messages without treating them as alert severities.
+- Drop empty lines because OpenObserve rejects any batch that contains one.
 - Preserve the Kubernetes timestamp when the source has no parsed application timestamp.
 
 ## Operations

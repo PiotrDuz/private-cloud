@@ -115,7 +115,7 @@ private_cloud:
   immich:
     storage_size: 100G
     max_ram: 2Gi
-    machine_learning_max_ram: 3Gi
+    machine_learning_max_ram: 4Gi
     machine_learning_accelerator: openvino
     valkey_max_ram: 256Mi
   stalwart:

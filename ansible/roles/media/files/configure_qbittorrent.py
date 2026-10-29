@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Set file logging, seeding limits, and WebUI credentials before qBittorrent starts without replacing other settings."""
+"""Set file logging, seeding limits, anonymous mode, and WebUI credentials before qBittorrent starts without replacing other settings."""
 import configparser
 import io
 import json
@@ -18,7 +18,7 @@ def main():
     logging = {"Enabled": "true", "Path": "/config/qBittorrent/logs", "Backup": "true", "DeleteOld": "true", "MaxSizeBytes": "10485760", "Age": "7", "AgeType": "0"}
     desired = {
         "Application": {"FileLogger\\" + key: value for key, value in logging.items()},
-        "BitTorrent": {"Session\\GlobalMaxRatio": "0", "Session\\ShareLimitAction": "Stop"},
+        "BitTorrent": {"Session\\GlobalMaxRatio": "0", "Session\\ShareLimitAction": "Stop", "Session\\AnonymousModeEnabled": "true"},
         "Preferences": {
             "WebUI\\Username": "private-cloud",
             "WebUI\\Password_PBKDF2": password_value(

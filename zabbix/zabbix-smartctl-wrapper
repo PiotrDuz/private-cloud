@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import re
 import stat
 import subprocess
@@ -17,6 +18,9 @@ def main() -> int:
     if not command_is_allowed(arguments):
         log_collector_errors("smart", ["rejected unsupported smartctl invocation"])
         return 64
+    if len(arguments) == 5 and arguments[3] == "scsi":
+        # Zabbix also discovers USB-bridged SATA disks as SCSI, which the bridge answers with failed commands.
+        arguments[3] = detected_type(arguments[1])
     try:
         result = subprocess.run([SMARTCTL_PATH, *arguments], check=False)
     except OSError as error:
@@ -52,6 +56,18 @@ def command_is_allowed(arguments: list[str]) -> bool:
     ):
         return device_is_allowed(arguments[1]) and device_type_is_allowed(arguments[3])
     return False
+
+
+def detected_type(path: str) -> str:
+    try:
+        output = subprocess.run(
+            [SMARTCTL_PATH, "--scan", "-j"], capture_output=True, check=False
+        ).stdout
+        devices = json.loads(output).get("devices", [])
+    except (OSError, ValueError):
+        return "scsi"
+    types = [device.get("type") for device in devices if device.get("name") == path]
+    return types[0] if types and device_type_is_allowed(str(types[0])) else "scsi"
 
 
 def device_is_allowed(path: str) -> bool:

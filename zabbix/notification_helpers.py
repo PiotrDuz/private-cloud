@@ -57,6 +57,7 @@ def configure_health(api, config):
         ensure_trigger(api, host_id, name + " certificate invalid or unreachable", 'max(/' + host + '/' + valid_key + ',2m)=0', 4)
         for days, severity in ((21, 2), (7, 4)):
             ensure_trigger(api, host_id, name + " certificate expires within " + str(days) + " days", 'last(/' + host + '/' + days_key + ')<' + str(days) + ' and last(/' + host + '/' + valid_key + ')=1', severity)
+    prune_certificates(api, host_id, {certificate["name"] for certificate in config["certificates"]})
 
 
 def configure_alloy_health(api, host_id, host, master_id):
@@ -72,6 +73,15 @@ def configure_alloy_health(api, host_id, host, master_id):
         key = "observability." + field
         dependent(api, host_id, master_id, key, field.replace("_", " "), "$." + field, rate=True)
         ensure_trigger(api, host_id, field.replace("_", " ") + " increased", 'max(/' + host + '/' + key + ',5m)>0', 2)
+
+
+def prune_certificates(api, host_id, names):
+    """Deleting an item of an endpoint that is no longer probed also deletes its triggers."""
+    items = api.call("item.get", {"output": ["itemid", "key_"], "hostids": [host_id], "search": {"key_": "observability.certificate."}, "startSearch": True})
+    stale = [item["itemid"] for item in items if item["key_"].split('["', 1)[-1][:-2] not in names]
+    if stale:
+        api.call("item.delete", stale)
+        api.changed = True
 
 
 def dependent(api, host_id, master_id, key, name, path, rate=False):

@@ -134,14 +134,15 @@
   changed_when: false
   no_log: true
 
-- name: Require qBittorrent bound to tun0 without seeding after completion
+- name: Require qBittorrent bound to tun0 in anonymous mode without seeding after completion
   ansible.builtin.assert:
     that:
       - "'Session\\Interface=tun0' in media_validation_qbittorrent_configuration.stdout"
       - "'Session\\InterfaceName=tun0' in media_validation_qbittorrent_configuration.stdout"
       - "'Session\\GlobalMaxRatio=0' in media_validation_qbittorrent_configuration.stdout"
       - "'Session\\ShareLimitAction=Stop' in media_validation_qbittorrent_configuration.stdout"
-    fail_msg: qBittorrent has lost its tun0 interface binding or its seeding limit.
+      - "'Session\\AnonymousModeEnabled=true' in media_validation_qbittorrent_configuration.stdout"
+    fail_msg: qBittorrent has lost its tun0 interface binding, seeding limit, or anonymous mode.
   no_log: true
 
 - name: Read the ARR application process UIDs

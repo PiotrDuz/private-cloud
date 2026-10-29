@@ -31,6 +31,7 @@ spec:
           env:
             - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
             - {name: KNOWN_PROXIES, value: {{ private_cloud.networking.pod_cidr | to_json }}}
+            - {name: HARDWARE_ACCELERATION, value: {{ 'qsv' if private_cloud.stages.intel_gpu | bool else 'none' }}}
           resources:
             requests: {cpu: 10m, memory: 32Mi}
             limits: {memory: 64Mi}

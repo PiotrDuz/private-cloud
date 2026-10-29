@@ -96,3 +96,38 @@
   register: zabbix_host_massadd
   failed_when: zabbix_host_massadd.json.error is defined or zabbix_host_massadd.json.result is not defined
   when: zabbix_host_needs_link | bool
+
+- name: Find the passive agent template on the built-in Zabbix server host
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body: {jsonrpc: '2.0', method: host.get, params: {output: [hostid], selectParentTemplates: [templateid, name], filter: {host: ['Zabbix server']}}, id: 161}
+    status_code: 200
+    return_content: true
+  register: zabbix_builtin_host_get
+  changed_when: false
+  no_log: true
+  failed_when: zabbix_builtin_host_get.json.error is defined or zabbix_builtin_host_get.json.result is not defined
+
+# No agent runs inside the server pod, so the passive Linux template only reports itself unavailable.
+- name: Unlink the passive agent template from the built-in Zabbix server host
+  ansible.builtin.uri:
+    url: "{{ zabbix_api_url }}"
+    method: POST
+    body_format: json
+    headers: {Authorization: "Bearer {{ zabbix_api_token }}"}
+    body:
+      jsonrpc: '2.0'
+      method: host.update
+      params:
+        hostid: "{{ zabbix_builtin_host_get.json.result[0].hostid }}"
+        templates_clear: "{{ zabbix_builtin_host_get.json.result[0].parentTemplates | selectattr('name', 'equalto', 'Linux by Zabbix agent') | map(attribute='templateid') | map('community.general.dict_kv', 'templateid') | list }}"
+      id: 162
+    status_code: 200
+  register: zabbix_builtin_host_update
+  when: zabbix_builtin_host_get.json.result | map(attribute='parentTemplates') | flatten | selectattr('name', 'equalto', 'Linux by Zabbix agent') | list | length > 0
+  changed_when: true
+  no_log: true
+  failed_when: zabbix_builtin_host_update.json.error is defined or zabbix_builtin_host_update.json.result is not defined

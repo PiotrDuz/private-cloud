@@ -27,6 +27,8 @@ providers:
       userIDClaim: email
       audienceClaims: [aud]
       insecureSkipNonce: false
+      # OpenCloud never sets email_verified; administrators assign every address.
+      insecureAllowUnverifiedEmail: true
 {% endset %}
 apiVersion: v1
 kind: ServiceAccount

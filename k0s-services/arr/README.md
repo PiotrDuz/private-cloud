@@ -59,7 +59,7 @@ The configuration is [file-logs.conf](files/file-logs.conf). It discovers new fi
 
 Forwarding is best effort across abrupt crashes or rotation during an outage. Lines larger than 1 MiB are skipped with a Fluent Bit warning. Original application timestamps remain inside `message`; `collected_at` records collection time.
 
-The installer seeds qBittorrent defaults and the startup initializer reapplies logging, seeding limits, and WebUI credentials on every pod start. File logging rotates at 10MiB and removes logs after seven days. An existing configuration must use the documented path; forwarding remains best effort during abrupt crashes, rotation, and collector outages.
+The installer seeds qBittorrent defaults and the startup initializer reapplies logging, seeding limits, anonymous mode, and WebUI credentials on every pod start. File logging rotates at 10MiB and removes logs after seven days. An existing configuration must use the documented path; forwarding remains best effort during abrupt crashes, rotation, and collector outages.
 
 After deployment, browse the stream with:
 
