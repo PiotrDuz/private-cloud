@@ -88,6 +88,8 @@ spec:
             - {name: PROXY_AUTOPROVISION_ACCOUNTS, value: "true"}
             - {name: PROXY_USER_OIDC_CLAIM, value: email}
             - {name: PROXY_USER_CS3_CLAIM, value: mail}
+            # Stalwart sends no name claim for accounts without a display name.
+            - {name: PROXY_AUTOPROVISION_CLAIM_DISPLAYNAME, value: preferred_username}
             - {name: GRAPH_USERNAME_MATCH, value: none}
             - {name: PROXY_HTTP_ADDR, value: "0.0.0.0:9200"}
             - {name: PROXY_TLS, value: "false"}

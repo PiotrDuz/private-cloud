@@ -54,7 +54,8 @@ The Stalwart service is managed by `ansible/roles/stalwart`.
 - Grist, AFFiNE, and Immich register confidential clients with secrets from the encrypted configuration.
 - Loopback redirects match any port, so the desktop client works with its random callback port.
 - Stalwart 0.16.26 rejects the desktop client's dynamic registration, which then falls back to its registered client ID.
-- ID tokens carry `sub`, `preferred_username`, and `email`; userinfo adds `name` and `email_verified`.
+- ID tokens carry `sub`, `preferred_username`, and `email`; userinfo adds `email_verified`.
+- Userinfo carries `name` only for accounts with a display name.
 - Access tokens are opaque, so OpenCloud validates them through the userinfo endpoint.
 - A Traefik router adds CORS for `/auth/` so OpenCloud Web can exchange tokens from the browser.
 - The plan upserts clients and never deletes clients added outside the installer.

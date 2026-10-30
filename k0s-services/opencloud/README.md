@@ -35,6 +35,7 @@ The OpenCloud service is managed by `ansible/roles/opencloud`.
 - `OC_OIDC_ISSUER` names the Stalwart issuer and the proxy rewrites discovery to it.
 - The first sign-in of a Stalwart account creates its user in the built-in directory.
 - The `email` claim matches the directory `mail` attribute, so an address maps to one user.
+- The display name comes from `preferred_username`, because Stalwart omits `name` for accounts without a display name.
 - New users receive the default user role.
 - The installer sets the built-in administrator's address to the managed Stalwart mailbox account.
 - That account therefore signs in as the OpenCloud administrator.
