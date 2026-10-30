@@ -84,7 +84,7 @@ Traefik binds host TCP `443` from a pod in `edge`.
 - Zabbix server TCP `31051` is the only retained NodePort.
 - AmneziaWG remains a direct UDP hostPort because HTTP/TCP routing cannot proxy its UDP tunnel protocol usefully.
 
-Public DNS resolves enabled application names to the home WAN address. LAN DNS resolves the same names to the host address in `networking.lan.address` for LAN and AmneziaWG clients, and to the Traefik Service for pods.
+Public DNS resolves enabled application names to the home WAN address. The LAN-only names `vpn-admin.<domain>` and `radarr.<domain>` exist only in LAN DNS. LAN DNS resolves the same names to the host address in `networking.lan.address` for LAN and AmneziaWG clients, and to the Traefik Service for pods.
 
 Stalwart's configured HTTPS URL is the shared OIDC issuer. LAN clients and pods reach that hostname through Traefik, so the issuer matches for browsers and services.
 
@@ -105,10 +105,10 @@ The stateless `homepage` Deployment in `edge` serves `https://www.<domain>` with
 
 - The networking role renders the page from enabled stages; it has no data or credentials.
 - Each tile is an icon with the service name below it, linking to the application UI.
-- The Apps section holds OpenCloud, AFFiNE, Grist, Immich, and Jellyfin.
+- The Apps section holds OpenCloud, AFFiNE, Grist, Immich, Jellyfin, and Radarr.
 - The Administration section holds Stalwart `/admin/`, OpenObserve, Zabbix, and `vpn-admin`.
 - OnlyOffice has no tile because users open documents through OpenCloud.
-- The `VPN admin (LAN)` tile works only from local networks and VPN peers.
+- The `Radarr (LAN)` and `VPN admin (LAN)` tiles work only from local networks and VPN peers.
 - The pod accepts TCP `8080` from Traefik only and has no egress.
 
 ## Stalwart sign-in and Grist authentication

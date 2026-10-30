@@ -111,3 +111,20 @@ spec:
         - {protocol: TCP, port: 7878}
         - {protocol: TCP, port: 9696}
         - {protocol: TCP, port: 8080}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: radarr-traefik-ingress
+  namespace: media
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: radarr}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: edge}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports: [{protocol: TCP, port: 7878}]

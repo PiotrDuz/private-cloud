@@ -9,7 +9,10 @@ The arr stack templates are managed by `ansible/roles/media` through the `media`
 - Per-pod `tun2socks` helpers carry the guarded applications' traffic.
 - NetworkPolicy blocks direct Internet fallback.
 - qBittorrent binds to `tun0` with UPnP disabled.
-- Dashboards, peer ports, and discovery protocols stay unpublished.
+- Traefik publishes the Radarr UI at `radarr.<domain>` to local networks and VPN peers only.
+- The Radarr hostname stays out of public DNS and resolves through LAN DNS.
+- Radarr keeps its own login; Traefik adds no authentication.
+- Sonarr, Prowlarr, and qBittorrent dashboards, peer ports, and discovery protocols stay unpublished.
 - The arr stack and shared library use `no-backup` datasets.
 - Each application has a quota-controlled dataset and a dedicated `10Ti` PV.
 - This folder provisions the shared `media-library` dataset and claim.

@@ -53,8 +53,8 @@
         'lan_address': private_cloud.networking.traefik_internal_ip,
         'cluster_dns_ip': private_cloud.networking.cluster_dns_ip,
         'traefik_cluster_ip': private_cloud.networking.traefik_cluster_ip,
-        'lan_names': private_cloud.networking.managed_records + [private_cloud.networking.amneziawg.ui_hostname],
-        'cluster_names': (private_cloud.networking.managed_records + [private_cloud.networking.amneziawg.ui_hostname]) | reject('equalto', private_cloud.networking.amneziawg.hostname) | list,
+        'lan_names': private_cloud.networking.managed_records + private_cloud.networking.lan_only_records,
+        'cluster_names': (private_cloud.networking.managed_records + private_cloud.networking.lan_only_records) | reject('equalto', private_cloud.networking.amneziawg.hostname) | list,
         'canaries': networking_lan_dns_encrypted_dns_canaries,
         'public_name': private_cloud.networking.public_ip_url | urlsplit('hostname')
       } | to_json }}

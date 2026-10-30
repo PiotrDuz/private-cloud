@@ -143,11 +143,12 @@ SERVICE_SUBDOMAINS = {
     "zabbix_server": "monitor",
 }
 AMNEZIAWG_UI_SUBDOMAIN = "vpn-admin"
+RADARR_SUBDOMAIN = "radarr"
 HOMEPAGE_SUBDOMAIN = "www"
 DERIVED_KEYS = {
-    ("networking",): {"acme_email", "managed_records", "traefik_internal_ip", "traefik_cluster_ip", "lan_dns_cluster_ip", "zabbix_hostname", "homepage_hostname"},
+    ("networking",): {"acme_email", "managed_records", "traefik_internal_ip", "traefik_cluster_ip", "lan_dns_cluster_ip", "zabbix_hostname", "homepage_hostname", "lan_only_records"},
     ("networking", "amneziawg"): {"hostname", "ui_hostname", "dns"},
-    ("media",): {"hostname", "timezone"},
+    ("media",): {"hostname", "radarr_hostname", "timezone"},
     ("onlyoffice",): {"hostname"},
     ("opencloud",): {"hostname", "admin_email"},
     ("grist",): {"hostname", "default_email"},
@@ -349,7 +350,9 @@ def resolve_public_configuration(configuration: Mapping[str, Any]) -> dict[str, 
         "homepage_hostname": homepage_hostname,
     })
     networking["amneziawg"].update({"hostname": hostnames["networking"], "ui_hostname": f"{AMNEZIAWG_UI_SUBDOMAIN}.{domain}", "dns": [str(lan_address.ip)]})
-    cloud["media"].update({"hostname": hostnames["media"], "timezone": timezone})
+    cloud["media"].update({"hostname": hostnames["media"], "radarr_hostname": f"{RADARR_SUBDOMAIN}.{domain}", "timezone": timezone})
+    # LAN DNS answers these names; public DNS never publishes them.
+    networking["lan_only_records"] = [networking["amneziawg"]["ui_hostname"]] + ([cloud["media"]["radarr_hostname"]] if stages.get("media") else [])
     for stage in ("onlyoffice", "opencloud", "logging"):
         cloud[stage]["hostname"] = hostnames[stage]
     # Stalwart is the sign-in provider, so application administrators are the managed mailbox account.
@@ -432,7 +435,7 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
     if not RAM_PATTERN.fullmatch(str(k0s.get("host_reserve_ram", ""))) or ram_to_bytes(k0s["host_reserve_ram"]) < ram_to_bytes(storage["arc_max"]) + 1073741824:
         raise InstallerError("k0s.host_reserve_ram must cover ZFS ARC and at least 1Gi for host services")
     networking = cloud["networking"]
-    expected_networking = {"storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "managed_records", "pod_cidr", "service_cidr", "cluster_dns_ip", "local_network_cidrs", "traefik_internal_ip", "traefik_cluster_ip", "lan_dns_cluster_ip", "zabbix_hostname", "homepage_hostname", "amneziawg"}
+    expected_networking = {"storage_size", "acme_email", "cloudflare_zone_id", "public_ip_url", "managed_records", "pod_cidr", "service_cidr", "cluster_dns_ip", "local_network_cidrs", "traefik_internal_ip", "traefik_cluster_ip", "lan_dns_cluster_ip", "zabbix_hostname", "homepage_hostname", "lan_only_records", "amneziawg"}
     if not isinstance(networking, dict) or set(networking) != expected_networking:
         raise InstallerError("Networking configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(networking.get("storage_size", ""))):
@@ -482,8 +485,10 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
     for key in ("hostname", "ui_hostname"):
         if not DOMAIN_PATTERN.fullmatch(str(amneziawg.get(key, ""))):
             raise InstallerError(f"Invalid networking.amneziawg.{key}")
-    if amneziawg["ui_hostname"] in managed_records:
-        raise InstallerError("The AmneziaWG UI hostname must stay out of public DNS records")
+    if networking.get("lan_only_records") != [amneziawg["ui_hostname"]] + ([cloud["media"].get("radarr_hostname")] if stages["media"] else []):
+        raise InstallerError("networking.lan_only_records must list the AmneziaWG UI and enabled Radarr hostnames")
+    if set(networking["lan_only_records"]) & set(managed_records):
+        raise InstallerError("LAN-only hostnames must stay out of public DNS records")
     if not isinstance(amneziawg["admin_username"], str) or not USERNAME_PATTERN.fullmatch(amneziawg["admin_username"]):
         raise InstallerError("Invalid networking.amneziawg.admin_username")
     if not QUOTA_PATTERN.fullmatch(str(amneziawg["storage_size"])):
@@ -521,10 +526,12 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
         if rule["protocol"] not in {"TCP", "UDP"} or type(rule["port"]) is not int or not 1 <= rule["port"] <= 65535:
             raise InstallerError("Invalid AmneziaWG LAN protocol or port")
     media = cloud["media"]
-    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "timezone", "quality_profiles", "vpn", "max_ram", "jellyfin_admin_username"}:
+    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "radarr_hostname", "timezone", "quality_profiles", "vpn", "max_ram", "jellyfin_admin_username"}:
         raise InstallerError("Media configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(media.get("storage_size", ""))) or not DOMAIN_PATTERN.fullmatch(str(media.get("hostname", ""))):
         raise InstallerError("Invalid media storage size or hostname")
+    if not DOMAIN_PATTERN.fullmatch(str(media["radarr_hostname"])):
+        raise InstallerError("Invalid media.radarr_hostname")
     if not isinstance(media["jellyfin_admin_username"], str) or not USERNAME_PATTERN.fullmatch(media["jellyfin_admin_username"]):
         raise InstallerError("Invalid media.jellyfin_admin_username")
     if quota_to_bytes(media["storage_size"]) <= 2 * 1024 ** 3:
@@ -746,6 +753,8 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
     enabled_hostnames = [hostname for stage, hostname in public_hostnames.items() if stages[stage]]
     if stages["networking"]:
         enabled_hostnames += [amneziawg["ui_hostname"], networking["homepage_hostname"]]
+    if stages["media"]:
+        enabled_hostnames.append(media["radarr_hostname"])
     if len(enabled_hostnames) != len(set(enabled_hostnames)):
         raise InstallerError("Enabled public service hostnames must be unique")
     missing_records = sorted(set(public_hostnames[stage] for stage in public_hostnames if stages[stage]) - set(managed_records))

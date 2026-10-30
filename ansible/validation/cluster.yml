@@ -58,7 +58,7 @@
         'lan_dns_upstreams': private_cloud_lan_dns_upstreams,
         'hostnames': (
           private_cloud.networking.managed_records
-          + [private_cloud.networking.zabbix_hostname, private_cloud.networking.amneziawg.hostname, private_cloud.networking.amneziawg.ui_hostname]
+          + [private_cloud.networking.zabbix_hostname, private_cloud.networking.amneziawg.hostname] + private_cloud.networking.lan_only_records
           + (['media', 'onlyoffice', 'opencloud', 'grist', 'affine', 'immich', 'stalwart', 'logging'] | map('extract', private_cloud) | map(attribute='hostname') | list)
           + [private_cloud.stalwart.relay_host, private_cloud.networking.public_ip_url | urlsplit('hostname'),
              'acme-v02.api.letsencrypt.org', 'api.cloudflare.com']

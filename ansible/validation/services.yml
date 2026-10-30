@@ -44,6 +44,6 @@
     services_validation_traefik_routes_expected: >-
       {{ [['opencloud', 'opencloud'], ['onlyoffice', 'onlyoffice'], ['grist', 'grist'], ['affine', 'affine'],
           ['immich', 'immich'], ['stalwart', 'stalwart'], ['zabbix_server', 'zabbix'], ['logging', 'openobserve'],
-          ['media', 'jellyfin'], ['networking', 'amneziawg'], ['networking', 'homepage']]
+          ['media', 'jellyfin'], ['media', 'radarr'], ['networking', 'amneziawg'], ['networking', 'homepage']]
          | selectattr(0, 'in', private_cloud.stages | dict2items | selectattr('value') | map(attribute='key') | list)
          | map(attribute=1) | list }}
