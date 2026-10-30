@@ -93,13 +93,26 @@ def disks_page(config):
     ])
 
 
-def workloads_page(config):
+def workloads_page(config, items):
     return page("Workloads", [
         top_items("Workloads by memory", 0, 0, config["host_id"], "Workload *: Memory"),
         top_items("Workloads by CPU cores", 36, 0, config["host_id"], "Workload *: CPU cores", 3),
         graph("Memory by workload", 0, 8, config["host"], ["Workload *: Memory"], stacked=True),
         graph("CPU cores by workload", 36, 8, config["host"], ["Workload *: CPU cores"], stacked=True),
         honeycomb("Container restarts", 0, 14, 72, 5, config["host_id"], ["Workload *: Restarts"], r'Workload [^/]*/(.*): Restarts', [(0, GREEN), (1, YELLOW)]),
+        memory_share(0, 19, config["host"], items),
+    ])
+
+
+def memory_share(x, y, host, items):
+    """Workload slices of total RAM; the unfilled part is memory used outside Kubernetes."""
+    return widget("piechart", "Workload share of total memory", x, y, 72, 9, [
+        field(INTEGER, "ds.0.dataset_type", 0),
+        field(ITEM, "ds.0.itemids.0", items["vm.memory.size[total]"]), field(STRING, "ds.0.color.0", "B0BEC5"), field(INTEGER, "ds.0.type.0", 1),
+        field(ITEM, "ds.0.itemids.1", items["vm.memory.size[available]"]), field(STRING, "ds.0.color.1", GREEN), field(INTEGER, "ds.0.type.1", 0),
+        field(INTEGER, "ds.1.dataset_type", 1), field(STRING, "ds.1.hosts.0", host), field(STRING, "ds.1.items.0", "Workload *: Memory"), field(STRING, "ds.1.color", PALETTE[0]),
+        field(INTEGER, "merge", 1), field(INTEGER, "merge_percent", 1), field(STRING, "merge_color", "78909C"),
+        field(INTEGER, "legend", 1), field(INTEGER, "legend_value", 1), field(INTEGER, "legend_lines_mode", 1), field(INTEGER, "legend_lines", 10),
     ])
 
 

@@ -18,7 +18,7 @@ def main():
         disks_page(config),
     ]
     if config["health"]:
-        pages += [workloads_page(config), services_page(config)]
+        pages += [workloads_page(config, items), services_page(config)]
     dashboard = {"name": config["dashboard"], "private": 0, "display_period": 30, "auto_start": 0, "pages": pages}
     api.ensure("dashboard", "dashboardid", dashboard, {"output": "extend", "selectPages": "extend", "filter": {"name": [config["dashboard"]]}})
     print(json.dumps({"changed": api.changed, "status": "configured"}))

@@ -31,6 +31,7 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - Dataset capacity shows the enabled datasets by quota utilization and allocation.
 - Disks shows SMART temperature, power-on hours, utilization, and I/O rates.
 - Workloads shows memory, CPU cores, and container restarts per Kubernetes workload.
+- Its pie chart shows each workload and available memory as slices of total RAM; the unfilled part is used outside Kubernetes.
 - Services shows certificate days left and Alloy retries and drops when the agent stage is enabled.
 
 ## SMART dependency
@@ -53,7 +54,7 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - `zfs.metrics` reports pool health, errors, capacity, leaf quotas, and quota headroom.
 - `zfs.snapshots` reports snapshot counts, retained bytes, and age.
 - `memory.ecc.metrics` reports corrected and uncorrected ECC counters.
-- `kubernetes.workloads` reports CPU, memory, and restarts per workload every five minutes.
+- `kubernetes.workloads` reports CPU, memory, and restarts per workload every minute.
 - The native SMART plugin reports disk discovery and health.
 
 ## Kubernetes workloads

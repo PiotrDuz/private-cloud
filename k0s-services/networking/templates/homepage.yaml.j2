@@ -21,7 +21,7 @@
     {'stage': 'stalwart', 'name': 'Stalwart', 'icon': 'mail', 'url': 'https://' ~ private_cloud.stalwart.hostname ~ '/admin/', 'color': '#bc4c00'},
     {'stage': 'logging', 'name': 'OpenObserve', 'icon': 'logs', 'url': 'https://' ~ private_cloud.logging.hostname ~ '/', 'color': '#9a6700'},
     {'stage': 'zabbix_server', 'name': 'Zabbix', 'icon': 'pulse', 'url': 'https://' ~ private_cloud.networking.zabbix_hostname ~ '/', 'color': '#cf222e'},
-    {'stage': 'networking', 'name': 'VPN admin', 'icon': 'shield', 'url': 'https://' ~ private_cloud.networking.amneziawg.ui_hostname ~ '/', 'color': '#57606a'},
+    {'stage': 'networking', 'name': 'VPN admin (LAN)', 'icon': 'shield', 'url': 'https://' ~ private_cloud.networking.amneziawg.ui_hostname ~ '/', 'color': '#57606a'},
   ]},
 ] %}
 {% set homepage_stages = private_cloud.stages | dict2items | selectattr('value') | map(attribute='key') | list %}

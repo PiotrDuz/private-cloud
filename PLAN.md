@@ -492,7 +492,7 @@ This file is the source of truth for the desired system state and its major deci
     * System RAM and CPU performance
     * RAM ECC corrected and uncorrected errors
     * Old snapshots, large snapshots
-    * CPU, memory, and container restarts per Kubernetes workload every five minutes
+    * CPU, memory, and container restarts per Kubernetes workload every minute
 - Route Zabbix Agent and host collector diagnostics through system logging, the journal, and Alloy into OpenObserve
 
 #### Zabbix k0s service

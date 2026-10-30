@@ -108,7 +108,7 @@ The stateless `homepage` Deployment in `edge` serves `https://www.<domain>` with
 - The Apps section holds OpenCloud, AFFiNE, Grist, Immich, and Jellyfin.
 - The Administration section holds Stalwart `/admin/`, OpenObserve, Zabbix, and `vpn-admin`.
 - OnlyOffice has no tile because users open documents through OpenCloud.
-- The `vpn-admin` tile works only from local networks and VPN peers.
+- The `VPN admin (LAN)` tile works only from local networks and VPN peers.
 - The pod accepts TCP `8080` from Traefik only and has no egress.
 
 ## Stalwart sign-in and Grist authentication

@@ -15,7 +15,7 @@ zabbix_export:
           name: 'Kubernetes workloads: Metrics JSON'
           type: ZABBIX_ACTIVE
           key: kubernetes.workloads
-          delay: 5m
+          delay: 1m
           history: '0'
           trends: '0'
           value_type: TEXT
@@ -60,8 +60,8 @@ zabbix_export:
               value: health
           triggers:
             - uuid: 645956d9e1204baa8cec82012b6b9b9b
-              expression: 'nodata(/Kubernetes workloads by Zabbix agent active/kubernetes.workloads.heartbeat,15m)=1'
-              name: 'No Kubernetes workload metrics received for 15 minutes'
+              expression: 'nodata(/Kubernetes workloads by Zabbix agent active/kubernetes.workloads.heartbeat,5m)=1'
+              name: 'No Kubernetes workload metrics received for 5 minutes'
               priority: WARNING
       discovery_rules:
         - uuid: f35a8a1a41bc41c4a64040866b91100d
