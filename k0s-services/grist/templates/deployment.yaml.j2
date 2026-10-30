@@ -47,6 +47,8 @@ spec:
             # Stalwart keeps no sign-in session to end, so logout only clears the helper cookie.
             - {name: GRIST_FORWARD_AUTH_LOGOUT_PATH, value: oauth2/sign_out}
             - {name: GRIST_SINGLE_ORG, value: grist}
+            # Fresh installs store an out-of-service flag that admits only the administrator.
+            - {name: GRIST_IN_SERVICE, value: "true"}
             - {name: GRIST_SANDBOX_FLAVOR, value: pyodide}
             - {name: GRIST_SINGLE_PORT, value: "true"}
             - {name: TYPEORM_TYPE, value: postgres}

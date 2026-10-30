@@ -25,6 +25,8 @@ The Grist service is managed by `ansible/roles/grist`.
 - Logout calls `/oauth2/sign_out`, which clears the helper cookie and returns to Stalwart sign-in.
 - `GRIST_DEFAULT_EMAIL` makes the managed Stalwart mailbox account the Grist administrator.
 - The boot key unlocks the initial administrator setup page.
+- `GRIST_IN_SERVICE` keeps the server in service, so the setup gate never blocks Stalwart accounts.
+- Only team site members open documents; other accounts see Access denied.
 
 ## Manifest review
 

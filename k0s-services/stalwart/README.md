@@ -47,7 +47,7 @@ The Stalwart service is managed by `ansible/roles/stalwart`.
 
 - Stalwart is the OpenID Connect provider for OpenCloud, Grist, AFFiNE, and Immich.
 - The issuer is `https://<stalwart-hostname>`.
-- Every Stalwart account can sign in to every enabled application.
+- Every Stalwart account can sign in to every enabled application; Grist also requires team site membership.
 - The plan pins ES256 ID token signatures so applications verify them against the published JWKS.
 - The plan upserts one `OAuthClient` per enabled application with its exact redirect URIs.
 - OpenCloud registers public `web`, `OpenCloudDesktop`, `OpenCloudAndroid`, and `OpenCloudIOS` clients.

@@ -143,7 +143,7 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 - [ ] Sign in to OpenCloud, Grist, AFFiNE, and Immich with the managed Stalwart mailbox account and its stored password.
 - [ ] Confirm that account is the administrator in OpenCloud, Grist, AFFiNE, and Immich.
 - [ ] Create a Stalwart account for each person at `https://<stalwart-hostname>/admin/`.
-- [ ] Confirm a new account can sign in to OpenCloud, Grist, AFFiNE, and Immich.
+- [ ] Confirm a new account can sign in to OpenCloud, AFFiNE, and Immich, and to Grist once added to the team site.
 - [ ] Assign application permissions and administrator grants within each application.
 - [ ] Use Grist only from a browser session because API keys are unsupported.
 - [ ] Note the ten-seat limit for the self-hosted AFFiNE workspace.

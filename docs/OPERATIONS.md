@@ -85,6 +85,7 @@ Stalwart accounts are the shared login for OpenCloud, Grist, AFFiNE, and Immich.
 - A new account can sign in to every connected application; the first sign-in creates the application account.
 - The managed mailbox account is the administrator of OpenCloud, Grist, AFFiNE, and Immich.
 - Grant administrator rights and sharing to other users inside each application.
+- Add new Grist users to the team site under Manage team; non-members see Access denied.
 - Check discovery at `https://<stalwart-hostname>/.well-known/openid-configuration` after changes.
 - Reapply to update OAuth client registrations and callback hostnames.
 - Restore Stalwart, OpenCloud, and the application datasets from the same recovery point.
