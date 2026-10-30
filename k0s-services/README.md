@@ -7,7 +7,8 @@
 - `ansible/tasks/render_manifests.yml` renders the templates; each service role applies the resulting resources.
 - The k0s release pin and checksum are repository values in `ansible/roles/k0s/defaults/main.yml`.
 - [Arr stack](arr/README.md) and [Jellyfin](jellyfin/README.md) have separate templates rendered by the media role.
-- [OpenCloud](opencloud/README.md) provides shared OIDC login from the `private-cloud` namespace.
+- [Stalwart](stalwart/README.md) provides shared OIDC login from the `private-cloud` namespace.
+- [Zabbix Agent access](zabbix-agent/README.md) lets the host collector read workload metrics.
 - The Grist oauth2-proxy helper runs in the `edge` namespace through the networking stage.
 - The `www.<domain>` homepage runs in the `edge` namespace through the networking stage.
 - Logging sidecars serve only applications without native stdout or stderr configuration.

@@ -20,7 +20,7 @@
 - name: Check basic Agent item execution
   ansible.builtin.command:
     argv: [zabbix_agent2, -t, "{{ item }}", -c, "{{ zabbix_agent_config }}"]
-  loop: [agent.ping, agent.version, zfs.metrics, zfs.snapshots, memory.ecc.metrics, smart.disk.discovery]
+  loop: [agent.ping, agent.version, zfs.metrics, zfs.snapshots, memory.ecc.metrics, kubernetes.workloads, smart.disk.discovery]
   register: zabbix_agent_validation_items
   changed_when: false
   failed_when: zabbix_agent_validation_items.rc != 0 or 'ZBX_NOTSUPPORTED' in zabbix_agent_validation_items.stdout
@@ -59,6 +59,20 @@
   ansible.builtin.assert:
     that: (zabbix_agent_validation_ecc_metrics.stdout | from_json).error_count | int == 0
     fail_msg: Memory ECC collector output is invalid or reports errors.
+
+- name: Run the Kubernetes workload collector as the Zabbix user
+  ansible.builtin.command:
+    argv: [runuser, -u, zabbix, --, "{{ zabbix_kubernetes_collector }}", "{{ zabbix_kubernetes_access }}"]
+  register: zabbix_agent_validation_kubernetes
+  changed_when: false
+
+- name: Validate Kubernetes workload collector output
+  ansible.builtin.assert:
+    that:
+      - (zabbix_agent_validation_kubernetes.stdout | from_json).error_count | int == 0
+      - (zabbix_agent_validation_kubernetes.stdout | from_json).workloads | selectattr('name', 'equalto', 'zabbix-server') | list | length == 1
+      - (zabbix_agent_validation_kubernetes.stdout | from_json).workloads | selectattr('name', 'equalto', 'zabbix-server') | map(attribute='memory') | first | int > 0
+    fail_msg: Kubernetes workload collector output is invalid, reports errors, or has no metrics.
 
 - name: Verify the SMART wrapper command form
   ansible.builtin.command:

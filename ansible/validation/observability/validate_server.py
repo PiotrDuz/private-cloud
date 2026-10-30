@@ -52,7 +52,7 @@ def main():
             "filter": {"name": [config["dashboard"]]},
         }), "managed dashboard")
         pages = dashboard.get("pages", [])
-        expected_pages = ["Overview", "Storage", "Dataset capacity", "Disks"] + (["Services"] if config["health"] else [])
+        expected_pages = ["Overview", "Storage", "Dataset capacity", "Disks"] + (["Workloads", "Services"] if config["health"] else [])
         if [page.get("name") for page in pages] != expected_pages:
             raise RuntimeError("The managed Zabbix dashboard pages differ from " + ", ".join(expected_pages))
         capacity_pages = [page for page in pages if page.get("name") == "Dataset capacity"]

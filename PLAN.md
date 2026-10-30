@@ -492,6 +492,7 @@ This file is the source of truth for the desired system state and its major deci
     * System RAM and CPU performance
     * RAM ECC corrected and uncorrected errors
     * Old snapshots, large snapshots
+    * CPU, memory, and container restarts per Kubernetes workload every five minutes
 - Route Zabbix Agent and host collector diagnostics through system logging, the journal, and Alloy into OpenObserve
 
 #### Zabbix k0s service
@@ -509,8 +510,8 @@ This file is the source of truth for the desired system state and its major deci
     * Warn on ZFS error that has been fixed (scrub or normal operation)
     * Alert on unfixed ECC error
     * Warn on ECC error that has been fixed
-- Link active Linux, SMART, ZFS, and ECC templates to `private-cloud-zabbix`, the Zabbix host name from the service catalog
-- Maintain the Private cloud dashboard with Overview, Storage, Dataset capacity, Disks, and Services pages
+- Link active Linux, SMART, ZFS, ECC, and Kubernetes workload templates to `private-cloud-zabbix`, the Zabbix host name from the service catalog
+- Maintain the Private cloud dashboard with Overview, Storage, Dataset capacity, Disks, Workloads, and Services pages
     * Build the Dataset capacity page from the enabled dataset catalog
 - Alert on stale collectors, old snapshots, overdue scrubs, and unavailable ECC telemetry
 - Email Warning, Average, High, and Disaster problems directly to Stalwart when notifications are enabled

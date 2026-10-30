@@ -33,9 +33,9 @@
 
 - name: Resolve managed Zabbix template sources
   ansible.builtin.set_fact:
-    zabbix_template_sources:
-      - "{{ zabbix_enabled_zfs_template | to_nice_yaml(indent=2, width=4096) }}"
-      - "{{ lookup('file', zabbix_template_paths[1]) }}"
+    zabbix_template_sources: >-
+      {{ [zabbix_enabled_zfs_template | to_nice_yaml(indent=2, width=4096)]
+         + query('ansible.builtin.file', *zabbix_template_paths[1:]) }}
 
 - name: Import managed Zabbix templates
   ansible.builtin.uri:

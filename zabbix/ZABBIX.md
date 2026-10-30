@@ -13,6 +13,7 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - `zabbix-zfs-collector.py` collects pool, dataset, scrub, and snapshot metrics.
 - `/etc/zabbix/private-cloud-datasets.json` lists enabled datasets to collect.
 - `zabbix-memory-ecc-collector.py` collects Linux EDAC counters.
+- `zabbix-kubernetes-collector.py` sums CPU, memory, and container restarts per Kubernetes workload.
 - `zabbix-smartctl-wrapper` constrains privileged SMART commands.
 - `collector_logging.py` sends ZFS, ECC, and SMART collector failures to the host journal.
 - Alloy forwards collector diagnostics to OpenObserve without changing Zabbix metric output.
@@ -20,6 +21,7 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - Zabbix Agent and the host object authenticate with a PSK stored in the encrypted configuration.
 - `zabbix-zfs-template.yaml` defines ZFS items, discovery, and alerts.
 - `zabbix-memory-ecc-template.yaml` defines ECC items, discovery, and alerts.
+- `zabbix-kubernetes-template.yaml` defines workload discovery, items, and restart alerts.
 - `configure_dashboards.py` maintains the Private cloud dashboard from the host's live items.
 
 ## Dashboard
@@ -28,6 +30,7 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - Storage shows pool throughput, operations, vdev state, scrub results, and ARC usage.
 - Dataset capacity shows the enabled datasets by quota utilization and allocation.
 - Disks shows SMART temperature, power-on hours, utilization, and I/O rates.
+- Workloads shows memory, CPU cores, and container restarts per Kubernetes workload.
 - Services shows certificate days left and Alloy retries and drops when the agent stage is enabled.
 
 ## SMART dependency
@@ -50,7 +53,18 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - `zfs.metrics` reports pool health, errors, capacity, leaf quotas, and quota headroom.
 - `zfs.snapshots` reports snapshot counts, retained bytes, and age.
 - `memory.ecc.metrics` reports corrected and uncorrected ECC counters.
+- `kubernetes.workloads` reports CPU, memory, and restarts per workload every five minutes.
 - The native SMART plugin reports disk discovery and health.
+
+## Kubernetes workloads
+
+- The collector reads pods and the k0s metrics-server through two Kubernetes API calls per run.
+- It authenticates with the `zabbix-agent` ServiceAccount token, which may only list pods and pod metrics.
+- A workload is a Deployment, StatefulSet, or DaemonSet; Job pods are skipped because they are transient.
+- CPU is in cores, memory is working-set bytes, and restarts count the containers of current pods.
+- Restart counts reset when Kubernetes replaces a pod.
+- A restart raises a Warning problem that resolves on the next unchanged sample.
+- Discovered workloads that disappear are removed after seven days.
 
 ## Collector checks
 

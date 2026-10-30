@@ -1,0 +1,145 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+      name: Templates/Applications
+  templates:
+    - uuid: 350c3b5a0a1b42adb5ff6e069f2545f4
+      template: 'Kubernetes workloads by Zabbix agent active'
+      name: 'Kubernetes workloads by Zabbix agent active'
+      description: 'CPU, memory, and container restarts per Kubernetes Deployment, StatefulSet, and DaemonSet.'
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: cf417266c711438ea31292f1c9935c7b
+          name: 'Kubernetes workloads: Metrics JSON'
+          type: ZABBIX_ACTIVE
+          key: kubernetes.workloads
+          delay: 5m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          tags:
+            - tag: component
+              value: raw
+        - uuid: d96e14c352b748458f30ce69c7191e78
+          name: 'Kubernetes workloads: Collector errors'
+          type: DEPENDENT
+          key: kubernetes.collector.errors
+          delay: '0'
+          history: 30d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.error_count
+          master_item:
+            key: kubernetes.workloads
+          tags:
+            - tag: component
+              value: health
+          triggers:
+            - uuid: eb25eecdbce64be1b8560bc08f81b647
+              expression: 'last(/Kubernetes workloads by Zabbix agent active/kubernetes.collector.errors)>0'
+              name: 'Kubernetes workload collector reports errors'
+              priority: WARNING
+        - uuid: 35c8b5111f2f46ab88236baef3a8281c
+          name: 'Kubernetes workloads: Metrics heartbeat'
+          type: DEPENDENT
+          key: kubernetes.workloads.heartbeat
+          delay: '0'
+          history: 7d
+          units: unixtime
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.generated_at
+          master_item:
+            key: kubernetes.workloads
+          tags:
+            - tag: component
+              value: health
+          triggers:
+            - uuid: 645956d9e1204baa8cec82012b6b9b9b
+              expression: 'nodata(/Kubernetes workloads by Zabbix agent active/kubernetes.workloads.heartbeat,15m)=1'
+              name: 'No Kubernetes workload metrics received for 15 minutes'
+              priority: WARNING
+      discovery_rules:
+        - uuid: f35a8a1a41bc41c4a64040866b91100d
+          name: 'Kubernetes workload discovery'
+          type: DEPENDENT
+          key: kubernetes.workload.discovery
+          delay: '0'
+          lifetime: 7d
+          item_prototypes:
+            - uuid: 013921fa89cb4bc79b3f2388d601b5f3
+              name: 'Workload {#NAMESPACE}/{#WORKLOAD}: CPU cores'
+              type: DEPENDENT
+              key: 'kubernetes.workload.cpu["{#NAMESPACE}","{#WORKLOAD}"]'
+              delay: '0'
+              history: 7d
+              trends: 90d
+              value_type: FLOAT
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.workloads[?(@.namespace == "{#NAMESPACE}" && @.name == "{#WORKLOAD}")].cpu.first()'
+              master_item:
+                key: kubernetes.workloads
+              tags:
+                - tag: component
+                  value: cpu
+                - tag: namespace
+                  value: '{#NAMESPACE}'
+            - uuid: 2c2cbcf3e10245e1a268f1edd1d750da
+              name: 'Workload {#NAMESPACE}/{#WORKLOAD}: Memory'
+              type: DEPENDENT
+              key: 'kubernetes.workload.memory["{#NAMESPACE}","{#WORKLOAD}"]'
+              delay: '0'
+              history: 7d
+              trends: 90d
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.workloads[?(@.namespace == "{#NAMESPACE}" && @.name == "{#WORKLOAD}")].memory.first()'
+              master_item:
+                key: kubernetes.workloads
+              tags:
+                - tag: component
+                  value: memory
+                - tag: namespace
+                  value: '{#NAMESPACE}'
+            - uuid: 869ac10fba5f49e09c2967fd1952ea27
+              name: 'Workload {#NAMESPACE}/{#WORKLOAD}: Restarts'
+              type: DEPENDENT
+              key: 'kubernetes.workload.restarts["{#NAMESPACE}","{#WORKLOAD}"]'
+              delay: '0'
+              history: 30d
+              trends: 90d
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.workloads[?(@.namespace == "{#NAMESPACE}" && @.name == "{#WORKLOAD}")].restarts.first()'
+              master_item:
+                key: kubernetes.workloads
+              tags:
+                - tag: component
+                  value: restarts
+                - tag: namespace
+                  value: '{#NAMESPACE}'
+              trigger_prototypes:
+                - uuid: 4f5ebce976f84aecbb1b8113f3d83323
+                  expression: 'change(/Kubernetes workloads by Zabbix agent active/kubernetes.workload.restarts["{#NAMESPACE}","{#WORKLOAD}"])>0'
+                  name: 'Workload {#NAMESPACE}/{#WORKLOAD} restarted a container'
+                  priority: WARNING
+          master_item:
+            key: kubernetes.workloads
+          lld_macro_paths:
+            - lld_macro: '{#NAMESPACE}'
+              path: $.namespace
+            - lld_macro: '{#WORKLOAD}'
+              path: $.name
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.workloads

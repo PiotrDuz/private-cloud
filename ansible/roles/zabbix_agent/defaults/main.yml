@@ -13,3 +13,8 @@ zabbix_smart_config: /etc/zabbix/zabbix_agent2.d/plugins.d/smart.conf
 zabbix_sudoers_config: /etc/sudoers.d/zabbix-smartctl
 zabbix_agent_repo_key_url: https://repo.zabbix.com/zabbix-official-repo.key
 zabbix_agent_repo_keyring: /etc/apt/keyrings/zabbix.asc
+zabbix_kubernetes_collector: /usr/local/libexec/zabbix/kubernetes-collector.py
+zabbix_kubernetes_access: /etc/zabbix/private-cloud-kubernetes.json
+zabbix_kubernetes_config: /etc/zabbix/zabbix_agent2.d/kubernetes.conf
+zabbix_agent_kubeconfig: /run/private-cloud/kubeconfig
+zabbix_agent_namespace: private-cloud

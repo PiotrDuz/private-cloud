@@ -22,6 +22,7 @@
     zabbix_template_paths:
       - "{{ playbook_dir }}/../zabbix/zabbix-zfs-template.yaml"
       - "{{ playbook_dir }}/../zabbix/zabbix-memory-ecc-template.yaml"
+      - "{{ playbook_dir }}/../zabbix/zabbix-kubernetes-template.yaml"
 
 - name: Prepare the Zabbix kubeconfig
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"

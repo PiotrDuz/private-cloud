@@ -1,0 +1,82 @@
+---
+- name: Prepare the Zabbix Agent kubeconfig
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"
+  vars:
+    private_cloud_kubeconfig: "{{ zabbix_agent_kubeconfig }}"
+
+- name: Render Zabbix Agent Kubernetes access
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/render_manifests.yml"
+  vars:
+    manifest_service: zabbix-agent
+    manifest_template_dir: "{{ role_path }}/../../../k0s-services/zabbix-agent/templates"
+
+- name: Apply Zabbix Agent Kubernetes access
+  kubernetes.core.k8s:
+    kubeconfig: "{{ zabbix_agent_kubeconfig }}"
+    state: present
+    definition: "{{ private_cloud_service_manifests }}"
+
+- name: Create the Zabbix Agent service account token
+  kubernetes.core.k8s:
+    kubeconfig: "{{ zabbix_agent_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      type: kubernetes.io/service-account-token
+      metadata:
+        name: zabbix-agent-token
+        namespace: "{{ zabbix_agent_namespace }}"
+        annotations: {kubernetes.io/service-account.name: zabbix-agent}
+
+- name: Wait for the Zabbix Agent service account token
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ zabbix_agent_kubeconfig }}"
+    api_version: v1
+    kind: Secret
+    name: zabbix-agent-token
+    namespace: "{{ zabbix_agent_namespace }}"
+  register: zabbix_agent_token
+  until: (zabbix_agent_token.resources[0].data | default({})).token is defined
+  retries: 30
+  delay: 2
+  changed_when: false
+  no_log: true
+
+- name: Read the Kubernetes API address
+  ansible.builtin.slurp:
+    path: "{{ zabbix_agent_kubeconfig }}"
+  register: zabbix_agent_kubeconfig_content
+  no_log: true
+
+- name: Install the Kubernetes access for the workload collector
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'server': ((zabbix_agent_kubeconfig_content.content | b64decode | from_yaml).clusters[0].cluster.server),
+        'token': zabbix_agent_token.resources[0].data.token | b64decode,
+        'ca': zabbix_agent_token.resources[0].data['ca.crt'] | b64decode
+      } | to_json }}
+    dest: "{{ zabbix_kubernetes_access }}"
+    owner: root
+    group: zabbix
+    mode: '0640'
+  no_log: true
+
+- name: Copy the Kubernetes workload collector
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../zabbix/zabbix-kubernetes-collector.py"
+    dest: "{{ zabbix_kubernetes_collector }}"
+    owner: root
+    group: root
+    mode: '0755'
+  notify: Restart Zabbix Agent 2
+
+- name: Install Kubernetes workload user parameters
+  ansible.builtin.template:
+    src: kubernetes.conf.j2
+    dest: "{{ zabbix_kubernetes_config }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Zabbix Agent 2

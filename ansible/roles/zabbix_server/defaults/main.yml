@@ -18,3 +18,4 @@ zabbix_template_choices:
   - [SMART by Zabbix agent active 2, SMART by Zabbix agent 2 active]
   - [ZFS by Zabbix agent active]
   - [Memory ECC by Zabbix agent active]
+  - [Kubernetes workloads by Zabbix agent active]

@@ -11,6 +11,7 @@ Open Zabbix at `monitor.<domain>` and review **Monitoring → Problems** for `pr
 | Private cloud → Overview | Problems, CPU, memory, pool capacity, and host graphs. | Start every check here. |
 | Private cloud → Dataset capacity | Quota utilization and current leaf allocation. | Investigate at 80%; act before 90%. |
 | Private cloud → Disks | SMART temperature, power-on hours, and disk utilization. | Investigate rising temperatures and saturated disks. |
+| Private cloud → Workloads | Memory, CPU cores, and container restarts per Kubernetes workload. | Investigate steady memory growth and repeated restarts. |
 | Latest data → ZFS pool | Usage, online state, permanent errors, and read/write/checksum errors. | Prioritize degraded storage, permanent errors, and 90% usage. |
 | Latest data → Linux | CPU, available RAM, swap, disk latency, and filesystem space. | Investigate sustained saturation and growing pressure. |
 | Latest data → SMART | Health, temperature, and media errors. | Investigate failing health and rising errors. |
@@ -31,9 +32,11 @@ Run the collectors and agent keys by hand when Zabbix shows no data:
 sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py --inventory /etc/zabbix/private-cloud-datasets.json metrics | python3 -m json.tool
 sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py --inventory /etc/zabbix/private-cloud-datasets.json snapshots | python3 -m json.tool
 sudo -u zabbix /usr/local/libexec/zabbix/memory-ecc-collector.py | python3 -m json.tool
+sudo -u zabbix /usr/local/libexec/zabbix/kubernetes-collector.py /etc/zabbix/private-cloud-kubernetes.json | python3 -m json.tool
 sudo zabbix_agent2 -t zfs.metrics
 sudo zabbix_agent2 -t zfs.snapshots
 sudo zabbix_agent2 -t memory.ecc.metrics
+sudo zabbix_agent2 -t kubernetes.workloads
 sudo zabbix_agent2 -t smart.disk.discovery
 ```
 
@@ -54,6 +57,7 @@ sudo zabbix_agent2 -t smart.disk.discovery
 
 ```bash
 sudo k0s kubectl get pods -A
+sudo k0s kubectl top pods -A --sort-by=memory
 sudo k0s kubectl get events -A --sort-by=.metadata.creationTimestamp
 sudo k0s kubectl logs -n private-cloud statefulset/stalwart --since=1h --tail=500
 sudo k0s kubectl logs -n edge deployment/traefik --since=1h --tail=500

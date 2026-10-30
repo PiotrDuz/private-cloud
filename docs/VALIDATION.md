@@ -66,7 +66,7 @@ Validators trust only the distribution's Mozilla root store in `/usr/share/ca-ce
 - It waits for the host heartbeat and delivers a temporary alert to the configured Stalwart mailbox when notifications are enabled.
 - The Zabbix server validator checks API access, the monitored host, templates, the dashboard pages, and notification settings.
 - It requires the monitored host to use PSK for agent connections.
-- The Zabbix Agent validator checks the service, listener, item keys, collectors, SMART wrapper, PSK file, and certificates.
+- The Zabbix Agent validator checks the service, listener, item keys, collectors, Kubernetes workload metrics, SMART wrapper, PSK file, and certificates.
 - It checks the Alloy endpoint only when the logging stage is enabled.
 - Certificate probes run whenever the Zabbix Agent stage is enabled.
 - Global validation checks internal SMTP relay rejection and delivers a test message plus Zabbix problem and recovery notifications.

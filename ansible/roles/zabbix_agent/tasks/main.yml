@@ -107,6 +107,9 @@
 - name: Install certificate and optional Alloy probes
   ansible.builtin.include_tasks: observability.yml
 
+- name: Install the Kubernetes workload collector
+  ansible.builtin.include_tasks: kubernetes.yml
+
 - name: Install ZFS user parameters
   ansible.builtin.template:
     src: zfs.conf.j2

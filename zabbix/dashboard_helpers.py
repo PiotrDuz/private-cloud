@@ -93,6 +93,16 @@ def disks_page(config):
     ])
 
 
+def workloads_page(config):
+    return page("Workloads", [
+        top_items("Workloads by memory", 0, 0, config["host_id"], "Workload *: Memory"),
+        top_items("Workloads by CPU cores", 36, 0, config["host_id"], "Workload *: CPU cores", 3),
+        graph("Memory by workload", 0, 8, config["host"], ["Workload *: Memory"], stacked=True),
+        graph("CPU cores by workload", 36, 8, config["host"], ["Workload *: CPU cores"], stacked=True),
+        honeycomb("Container restarts", 0, 14, 72, 5, config["host_id"], ["Workload *: Restarts"], r'Workload [^/]*/(.*): Restarts', [(0, GREEN), (1, YELLOW)]),
+    ])
+
+
 def services_page(config):
     widgets = [honeycomb("Certificate days left", 0, 0, 72, 5, config["host_id"], ["* certificate days"], r'(.*)-https certificate days', [(0, RED), (7, YELLOW), (21, GREEN)])]
     if config["alloy"]:
@@ -130,6 +140,14 @@ def gauge(name, x, y, item_id, maximum, levels):
 
 def value(name, x, y, item_id, decimals=0):
     return widget("item", name, x, y, 12, 3, [field(ITEM, "itemid.0", item_id), field(INTEGER, "show.0", 2), field(INTEGER, "value_size", 20), field(INTEGER, "decimal_places", decimals)])
+
+
+def top_items(name, x, y, host_id, pattern, decimals=2):
+    return widget("topitems", name, x, y, 36, 8, [
+        field(HOST, "hostids.0", host_id), field(INTEGER, "layout", 1),
+        field(INTEGER, "item_ordering_order_by", 3), field(INTEGER, "item_ordering_order", 2), field(INTEGER, "item_ordering_limit", 10),
+        field(STRING, "columns.0.items.0", pattern), field(INTEGER, "columns.0.decimal_places", decimals),
+    ])
 
 
 def honeycomb(name, x, y, width, height, host_id, patterns, label, levels):
