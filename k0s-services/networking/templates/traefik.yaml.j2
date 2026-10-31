@@ -134,10 +134,11 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: [radarr, prowlarr]
+                values: [radarr, prowlarr, bazarr]
       ports:
         - {protocol: TCP, port: 7878}
         - {protocol: TCP, port: 9696}
+        - {protocol: TCP, port: 6767}
     - to:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: observability}

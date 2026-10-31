@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify configured Sonarr, Radarr, Prowlarr, and FlareSolverr proxy settings."""
+"""Verify configured Sonarr, Radarr, Prowlarr, Bazarr, and FlareSolverr proxy settings."""
 
 import json
 import copy
@@ -9,6 +9,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "roles" / "media" / "files"))
 
 from arr_helpers import Arr, _configure_quality_items, _quality_profile_state, read_api_key
+from bazarr_helpers import Bazarr, bazarr_connection_state, bazarr_connections, read_bazarr_key
 
 
 def main():
@@ -25,8 +26,12 @@ def main():
         validate_download_client(clients[name], name)
         validate_prowlarr_application(clients["prowlarr"], name)
     validate_flaresolverr_proxy(clients["prowlarr"])
+    bazarr = Bazarr(f"http://{config['addresses']['bazarr']}:6767/api", read_bazarr_key("/" + config["datasets"]["bazarr"] + "/config/config.yaml"))
+    bazarr.wait_ready()
+    if bazarr_connection_state(bazarr) != bazarr_connections({name: clients[name].key for name in ("sonarr", "radarr")}):
+        raise RuntimeError("Bazarr's Sonarr and Radarr connections differ from service configuration")
 
-    print(json.dumps({"services": ["sonarr", "radarr", "prowlarr"], "result": "passed"}, separators=(",", ":")))
+    print(json.dumps({"services": ["sonarr", "radarr", "prowlarr", "bazarr"], "result": "passed"}, separators=(",", ":")))
 
 
 def validate_quality_profile(client, preset):

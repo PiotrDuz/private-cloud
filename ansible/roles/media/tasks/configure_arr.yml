@@ -6,7 +6,7 @@
     kind: Deployment
     namespace: media
     name: "{{ item }}"
-  loop: [media-vpn, sonarr, radarr, prowlarr, qbittorrent, flaresolverr]
+  loop: [media-vpn, sonarr, radarr, prowlarr, qbittorrent, flaresolverr, bazarr]
   register: media_arr_workload
   until:
     - media_arr_workload.resources | default([]) | length == 1
@@ -23,7 +23,7 @@
     kind: Service
     namespace: media
     name: "{{ item }}"
-  loop: [sonarr, radarr, prowlarr, qbittorrent]
+  loop: [sonarr, radarr, prowlarr, qbittorrent, bazarr]
   register: media_arr_services
 
 - name: Configure ARR quality profiles, connections, and library folders

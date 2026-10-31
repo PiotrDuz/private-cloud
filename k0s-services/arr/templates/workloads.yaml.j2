@@ -139,10 +139,11 @@ spec:
   {'name': 'radarr', 'port': 7878},
   {'name': 'prowlarr', 'port': 9696},
   {'name': 'qbittorrent', 'port': 8080},
+  {'name': 'bazarr', 'port': 6767},
   {'name': 'flaresolverr', 'port': 8191}
 ] %}
 {% for app in guarded %}
-{% set memory_limit = media_flaresolverr_max_ram if app.name == 'flaresolverr' else private_cloud.media.max_ram[app.name] %}
+{% set memory_limit = {'flaresolverr': media_flaresolverr_max_ram, 'bazarr': media_bazarr_max_ram}.get(app.name) or private_cloud.media.max_ram[app.name] %}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -261,7 +262,7 @@ spec:
 {% else %}
             - {name: config, mountPath: /config}
 {% endif %}
-{% if app.name in ['sonarr', 'radarr', 'qbittorrent'] %}
+{% if app.name in ['sonarr', 'radarr', 'qbittorrent', 'bazarr'] %}
             - {name: library, mountPath: /media}
 {% endif %}
         - name: vpn-route
@@ -340,7 +341,7 @@ spec:
         - {name: file-logs-config, configMap: {name: arr-file-logs}}
         - {name: logging-settings, configMap: {name: qbittorrent-logging}}
 {% endif %}
-{% if app.name in ['sonarr', 'radarr', 'qbittorrent'] %}
+{% if app.name in ['sonarr', 'radarr', 'qbittorrent', 'bazarr'] %}
         - {name: library, persistentVolumeClaim: {claimName: media-library-data}}
 {% endif %}
 ---

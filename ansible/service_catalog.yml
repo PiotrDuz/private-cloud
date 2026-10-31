@@ -42,6 +42,7 @@ private_cloud_memory_requests:
   prowlarr: 192Mi
   qbittorrent: 64Mi
   flaresolverr: 256Mi
+  bazarr: 128Mi
   vpn_gateway: 64Mi
   dns: 32Mi
   vpn_route: 16Mi
@@ -69,6 +70,7 @@ private_cloud_dataset_catalog:
   - {name: radarr, stage: media, dataset: tank/secure/no-backup/k0s/services/radarr, color: FFC107}
   - {name: prowlarr, stage: media, dataset: tank/secure/no-backup/k0s/services/prowlarr, color: 7E57C2}
   - {name: qbittorrent, stage: media, dataset: tank/secure/no-backup/k0s/services/qbittorrent, color: 2196F3}
+  - {name: bazarr, stage: media, dataset: tank/secure/no-backup/k0s/services/bazarr, color: 8BC34A}
   - {name: media-library, stage: media, dataset: tank/secure/no-backup/k0s/services/media-library, color: 66BB6A}
   - {name: postgres, stage: postgres, dataset: tank/secure/backup/k0s/services/postgres, color: AB47BC}
   - {name: meilisearch, stage: meilisearch, dataset: tank/secure/backup/k0s/services/meilisearch, color: 26A69A}

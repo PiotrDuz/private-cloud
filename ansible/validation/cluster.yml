@@ -27,7 +27,7 @@
   ansible.builtin.assert:
     that: >-
       ((validation_claims.stdout | from_json)['items'] |
-       selectattr('metadata.namespace', 'equalto', ('media' if item.name in ['jellyfin', 'sonarr', 'radarr', 'prowlarr', 'qbittorrent', 'media-library'] else ('edge' if item.name == 'traefik' else ('network-access' if item.name == 'amneziawg' else ('observability' if item.name in ['openobserve', 'alloy'] else 'private-cloud'))))) |
+       selectattr('metadata.namespace', 'equalto', ('media' if item.name in ['jellyfin', 'sonarr', 'radarr', 'prowlarr', 'qbittorrent', 'bazarr', 'media-library'] else ('edge' if item.name == 'traefik' else ('network-access' if item.name == 'amneziawg' else ('observability' if item.name in ['openobserve', 'alloy'] else 'private-cloud'))))) |
        selectattr('metadata.name', 'equalto', ('zabbix-server-data' if item.name == 'zabbix' else item.name ~ '-data')) |
        list | length) == 1
     fail_msg: "The enabled {{ item.name }} service has no persistent volume claim."

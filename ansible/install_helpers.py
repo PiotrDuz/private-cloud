@@ -145,11 +145,13 @@ SERVICE_SUBDOMAINS = {
 AMNEZIAWG_UI_SUBDOMAIN = "vpn-admin"
 RADARR_SUBDOMAIN = "radarr"
 PROWLARR_SUBDOMAIN = "prowlarr"
+BAZARR_SUBDOMAIN = "bazarr"
+MEDIA_LAN_HOSTNAMES = ("radarr_hostname", "prowlarr_hostname", "bazarr_hostname")
 HOMEPAGE_SUBDOMAIN = "www"
 DERIVED_KEYS = {
     ("networking",): {"acme_email", "managed_records", "traefik_internal_ip", "traefik_cluster_ip", "lan_dns_cluster_ip", "zabbix_hostname", "homepage_hostname", "lan_only_records"},
     ("networking", "amneziawg"): {"hostname", "ui_hostname", "dns"},
-    ("media",): {"hostname", "radarr_hostname", "prowlarr_hostname", "timezone"},
+    ("media",): {"hostname", "radarr_hostname", "prowlarr_hostname", "bazarr_hostname", "timezone"},
     ("onlyoffice",): {"hostname"},
     ("opencloud",): {"hostname", "admin_email"},
     ("grist",): {"hostname", "default_email"},
@@ -351,9 +353,9 @@ def resolve_public_configuration(configuration: Mapping[str, Any]) -> dict[str, 
         "homepage_hostname": homepage_hostname,
     })
     networking["amneziawg"].update({"hostname": hostnames["networking"], "ui_hostname": f"{AMNEZIAWG_UI_SUBDOMAIN}.{domain}", "dns": [str(lan_address.ip)]})
-    cloud["media"].update({"hostname": hostnames["media"], "radarr_hostname": f"{RADARR_SUBDOMAIN}.{domain}", "prowlarr_hostname": f"{PROWLARR_SUBDOMAIN}.{domain}", "timezone": timezone})
+    cloud["media"].update({"hostname": hostnames["media"], "radarr_hostname": f"{RADARR_SUBDOMAIN}.{domain}", "prowlarr_hostname": f"{PROWLARR_SUBDOMAIN}.{domain}", "bazarr_hostname": f"{BAZARR_SUBDOMAIN}.{domain}", "timezone": timezone})
     # LAN DNS answers these names; public DNS never publishes them.
-    networking["lan_only_records"] = [networking["amneziawg"]["ui_hostname"]] + ([cloud["media"]["radarr_hostname"], cloud["media"]["prowlarr_hostname"]] if stages.get("media") else [])
+    networking["lan_only_records"] = [networking["amneziawg"]["ui_hostname"]] + ([cloud["media"][key] for key in MEDIA_LAN_HOSTNAMES] if stages.get("media") else [])
     for stage in ("onlyoffice", "opencloud", "logging"):
         cloud[stage]["hostname"] = hostnames[stage]
     # Stalwart is the sign-in provider, so application administrators are the managed mailbox account.
@@ -486,8 +488,8 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
     for key in ("hostname", "ui_hostname"):
         if not DOMAIN_PATTERN.fullmatch(str(amneziawg.get(key, ""))):
             raise InstallerError(f"Invalid networking.amneziawg.{key}")
-    if networking.get("lan_only_records") != [amneziawg["ui_hostname"]] + ([cloud["media"].get("radarr_hostname"), cloud["media"].get("prowlarr_hostname")] if stages["media"] else []):
-        raise InstallerError("networking.lan_only_records must list the AmneziaWG UI and enabled Radarr and Prowlarr hostnames")
+    if networking.get("lan_only_records") != [amneziawg["ui_hostname"]] + ([cloud["media"].get(key) for key in MEDIA_LAN_HOSTNAMES] if stages["media"] else []):
+        raise InstallerError("networking.lan_only_records must list the AmneziaWG UI and enabled media LAN hostnames")
     if set(networking["lan_only_records"]) & set(managed_records):
         raise InstallerError("LAN-only hostnames must stay out of public DNS records")
     if not isinstance(amneziawg["admin_username"], str) or not USERNAME_PATTERN.fullmatch(amneziawg["admin_username"]):
@@ -527,11 +529,11 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
         if rule["protocol"] not in {"TCP", "UDP"} or type(rule["port"]) is not int or not 1 <= rule["port"] <= 65535:
             raise InstallerError("Invalid AmneziaWG LAN protocol or port")
     media = cloud["media"]
-    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "radarr_hostname", "prowlarr_hostname", "timezone", "quality_profiles", "vpn", "max_ram", "jellyfin_admin_username"}:
+    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "radarr_hostname", "prowlarr_hostname", "bazarr_hostname", "timezone", "quality_profiles", "vpn", "max_ram", "jellyfin_admin_username"}:
         raise InstallerError("Media configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(media.get("storage_size", ""))) or not DOMAIN_PATTERN.fullmatch(str(media.get("hostname", ""))):
         raise InstallerError("Invalid media storage size or hostname")
-    for key in ("radarr_hostname", "prowlarr_hostname"):
+    for key in MEDIA_LAN_HOSTNAMES:
         if not DOMAIN_PATTERN.fullmatch(str(media[key])):
             raise InstallerError(f"Invalid media.{key}")
     if not isinstance(media["jellyfin_admin_username"], str) or not USERNAME_PATTERN.fullmatch(media["jellyfin_admin_username"]):
@@ -756,7 +758,7 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
     if stages["networking"]:
         enabled_hostnames += [amneziawg["ui_hostname"], networking["homepage_hostname"]]
     if stages["media"]:
-        enabled_hostnames += [media["radarr_hostname"], media["prowlarr_hostname"]]
+        enabled_hostnames += [media[key] for key in MEDIA_LAN_HOSTNAMES]
     if len(enabled_hostnames) != len(set(enabled_hostnames)):
         raise InstallerError("Enabled public service hostnames must be unique")
     missing_records = sorted(set(public_hostnames[stage] for stage in public_hostnames if stages[stage]) - set(managed_records))
