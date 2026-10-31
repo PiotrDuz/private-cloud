@@ -105,8 +105,8 @@ The stateless `homepage` Deployment in `edge` serves `https://www.<domain>` with
 
 - The networking role renders the page from enabled stages; it has no data or credentials.
 - Each tile is an icon with the service name below it, linking to the application UI.
-- The Apps section holds OpenCloud, AFFiNE, Grist, Immich, Jellyfin, Radarr, and Prowlarr.
-- The Administration section holds Stalwart `/admin/`, OpenObserve, Zabbix, and `vpn-admin`.
+- The Apps section holds OpenCloud, AFFiNE, Grist, Immich, and Jellyfin.
+- The Administration section holds Stalwart `/admin/`, OpenObserve, Zabbix, Radarr, Prowlarr, and `vpn-admin`.
 - OnlyOffice has no tile because users open documents through OpenCloud.
 - The `Radarr (LAN)`, `Prowlarr (LAN)`, and `VPN admin (LAN)` tiles work only from local networks and VPN peers.
 - The pod accepts TCP `8080` from Traefik only and has no egress.
