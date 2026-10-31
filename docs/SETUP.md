@@ -134,9 +134,9 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 ## Services
 
 - [ ] Select Prowlarr indexers and provide their credentials.
-- [ ] Reach the unpublished Prowlarr UI through `sudo k0s kubectl port-forward -n media service/prowlarr 9696:9696`.
-- [ ] Open `https://radarr.<domain>` from the LAN or VPN and set a Forms login on first visit.
-- [ ] Keep Radarr authentication required for every address, because all requests arrive from Traefik's pod address.
+- [ ] Tag indexers behind Cloudflare protection with `flaresolverr` in Prowlarr.
+- [ ] Open `https://radarr.<domain>` and `https://prowlarr.<domain>` from the LAN or VPN and set a Forms login on first visit.
+- [ ] Keep Radarr and Prowlarr authentication required for every address, because all requests arrive from Traefik's pod address.
 - [ ] Select the `private-cloud` profile when adding Sonarr series, Radarr movies, or import lists.
 - [ ] Add media libraries and confirm playback, scanning, and metadata downloads in Jellyfin.
 

@@ -4,15 +4,16 @@ The arr stack templates are managed by `ansible/roles/media` through the `media`
 
 - The installer reads `private_cloud.media` from the public configuration.
 - The encrypted configuration holds the AirVPN WireGuard keys and the proxy password.
-- Sonarr, Radarr, Prowlarr, and qBittorrent run in the `media` namespace.
+- Sonarr, Radarr, Prowlarr, qBittorrent, and FlareSolverr run in the `media` namespace.
+- FlareSolverr is stateless and has no dataset.
 - External traffic and DNS go through the shared AirVPN WireGuard gateway.
 - Per-pod `tun2socks` helpers carry the guarded applications' traffic.
 - NetworkPolicy blocks direct Internet fallback.
 - qBittorrent binds to `tun0` with UPnP disabled.
-- Traefik publishes the Radarr UI at `radarr.<domain>` to local networks and VPN peers only.
-- The Radarr hostname stays out of public DNS and resolves through LAN DNS.
-- Radarr keeps its own login; Traefik adds no authentication.
-- Sonarr, Prowlarr, and qBittorrent dashboards, peer ports, and discovery protocols stay unpublished.
+- Traefik publishes the Radarr and Prowlarr UIs at `radarr.<domain>` and `prowlarr.<domain>` to local networks and VPN peers only.
+- These hostnames stay out of public DNS and resolve through LAN DNS.
+- Radarr and Prowlarr keep their own logins; Traefik adds no authentication.
+- Sonarr and qBittorrent dashboards, peer ports, and discovery protocols stay unpublished.
 - The arr stack and shared library use `no-backup` datasets.
 - Each application has a quota-controlled dataset and a dedicated `10Ti` PV.
 - This folder provisions the shared `media-library` dataset and claim.
@@ -26,6 +27,8 @@ Gluetun selects an AirVPN server by configured country from its built-in list, s
 
 - The installer reads Sonarr, Radarr, and Prowlarr API keys from their protected datasets.
 - Prowlarr synchronizes selected indexers to Sonarr and Radarr.
+- Prowlarr routes indexers tagged `flaresolverr` through the managed `private-cloud-flaresolverr` proxy.
+- FlareSolverr solves Cloudflare challenges in Chromium through the AirVPN tunnel.
 - Sonarr and Radarr use qBittorrent with separate download categories.
 - qBittorrent stops each torrent at share ratio 0, so it seeds only while downloading.
 - Sonarr and Radarr remove stopped torrents and their download copies after import.

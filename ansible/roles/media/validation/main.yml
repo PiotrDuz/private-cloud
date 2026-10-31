@@ -6,7 +6,7 @@
     kind: Deployment
     namespace: media
     name: "{{ item }}"
-  loop: [media-vpn, sonarr, radarr, prowlarr, qbittorrent, jellyfin]
+  loop: [media-vpn, sonarr, radarr, prowlarr, qbittorrent, flaresolverr, jellyfin]
   register: media_validation_deployments
   until:
     - media_validation_deployments.resources | default([]) | length == 1
@@ -24,7 +24,7 @@
     kind: Endpoints
     namespace: media
     name: "{{ item }}"
-  loop: [media-vpn, sonarr, radarr, prowlarr, qbittorrent, jellyfin]
+  loop: [media-vpn, sonarr, radarr, prowlarr, qbittorrent, flaresolverr, jellyfin]
   register: media_validation_endpoints
   changed_when: false
 
@@ -113,7 +113,7 @@
           done
         done
         exit 1
-  loop: [sonarr, radarr, prowlarr, qbittorrent]
+  loop: [sonarr, radarr, prowlarr, qbittorrent, flaresolverr]
   changed_when: false
 
 - name: Verify qBittorrent's configured and active tunnel routes
@@ -148,7 +148,7 @@
 - name: Read the ARR application process UIDs
   ansible.builtin.command:
     argv: [k0s, kubectl, exec, -n, media, "deployment/{{ item }}", -c, "{{ item }}", --, id, -u]
-  loop: [sonarr, radarr, prowlarr, qbittorrent]
+  loop: [sonarr, radarr, prowlarr, qbittorrent, flaresolverr]
   register: media_validation_arr_uids
   changed_when: false
 

@@ -3,7 +3,7 @@
 import json
 import sys
 
-from arr_helpers import Arr, configure_download_client, configure_prowlarr, configure_quality_profile, configure_root, read_api_key
+from arr_helpers import Arr, configure_download_client, configure_flaresolverr, configure_prowlarr, configure_quality_profile, configure_root, read_api_key
 
 
 def main():
@@ -13,7 +13,7 @@ def main():
         key = read_api_key('/' + config['datasets'][name] + '/config.xml')
         clients[name] = Arr(f"http://{config['addresses'][name]}:{port}/api/v{version}", key)
         clients[name].wait_ready()
-    changed = False
+    changed = configure_flaresolverr(clients['prowlarr'])
     for name, directory in (('sonarr', 'tv'), ('radarr', 'movies')):
         changed |= configure_quality_profile(clients[name], config['quality_profiles'][name])
         changed |= configure_root(clients[name], '/media/' + directory)

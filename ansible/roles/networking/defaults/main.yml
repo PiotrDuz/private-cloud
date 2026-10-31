@@ -16,6 +16,7 @@ networking_traefik_route_services:
   - jellyfin
   - amneziawg
   - radarr
+  - prowlarr
 networking_lan_dns_image: registry.k8s.io/coredns/coredns:v1.12.4@sha256:986f04c2e15e147d00bdd51e8c51bcef3644b13ff806be7d2ff1b261d6dfbae1
 # Answering these names with NXDOMAIN tells Firefox, Apple Private Relay, and DDR clients to keep using the LAN resolver.
 networking_lan_dns_encrypted_dns_canaries: [use-application-dns.net, mask.icloud.com, mask-h2.icloud.com, resolver.arpa]

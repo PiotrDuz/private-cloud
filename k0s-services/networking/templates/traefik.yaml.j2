@@ -131,8 +131,13 @@ spec:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: media}
           podSelector:
-            matchLabels: {app.kubernetes.io/name: radarr}
-      ports: [{protocol: TCP, port: 7878}]
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [radarr, prowlarr]
+      ports:
+        - {protocol: TCP, port: 7878}
+        - {protocol: TCP, port: 9696}
     - to:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: observability}

@@ -1,23 +1,24 @@
+{% for app in [{'name': 'radarr', 'port': 7878}, {'name': 'prowlarr', 'port': 9696}] %}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: traefik-route-radarr
+  name: traefik-route-{{ app.name }}
   namespace: edge
   labels: {private-cloud.example/traefik-route: "true"}
 data:
-  radarr.yaml: |
+  {{ app.name }}.yaml: |
     http:
       routers:
-        radarr:
+        {{ app.name }}:
           entryPoints: [websecure]
-          rule: Host(`{{ private_cloud.media.radarr_hostname }}`)
-          service: radarr
-          middlewares: [radarr-local-only]
+          rule: Host(`{{ private_cloud.media[app.name ~ '_hostname'] }}`)
+          service: {{ app.name }}
+          middlewares: [{{ app.name }}-local-only]
           tls:
             certResolver: cloudflare
       # LAN clients keep their source address; VPN peers arrive masqueraded from the AmneziaWG pod.
       middlewares:
-        radarr-local-only:
+        {{ app.name }}-local-only:
           ipAllowList:
             sourceRange:
 {% for network in private_cloud.networking.local_network_cidrs %}
@@ -25,7 +26,9 @@ data:
 {% endfor %}
               - {{ private_cloud.networking.pod_cidr }}
       services:
-        radarr:
+        {{ app.name }}:
           loadBalancer:
             servers:
-              - url: http://radarr.media.svc.cluster.local:7878
+              - url: http://{{ app.name }}.media.svc.cluster.local:{{ app.port }}
+---
+{% endfor %}

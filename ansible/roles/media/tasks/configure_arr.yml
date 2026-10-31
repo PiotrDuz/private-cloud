@@ -6,7 +6,7 @@
     kind: Deployment
     namespace: media
     name: "{{ item }}"
-  loop: [media-vpn, sonarr, radarr, prowlarr, qbittorrent]
+  loop: [media-vpn, sonarr, radarr, prowlarr, qbittorrent, flaresolverr]
   register: media_arr_workload
   until:
     - media_arr_workload.resources | default([]) | length == 1

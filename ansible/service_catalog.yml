@@ -41,6 +41,7 @@ private_cloud_memory_requests:
   radarr: 192Mi
   prowlarr: 192Mi
   qbittorrent: 64Mi
+  flaresolverr: 256Mi
   vpn_gateway: 64Mi
   dns: 32Mi
   vpn_route: 16Mi

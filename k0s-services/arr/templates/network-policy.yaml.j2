@@ -72,7 +72,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/name
         operator: In
-        values: [sonarr, radarr, prowlarr, qbittorrent]
+        values: [sonarr, radarr, prowlarr, qbittorrent, flaresolverr]
   policyTypes: [Ingress]
   ingress:
     - from:
@@ -80,12 +80,13 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: [sonarr, radarr, prowlarr, qbittorrent]
+                values: [sonarr, radarr, prowlarr, qbittorrent, flaresolverr]
       ports:
         - {protocol: TCP, port: 8989}
         - {protocol: TCP, port: 7878}
         - {protocol: TCP, port: 9696}
         - {protocol: TCP, port: 8080}
+        - {protocol: TCP, port: 8191}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -105,21 +106,25 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: [sonarr, radarr, prowlarr, qbittorrent]
+                values: [sonarr, radarr, prowlarr, qbittorrent, flaresolverr]
       ports:
         - {protocol: TCP, port: 8989}
         - {protocol: TCP, port: 7878}
         - {protocol: TCP, port: 9696}
         - {protocol: TCP, port: 8080}
+        - {protocol: TCP, port: 8191}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: radarr-traefik-ingress
+  name: arr-traefik-ingress
   namespace: media
 spec:
   podSelector:
-    matchLabels: {app.kubernetes.io/name: radarr}
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [radarr, prowlarr]
   policyTypes: [Ingress]
   ingress:
     - from:
@@ -127,4 +132,6 @@ spec:
             matchLabels: {kubernetes.io/metadata.name: edge}
           podSelector:
             matchLabels: {app.kubernetes.io/name: traefik}
-      ports: [{protocol: TCP, port: 7878}]
+      ports:
+        - {protocol: TCP, port: 7878}
+        - {protocol: TCP, port: 9696}

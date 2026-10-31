@@ -63,6 +63,16 @@ def configure_prowlarr(client, name, key):
     return client.upsert('/applications', name.title(), 'private-cloud-' + name, fields, {'syncLevel': 'fullSync'})
 
 
+def configure_flaresolverr(client):
+    """Indexers tagged flaresolverr solve Cloudflare challenges through the FlareSolverr proxy."""
+    tag = next((item for item in client.request('GET', '/tag') if item['label'] == 'flaresolverr'), None)
+    created = tag is None
+    if created:
+        tag = client.request('POST', '/tag', {'label': 'flaresolverr'})
+    fields = {'host': 'http://flaresolverr.media.svc.cluster.local:8191/', 'requestTimeout': 60}
+    return client.upsert('/indexerProxy', 'FlareSolverr', 'private-cloud-flaresolverr', fields, {'tags': [tag['id']]}) or created
+
+
 def _connection_state_without_write_only_values(connection):
     state = copy.deepcopy(connection)
     for field in state.get('fields', []):

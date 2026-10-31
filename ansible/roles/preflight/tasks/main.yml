@@ -33,7 +33,7 @@
       - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'host_reserve_ram', 'images_quota']
       - (private_cloud.networking.keys() | list | sort) == ['acme_email', 'amneziawg', 'cloudflare_zone_id', 'cluster_dns_ip', 'homepage_hostname', 'lan_dns_cluster_ip', 'lan_only_records', 'local_network_cidrs', 'managed_records', 'pod_cidr', 'public_ip_url', 'service_cidr', 'storage_size', 'traefik_cluster_ip', 'traefik_internal_ip', 'zabbix_hostname']
       - (private_cloud.networking.amneziawg.keys() | list | sort) == ['admin_username', 'dns', 'hostname', 'lan_access', 'listen_port', 'storage_size', 'tunnel_cidr', 'ui_hostname']
-      - (private_cloud.media.keys() | list | sort) == ['hostname', 'jellyfin_admin_username', 'max_ram', 'quality_profiles', 'radarr_hostname', 'storage_size', 'timezone', 'vpn']
+      - (private_cloud.media.keys() | list | sort) == ['hostname', 'jellyfin_admin_username', 'max_ram', 'prowlarr_hostname', 'quality_profiles', 'radarr_hostname', 'storage_size', 'timezone', 'vpn']
       - (private_cloud.media.quality_profiles.keys() | list | sort) == ['radarr', 'sonarr']
       - (private_cloud.media.vpn.keys() | list | sort) == ['address', 'dns', 'endpoint_port', 'gateway_cluster_ip', 'mtu', 'peer_public_key', 'persistent_keepalive', 'server_countries']
       - (private_cloud.postgres.keys() | list | sort) == ['max_ram', 'volume_size']
@@ -921,9 +921,10 @@
         ['media', 'radarr', private_cloud.media.max_ram.radarr, 1],
         ['media', 'prowlarr', private_cloud.media.max_ram.prowlarr, 1],
         ['media', 'qbittorrent', private_cloud.media.max_ram.qbittorrent, 1],
+        ['media', 'flaresolverr', '1Gi', 1],
         ['media', 'vpn_gateway', private_cloud.media.max_ram.vpn_gateway, 1],
         ['media', 'dns', private_cloud.media.max_ram.dns, 1],
-        ['media', 'vpn_route', private_cloud.media.max_ram.vpn_route, 4],
+        ['media', 'vpn_route', private_cloud.media.max_ram.vpn_route, 5],
         ['media', 'file_logs', private_cloud.media.max_ram.file_logs, 1]
       ] | selectattr('0', 'in', private_cloud.stages | dict2items | selectattr('value', 'equalto', true) | map(attribute='key') | list) | list }}
 

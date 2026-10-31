@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify configured Sonarr, Radarr, and Prowlarr APIs."""
+"""Verify configured Sonarr, Radarr, Prowlarr, and FlareSolverr proxy settings."""
 
 import json
 import copy
@@ -24,6 +24,7 @@ def main():
         validate_root_folder(clients[name], "/media/" + directory)
         validate_download_client(clients[name], name)
         validate_prowlarr_application(clients["prowlarr"], name)
+    validate_flaresolverr_proxy(clients["prowlarr"])
 
     print(json.dumps({"services": ["sonarr", "radarr", "prowlarr"], "result": "passed"}, separators=(",", ":")))
 
@@ -83,6 +84,17 @@ def validate_prowlarr_application(client, application):
     }
     if configured.get("syncLevel") != "fullSync" or any(fields.get(name) != value for name, value in expected.items()):
         raise RuntimeError("Prowlarr's managed ARR application differs from service configuration")
+
+
+
+def validate_flaresolverr_proxy(client):
+    tags = {item["label"]: item["id"] for item in client.request("GET", "/tag")}
+    proxy = next((item for item in client.request("GET", "/indexerProxy") if item.get("name") == "private-cloud-flaresolverr"), None)
+    if proxy is None or proxy.get("implementation") != "FlareSolverr" or proxy.get("tags") != [tags.get("flaresolverr")]:
+        raise RuntimeError("Prowlarr is missing its managed FlareSolverr proxy")
+    fields = {field["name"]: field.get("value") for field in proxy.get("fields", [])}
+    if fields.get("host") != "http://flaresolverr.media.svc.cluster.local:8191/":
+        raise RuntimeError("Prowlarr's FlareSolverr proxy differs from service configuration")
 
 
 if __name__ == "__main__":

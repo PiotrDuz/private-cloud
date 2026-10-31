@@ -295,8 +295,9 @@ This file is the source of truth for the desired system state and its major deci
 - Give Sonarr, Radarr, Prowlarr, and qBittorrent a dataset under tank/secure/no-backup/k0s/services/<service> with a quota and a dedicated 10Ti PV
 - Keep the VPN gateway stateless without a dataset
 - Create the shared media-library dataset under tank/secure/no-backup/k0s/services/media-library with a quota and a dedicated 10Ti PV
-- Keep dashboards, peer ports, and discovery protocols unpublished, except the LAN-only Radarr UI
+- Keep dashboards, peer ports, and discovery protocols unpublished, except the LAN-only Radarr and Prowlarr UIs
 - Connect Prowlarr, Sonarr, Radarr, and qBittorrent automatically with native API keys and a Vault-managed qBittorrent password
+- Run a stateless FlareSolverr behind the media VPN as Prowlarr's Cloudflare challenge proxy
 - Keep Sonarr, Radarr, Prowlarr, the VPN gateway, and network helpers on native console output
 - Use a Recreate deployment for qBittorrent to prevent overlapping log checkpoint writers
 - Apply the shared quality policy to Sonarr and Radarr

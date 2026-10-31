@@ -138,9 +138,11 @@ spec:
   {'name': 'sonarr', 'port': 8989},
   {'name': 'radarr', 'port': 7878},
   {'name': 'prowlarr', 'port': 9696},
-  {'name': 'qbittorrent', 'port': 8080}
+  {'name': 'qbittorrent', 'port': 8080},
+  {'name': 'flaresolverr', 'port': 8191}
 ] %}
 {% for app in guarded %}
+{% set memory_limit = media_flaresolverr_max_ram if app.name == 'flaresolverr' else private_cloud.media.max_ram[app.name] %}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -243,8 +245,8 @@ spec:
           readinessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 10, periodSeconds: 10}
           livenessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 30, periodSeconds: 20}
           resources:
-            requests: {cpu: 100m, memory: {{ private_cloud_memory_requests[app.name] | private_cloud_memory_request(private_cloud.media.max_ram[app.name]) }}}
-            limits: {memory: {{ private_cloud.media.max_ram[app.name] }}}
+            requests: {cpu: 100m, memory: {{ private_cloud_memory_requests[app.name] | private_cloud_memory_request(memory_limit) }}}
+            limits: {memory: {{ memory_limit }}}
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -254,7 +256,11 @@ spec:
             seccompProfile: {type: RuntimeDefault}
           volumeMounts:
             - {name: runtime, mountPath: /run}
+{% if app.name == 'flaresolverr' %}
+            - {name: shm, mountPath: /dev/shm}
+{% else %}
             - {name: config, mountPath: /config}
+{% endif %}
 {% if app.name in ['sonarr', 'radarr', 'qbittorrent'] %}
             - {name: library, mountPath: /media}
 {% endif %}
@@ -323,7 +329,12 @@ spec:
             - {name: tun, mountPath: /dev/net/tun}
       volumes:
         - {name: runtime, emptyDir: {}}
+{% if app.name == 'flaresolverr' %}
+        # Chromium needs a larger shared memory segment than the container default.
+        - {name: shm, emptyDir: {medium: Memory, sizeLimit: 256Mi}}
+{% else %}
         - {name: config, persistentVolumeClaim: {claimName: {{ app.name }}-data}}
+{% endif %}
         - {name: tun, hostPath: {path: /dev/net/tun, type: CharDevice}}
 {% if app.name == 'qbittorrent' %}
         - {name: file-logs-config, configMap: {name: arr-file-logs}}
