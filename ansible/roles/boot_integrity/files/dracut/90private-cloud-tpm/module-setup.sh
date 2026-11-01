@@ -18,6 +18,10 @@ installkernel() {
 install() {
     inst_multiple tpm2_nvread tpm2_nvwrite tpm2_nvreadlock tpm2_policypcr tpm2_startauthsession \
         tpm2_flushcontext tpm2_pcrread tpm2_pcrextend arping ip udevadm sha256sum od tr cut sed grep head sort sleep rm chmod mkdir
+    # Predictable interface names, so the initrd finds the configured interface under its host name.
+    inst_rules 75-net-description.rules 80-net-setup-link.rules
+    inst_multiple -o "$systemdutildir"/network/99-default.link
+    inst_multiple -H -o "$systemdutilconfdir/network/*.link"
     inst_simple "$moddir/unlock.sh" /usr/lib/private-cloud/unlock.sh
     inst_simple /usr/local/libexec/private-cloud/inventory.sh /usr/lib/private-cloud/inventory.sh
     inst_simple /etc/private-cloud/boot-integrity.conf /etc/private-cloud/boot-integrity.conf
