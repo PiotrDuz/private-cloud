@@ -160,7 +160,7 @@ The primary domain's MX records point at the external inbox provider. The operat
 
 The [arr stack templates](../k0s-services/arr/README.md) own the guarded applications, WireGuard gateway, and shared library storage. The media installer stage renders them separately from [Jellyfin](../k0s-services/jellyfin/README.md).
 
-Sonarr, Radarr, Prowlarr, and qBittorrent share one AirVPN WireGuard gateway pod. Each guarded application pod has a `tun2socks` helper and no direct Internet route permitted by NetworkPolicy.
+Sonarr, Radarr, Prowlarr, Bazarr, FlareSolverr, and qBittorrent share one AirVPN WireGuard gateway pod. qBittorrent runs inside that pod; each other guarded application pod has a `tun2socks` helper and no direct Internet route permitted by NetworkPolicy.
 
 - The helper sends external TCP and UDP through the gateway's Shadowsocks listener.
 - Gluetun selects an AirVPN server in `media.vpn.server_countries` from its built-in list.
@@ -173,11 +173,14 @@ Sonarr, Radarr, Prowlarr, and qBittorrent share one AirVPN WireGuard gateway pod
 - Guarded apps may reach only gateway DNS/proxy ports and declared media APIs.
 - IPv6 is disabled until equivalent capture and filtering exist.
 - VPN failure leaves guarded Internet traffic blocked.
-- qBittorrent binds to `tun0`, disables UPnP, and enables anonymous mode.
+- qBittorrent binds to `wg0`, disables UPnP, and enables anonymous mode.
+- The gateway firewall limits qBittorrent's UID to `wg0`, gateway DNS, and replies.
+- Gluetun admits inbound peers only on `media.vpn.forwarded_port` through `wg0`.
+- Gateway containers resolve names through the gateway CoreDNS.
 
-Sonarr and Radarr can reach Prowlarr and qBittorrent on their API ports. Prowlarr can reach Sonarr and Radarr for synchronization. These paths use cluster networking rather than the VPN.
+Sonarr and Radarr can reach Prowlarr and the qBittorrent WebUI on their API ports. Prowlarr can reach Sonarr and Radarr for synchronization. These paths use cluster networking rather than the VPN.
 
-The arr dashboards, qBittorrent UI, peer port, discovery protocols, and UPnP are not published.
+The arr dashboards, qBittorrent UI, discovery protocols, and UPnP are not published. Only the AirVPN forwarded port reaches qBittorrent from outside.
 
 ## Jellyfin
 

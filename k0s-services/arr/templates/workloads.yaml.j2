@@ -16,6 +16,23 @@ data:
         forward . {{ private_cloud.media.vpn.dns }}
     }
 ---
+{# qBittorrent shares the gateway network namespace, so its UID may only use the tunnel, gateway DNS, and replies; each rule lands first, so the last line is checked first. #}
+{% set firewall_rules = [
+  'iptables -I OUTPUT 1 -m owner --uid-owner ' ~ media_uid ~ ' -j DROP',
+  'iptables -I OUTPUT 1 -m owner --uid-owner ' ~ media_uid ~ ' -o wg0 -j ACCEPT',
+  'iptables -I OUTPUT 1 -m owner --uid-owner ' ~ media_uid ~ ' -o lo -d 127.0.0.1 -p udp --dport 53 -j ACCEPT',
+  'iptables -I OUTPUT 1 -m owner --uid-owner ' ~ media_uid ~ ' -o lo -d 127.0.0.1 -p tcp --dport 53 -j ACCEPT',
+  'iptables -I OUTPUT 1 -m owner --uid-owner ' ~ media_uid ~ ' -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT',
+  'ip6tables -I OUTPUT 1 -m owner --uid-owner ' ~ media_uid ~ ' -j DROP'
+] | join('\n') %}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: media-vpn-firewall
+  namespace: media
+data:
+  post-rules.txt: {{ (firewall_rules ~ '\n') | to_json }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,8 +50,75 @@ spec:
       labels: {app.kubernetes.io/name: media-vpn}
       annotations:
         private-cloud.example/vpn-secret-revision: "{{ media_vpn_secret_revision }}"
+        private-cloud.example/qbittorrent-secret-revision: "{{ media_qbittorrent_secret_revision }}"
+        # Gluetun reads its post rules only at startup.
+        checksum/firewall: {{ firewall_rules | hash('sha256') }}
+        checksum/logging-settings: {{ (lookup('file', role_path ~ '/files/configure_qbittorrent.py') ~ lookup('file', role_path ~ '/files/qbittorrent_helpers.py')) | hash('sha256') }}
+        checksum/file-logs: {{ lookup('file', playbook_dir ~ '/../k0s-services/arr/files/file-logs.conf') | hash('sha256') }}
     spec:
       automountServiceAccountToken: false
+      initContainers:
+        - name: prepare-runtime
+          image: {{ media_images.qbittorrent }}
+          command: [/bin/sh, -ceu, 'chown {{ media_uid }}:{{ media_uid }} /run']
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL], add: [CHOWN]}
+            seccompProfile: {type: RuntimeDefault}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: runtime, mountPath: /run}
+        - name: configure-logging
+          image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
+          command: [python3, /scripts/configure.py]
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
+            - {name: QBITTORRENT_PORT, value: "{{ private_cloud.media.vpn.forwarded_port }}"}
+            - name: QBITTORRENT_PASSWORD
+              valueFrom: {secretKeyRef: {name: qbittorrent-credentials, key: password}}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ media_uid }}
+            runAsGroup: {{ media_uid }}
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: config, mountPath: /config}
+            - {name: logging-settings, mountPath: /scripts, readOnly: true}
+        - name: file-logs
+          restartPolicy: Always
+          image: fluent/fluent-bit:4.2.3@sha256:a5761fa961cb22dd0875883a4d446b1acd99d4935d77358aa9f50ee177e44fe2
+          args: [-c, /etc/file-logs/fluent-bit.conf]
+          env:
+            - {name: LOG_PATH, value: /logs/qbittorrent.log}
+          resources:
+            requests: {cpu: 10m, memory: {{ private_cloud_memory_requests.file_logs | private_cloud_memory_request(private_cloud.media.max_ram.file_logs) }}}
+            limits: {memory: {{ private_cloud.media.max_ram.file_logs }}}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ media_uid }}
+            runAsGroup: {{ media_uid }}
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          volumeMounts:
+            - {name: config, mountPath: /logs, subPath: qBittorrent/logs, readOnly: true}
+            - {name: config, mountPath: /state, subPath: .log-forwarder}
+            - {name: file-logs-config, mountPath: /etc/file-logs, readOnly: true}
+      # Gateway CoreDNS sends external lookups through the tunnel, also for gluetun health checks and qBittorrent.
+      dnsPolicy: None
+      dnsConfig:
+        nameservers: [127.0.0.1]
       containers:
         - name: wireguard
           image: {{ media_vpn_gateway_image }}
@@ -64,7 +148,9 @@ spec:
             - name: WIREGUARD_PRESHARED_KEY
               valueFrom: {secretKeyRef: {name: media-vpn, key: wireguard-preshared-key}}
             - {name: FIREWALL, value: 'on'}
-            - {name: FIREWALL_INPUT_PORTS, value: '53,8388'}
+            # The WebUI port admits Sonarr and Radarr, and the forwarded port admits peers from the tunnel only.
+            - {name: FIREWALL_INPUT_PORTS, value: '53,8080,8388'}
+            - {name: FIREWALL_VPN_INPUT_PORTS, value: "{{ private_cloud.media.vpn.forwarded_port }}"}
             - {name: FIREWALL_OUTBOUND_SUBNETS, value: {{ private_cloud.networking.service_cidr | to_json }}}
             - {name: SHADOWSOCKS, value: 'on'}
             - {name: SHADOWSOCKS_CIPHER, value: aes-256-gcm}
@@ -95,6 +181,7 @@ spec:
             seccompProfile: {type: RuntimeDefault}
           volumeMounts:
             - {name: tun, mountPath: /dev/net/tun}
+            - {name: firewall, mountPath: /iptables, readOnly: true}
         - name: dns
           image: {{ media_coredns_image }}
           args: [-conf, /etc/coredns/Corefile]
@@ -116,9 +203,39 @@ spec:
             seccompProfile: {type: RuntimeDefault}
           volumeMounts:
             - {name: dns-config, mountPath: /etc/coredns, readOnly: true}
+        - name: qbittorrent
+          image: {{ media_images.qbittorrent }}
+          env:
+            - {name: TZ, value: {{ private_cloud.media.timezone | to_json }}}
+            - {name: WEBUI_PORT, value: '8080'}
+            - {name: TORRENTING_PORT, value: "{{ private_cloud.media.vpn.forwarded_port }}"}
+          ports:
+            - {name: http, containerPort: 8080, protocol: TCP}
+          readinessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 10, periodSeconds: 10}
+          livenessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 30, periodSeconds: 20}
+          resources:
+            requests: {cpu: 100m, memory: {{ private_cloud_memory_requests.qbittorrent | private_cloud_memory_request(private_cloud.media.max_ram.qbittorrent) }}}
+            limits: {memory: {{ private_cloud.media.max_ram.qbittorrent }}}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ media_uid }}
+            runAsGroup: {{ media_uid }}
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          volumeMounts:
+            - {name: runtime, mountPath: /run}
+            - {name: config, mountPath: /config}
+            - {name: library, mountPath: /media}
       volumes:
         - {name: tun, hostPath: {path: /dev/net/tun, type: CharDevice}}
         - {name: dns-config, configMap: {name: media-vpn-dns, defaultMode: 0444}}
+        - {name: firewall, configMap: {name: media-vpn-firewall, defaultMode: 0444}}
+        - {name: runtime, emptyDir: {}}
+        - {name: config, persistentVolumeClaim: {claimName: qbittorrent-data}}
+        - {name: library, persistentVolumeClaim: {claimName: media-library-data}}
+        - {name: file-logs-config, configMap: {name: arr-file-logs}}
+        - {name: logging-settings, configMap: {name: qbittorrent-logging}}
 ---
 apiVersion: v1
 kind: Service
@@ -134,11 +251,19 @@ spec:
     - {name: dns-udp, port: 53, targetPort: dns-udp, protocol: UDP}
     - {name: dns-tcp, port: 53, targetPort: dns-tcp, protocol: TCP}
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbittorrent
+  namespace: media
+spec:
+  selector: {app.kubernetes.io/name: media-vpn}
+  ports: [{name: http, port: 8080, targetPort: http, protocol: TCP}]
+---
 {% set guarded = [
   {'name': 'sonarr', 'port': 8989},
   {'name': 'radarr', 'port': 7878},
   {'name': 'prowlarr', 'port': 9696},
-  {'name': 'qbittorrent', 'port': 8080},
   {'name': 'bazarr', 'port': 6767},
   {'name': 'flaresolverr', 'port': 8191}
 ] %}
@@ -159,18 +284,12 @@ spec:
       labels:
         app.kubernetes.io/name: {{ app.name }}
         private-cloud.example/vpn-guarded: 'true'
-{% if app.name == 'qbittorrent' %}
-      annotations:
-        checksum/logging-settings: {{ (lookup('file', role_path ~ '/files/configure_qbittorrent.py') ~ lookup('file', role_path ~ '/files/qbittorrent_helpers.py')) | hash('sha256') }}
-        private-cloud.example/qbittorrent-secret-revision: "{{ media_qbittorrent_secret_revision }}"
-        checksum/file-logs: {{ lookup('file', playbook_dir ~ '/../k0s-services/arr/files/file-logs.conf') | hash('sha256') }}
-{% endif %}
     spec:
       automountServiceAccountToken: false
       initContainers:
         - name: prepare-runtime
           image: {{ media_images[app.name] }}
-          command: [/bin/sh, -ceu, 'chown 1000:1000 /run']
+          command: [/bin/sh, -ceu, 'chown {{ media_uid }}:{{ media_uid }} /run']
           securityContext:
             runAsUser: 0
             runAsGroup: 0
@@ -182,49 +301,23 @@ spec:
             limits: {memory: 64Mi}
           volumeMounts:
             - {name: runtime, mountPath: /run}
-{% if app.name == 'qbittorrent' %}
-        - name: configure-logging
-          image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
-          command: [python3, /scripts/configure.py]
-          env:
-            - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
-            - name: QBITTORRENT_PASSWORD
-              valueFrom: {secretKeyRef: {name: qbittorrent-credentials, key: password}}
+{% if app.name == 'flaresolverr' %}
+        # The image owns /app as UID 1000 and patches chromedriver there at startup, so the media UID runs a writable copy.
+        - name: copy-app
+          image: {{ media_images[app.name] }}
+          command: [/bin/sh, -ceu, 'cp -R /app/. /writable-app/']
           securityContext:
             runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
+            runAsUser: {{ media_uid }}
+            runAsGroup: {{ media_uid }}
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
             seccompProfile: {type: RuntimeDefault}
           resources:
-            requests: {cpu: 10m, memory: 32Mi}
+            requests: {cpu: 10m, memory: 16Mi}
             limits: {memory: 64Mi}
           volumeMounts:
-            - {name: config, mountPath: /config}
-            - {name: logging-settings, mountPath: /scripts, readOnly: true}
-        - name: file-logs
-          restartPolicy: Always
-          image: fluent/fluent-bit:4.2.3@sha256:a5761fa961cb22dd0875883a4d446b1acd99d4935d77358aa9f50ee177e44fe2
-          args: [-c, /etc/file-logs/fluent-bit.conf]
-          env:
-            - {name: LOG_PATH, value: /logs/qbittorrent.log}
-          resources:
-            requests: {cpu: 10m, memory: {{ private_cloud_memory_requests.file_logs | private_cloud_memory_request(private_cloud.media.max_ram.file_logs) }}}
-            limits: {memory: {{ private_cloud.media.max_ram.file_logs }}}
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities: {drop: [ALL]}
-            seccompProfile: {type: RuntimeDefault}
-          volumeMounts:
-            - {name: config, mountPath: /logs, subPath: qBittorrent/logs, readOnly: true}
-            - {name: config, mountPath: /state, subPath: .log-forwarder}
-            - {name: file-logs-config, mountPath: /etc/file-logs, readOnly: true}
+            - {name: app, mountPath: /writable-app}
 {% endif %}
       dnsPolicy: None
       dnsConfig:
@@ -237,9 +330,9 @@ spec:
           image: {{ media_images[app.name] }}
           env:
             - {name: TZ, value: {{ private_cloud.media.timezone | to_json }}}
-{% if app.name == 'qbittorrent' %}
-            - {name: WEBUI_PORT, value: '8080'}
-            - {name: TORRENTING_PORT, value: '6881'}
+{% if app.name == 'flaresolverr' %}
+            # The media UID has no account in the image, so Chromium needs a writable home.
+            - {name: HOME, value: /tmp}
 {% endif %}
           ports:
             - {name: http, containerPort: {{ app.port }}, protocol: TCP}
@@ -250,8 +343,8 @@ spec:
             limits: {memory: {{ memory_limit }}}
           securityContext:
             runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
+            runAsUser: {{ media_uid }}
+            runAsGroup: {{ media_uid }}
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL]}
             seccompProfile: {type: RuntimeDefault}
@@ -259,10 +352,11 @@ spec:
             - {name: runtime, mountPath: /run}
 {% if app.name == 'flaresolverr' %}
             - {name: shm, mountPath: /dev/shm}
+            - {name: app, mountPath: /app}
 {% else %}
             - {name: config, mountPath: /config}
 {% endif %}
-{% if app.name in ['sonarr', 'radarr', 'qbittorrent', 'bazarr'] %}
+{% if app.name in ['sonarr', 'radarr', 'bazarr'] %}
             - {name: library, mountPath: /media}
 {% endif %}
         - name: vpn-route
@@ -290,7 +384,8 @@ spec:
               ip address add 198.18.0.1/15 dev tun0
               ip link set tun0 up
               ip route replace default dev tun0
-              exec tun2socks --device tun://tun0 --proxy "ss://aes-256-gcm:${PROXY_PASSWORD}@{{ private_cloud.media.vpn.gateway_cluster_ip }}:8388"
+              # Short UDP sessions keep DHT and uTP from piling up proxy state; per-connection logs stay off.
+              exec tun2socks --device tun://tun0 --proxy "ss://aes-256-gcm:${PROXY_PASSWORD}@{{ private_cloud.media.vpn.gateway_cluster_ip }}:8388" --udp-timeout 30s --loglevel warn
           env:
             - name: PROXY_PASSWORD
               valueFrom: {secretKeyRef: {name: media-vpn, key: proxy-password}}
@@ -333,15 +428,12 @@ spec:
 {% if app.name == 'flaresolverr' %}
         # Chromium needs a larger shared memory segment than the container default.
         - {name: shm, emptyDir: {medium: Memory, sizeLimit: 256Mi}}
+        - {name: app, emptyDir: {sizeLimit: 512Mi}}
 {% else %}
         - {name: config, persistentVolumeClaim: {claimName: {{ app.name }}-data}}
 {% endif %}
         - {name: tun, hostPath: {path: /dev/net/tun, type: CharDevice}}
-{% if app.name == 'qbittorrent' %}
-        - {name: file-logs-config, configMap: {name: arr-file-logs}}
-        - {name: logging-settings, configMap: {name: qbittorrent-logging}}
-{% endif %}
-{% if app.name in ['sonarr', 'radarr', 'qbittorrent', 'bazarr'] %}
+{% if app.name in ['sonarr', 'radarr', 'bazarr'] %}
         - {name: library, persistentVolumeClaim: {claimName: media-library-data}}
 {% endif %}
 ---

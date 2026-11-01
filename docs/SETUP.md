@@ -115,6 +115,8 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 - [ ] Select Linux and WireGuard on UDP port 1637 or 47107, then generate a configuration for a server in the chosen country.
 - [ ] Enter the chosen AirVPN countries as `media.vpn.server_countries`.
 - [ ] Copy the `Endpoint` port to `media.vpn.endpoint_port`.
+- [ ] Open AirVPN Client Area, then Ports, and forward one port for TCP and UDP so peers can connect to qBittorrent.
+- [ ] Enter the forwarded port as `media.vpn.forwarded_port`.
 - [ ] Copy the `[Peer]` `PublicKey` to `media.vpn.peer_public_key`.
 - [ ] Copy the `[Interface]` `Address` IPv4 value to `media.vpn.address`.
 - [ ] Copy the `[Interface]` `MTU` to `media.vpn.mtu`.

@@ -6,6 +6,10 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 
+QUALITY_SOURCES = ('HDTV-', 'WEBDL-', 'WEBRip-', 'Bluray-', 'Remux-')
+TOP_GROUP_ID = 1000
+MINIMUM_SEEDERS = 5
+
 
 def configure_root(client, path):
     if any(item['path'] == path for item in client.request('GET', '/rootfolder')):
@@ -19,18 +23,7 @@ def configure_root(client, path):
 def configure_quality_profile(client, preset):
     profiles = client.request('GET', '/qualityprofile')
     existing = next((profile for profile in profiles if profile['name'] == 'private-cloud'), None)
-    desired = copy.deepcopy(existing or next((profile for profile in profiles if profile['name'] == 'Any'), profiles[0]))
-    desired.pop('id', None)
-    desired['name'] = 'private-cloud'
-    desired['upgradeAllowed'] = True
-    qualities = _configure_quality_items(desired['items'], int(preset[:-1]))
-    if not qualities:
-        raise RuntimeError('ARR exposes no qualities for the selected profile')
-    cutoff_name = 'Bluray-' + preset
-    cutoff = next((quality_id for name, quality_id in qualities if name == cutoff_name), None)
-    if cutoff is None:
-        raise RuntimeError('ARR exposes no Blu-ray quality for the selected profile cutoff')
-    desired['cutoff'] = cutoff
+    desired = desired_quality_profile(existing or next((profile for profile in profiles if profile['name'] == 'Any'), profiles[0]), preset)
     changed = existing is None or _quality_profile_state(existing) != _quality_profile_state(desired)
     if changed:
         if existing:
@@ -42,6 +35,53 @@ def configure_quality_profile(client, preset):
     if _quality_profile_state(stored) != _quality_profile_state(desired):
         raise RuntimeError('ARR did not persist the managed quality profile')
     return changed
+
+
+def desired_quality_profile(profile, preset):
+    """Every quality at the selected resolution, Remux included, shares one rank so seeders choose among them."""
+    resolution = int(preset[:-1])
+    lower, top = [], []
+    for quality in _flat_qualities(profile['items']):
+        allowed = 720 <= quality.get('resolution', 0) <= resolution and quality['name'].startswith(QUALITY_SOURCES)
+        entry = {'quality': quality, 'items': [], 'allowed': allowed}
+        (top if allowed and quality['resolution'] == resolution else lower).append(entry)
+    if not top:
+        raise RuntimeError('ARR exposes no qualities for the selected profile')
+    desired = copy.deepcopy(profile)
+    desired.pop('id', None)
+    desired.update(name='private-cloud', upgradeAllowed=True, cutoff=TOP_GROUP_ID,
+                   items=lower + [{'name': preset, 'id': TOP_GROUP_ID, 'items': top, 'allowed': True}])
+    return desired
+
+
+def configure_minimum_seeders(prowlarr, applications):
+    """Prowlarr syncs its app profile minimum, but skips failing indexers, so the ARR indexers are set directly too."""
+    changed = False
+    for profile in prowlarr.request('GET', '/appprofile'):
+        if profile.get('minimumSeeders') != MINIMUM_SEEDERS:
+            prowlarr.request('PUT', '/appprofile/' + str(profile['id']), {**profile, 'minimumSeeders': MINIMUM_SEEDERS})
+            changed = True
+    if any(profile.get('minimumSeeders') != MINIMUM_SEEDERS for profile in prowlarr.request('GET', '/appprofile')):
+        raise RuntimeError('Prowlarr did not persist the minimum seeders')
+    for client in applications:
+        for indexer in lagging_seeder_indexers(client):
+            for field in indexer['fields']:
+                if field['name'] == 'minimumSeeders':
+                    field['value'] = MINIMUM_SEEDERS
+            # forceSave skips the connection test that a temporarily failing indexer would fail.
+            client.request('PUT', f"/indexer/{indexer['id']}?forceSave=true", indexer)
+            changed = True
+        if lagging_seeder_indexers(client):
+            raise RuntimeError('ARR did not persist the minimum seeders')
+    return changed
+
+
+def lagging_seeder_indexers(client):
+    return [
+        indexer for indexer in client.request('GET', '/indexer')
+        if indexer.get('protocol') == 'torrent'
+        and any(field['name'] == 'minimumSeeders' and field.get('value') != MINIMUM_SEEDERS for field in indexer['fields'])
+    ]
 
 
 def configure_download_client(client, name, password):
@@ -93,28 +133,12 @@ def read_api_key(path):
     raise RuntimeError('ARR did not create its API key')
 
 
-def _configure_quality_items(items, maximum_resolution):
-    qualities = []
+def _flat_qualities(items):
     for item in items:
-        children = item.get('items') or []
-        if children:
-            child_qualities = _configure_quality_items(children, maximum_resolution)
-            item['allowed'] = bool(child_qualities)
-            if child_qualities and 'id' not in item:
-                raise RuntimeError('ARR quality group has no cutoff identifier')
-            qualities.extend((name, item['id']) for name, _ in child_qualities)
-            continue
-        quality = item.get('quality') or {}
-        name = quality.get('name', '')
-        resolution = quality.get('resolution', 0)
-        item['allowed'] = (
-            720 <= resolution <= maximum_resolution
-            and name.startswith(('HDTV-', 'WEBDL-', 'WEBRip-', 'Bluray-'))
-            and 'Remux' not in name
-        )
-        if item['allowed']:
-            qualities.append((name, quality['id']))
-    return qualities
+        if item.get('items'):
+            yield from _flat_qualities(item['items'])
+        else:
+            yield item['quality']
 
 
 def _quality_profile_state(profile):

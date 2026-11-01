@@ -1,4 +1,4 @@
-schema_version: 17
+schema_version: 18
 private_cloud:
   domain: example.com
   admin_email: admin@example.com
@@ -65,7 +65,7 @@ private_cloud:
       prowlarr: 1Gi
       qbittorrent: 1Gi
       jellyfin: 4Gi
-      vpn_gateway: 256Mi
+      vpn_gateway: 512Mi
       vpn_route: 64Mi
       dns: 128Mi
       file_logs: 64Mi
@@ -79,6 +79,8 @@ private_cloud:
       server_countries:
         - Switzerland
       endpoint_port: 1637
+      # AirVPN forwards this public port through the tunnel to qBittorrent, so other peers can open connections to it.
+      forwarded_port: 40000 # replace with the port created in AirVPN Client Area, Ports, for TCP and UDP
       peer_public_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= # replace with the AirVPN [Peer] PublicKey
       address: 10.128.64.2/32 # replace with your AirVPN [Interface] Address IPv4 value
       mtu: 1320

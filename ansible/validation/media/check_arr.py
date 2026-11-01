@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "roles" / "media" / "files"))
 
-from arr_helpers import Arr, _configure_quality_items, _quality_profile_state, read_api_key
+from arr_helpers import MINIMUM_SEEDERS, Arr, _quality_profile_state, desired_quality_profile, lagging_seeder_indexers, read_api_key
 from bazarr_helpers import Bazarr, bazarr_connection_state, bazarr_connections, read_bazarr_key
 
 
@@ -26,6 +26,7 @@ def main():
         validate_download_client(clients[name], name)
         validate_prowlarr_application(clients["prowlarr"], name)
     validate_flaresolverr_proxy(clients["prowlarr"])
+    validate_minimum_seeders(clients["prowlarr"], [clients["sonarr"], clients["radarr"]])
     bazarr = Bazarr(f"http://{config['addresses']['bazarr']}:6767/api", read_bazarr_key("/" + config["datasets"]["bazarr"] + "/config/config.yaml"))
     bazarr.wait_ready()
     if bazarr_connection_state(bazarr) != bazarr_connections({name: clients[name].key for name in ("sonarr", "radarr")}):
@@ -39,17 +40,15 @@ def validate_quality_profile(client, preset):
     profile = next((item for item in profiles if item["name"] == "private-cloud"), None)
     if profile is None:
         raise RuntimeError("ARR is missing its managed quality profile")
-
-    desired = copy.deepcopy(profile)
-    qualities = _configure_quality_items(desired["items"], int(preset[:-1]))
-    cutoff_name = "Bluray-" + preset
-    cutoff = next((quality_id for name, quality_id in qualities if name == cutoff_name), None)
-    if cutoff is None:
-        raise RuntimeError("ARR is missing the requested quality cutoff")
-    desired["upgradeAllowed"] = True
-    desired["cutoff"] = cutoff
-    if _quality_profile_state(profile) != _quality_profile_state(desired):
+    if _quality_profile_state(profile) != _quality_profile_state(desired_quality_profile(profile, preset)):
         raise RuntimeError("ARR quality profile differs from global configuration")
+
+
+def validate_minimum_seeders(prowlarr, applications):
+    if any(profile.get("minimumSeeders") != MINIMUM_SEEDERS for profile in prowlarr.request("GET", "/appprofile")):
+        raise RuntimeError("Prowlarr app profile differs from the managed minimum seeders")
+    if any(lagging_seeder_indexers(client) for client in applications):
+        raise RuntimeError("An ARR torrent indexer differs from the managed minimum seeders")
 
 
 def validate_root_folder(client, path):

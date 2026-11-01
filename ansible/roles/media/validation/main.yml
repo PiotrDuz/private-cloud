@@ -6,7 +6,7 @@
     kind: Deployment
     namespace: media
     name: "{{ item }}"
-  loop: [media-vpn, sonarr, radarr, prowlarr, qbittorrent, flaresolverr, bazarr, jellyfin]
+  loop: [media-vpn, sonarr, radarr, prowlarr, flaresolverr, bazarr, jellyfin]
   register: media_validation_deployments
   until:
     - media_validation_deployments.resources | default([]) | length == 1
@@ -83,7 +83,11 @@
         (media_validation_gateway.resources[0].spec.template.spec.containers
         | selectattr('name', 'equalto', 'wireguard')
         | map(attribute='securityContext.capabilities.add') | first | sort) == ['CHOWN', 'NET_ADMIN']
-    fail_msg: The media gateway capabilities differ from the WireGuard minimum.
+      - >-
+        (media_validation_gateway.resources[0].spec.template.spec.containers
+        | selectattr('name', 'equalto', 'qbittorrent')
+        | map(attribute='securityContext.capabilities') | first) == {'drop': ['ALL']}
+    fail_msg: The media gateway capabilities differ from the WireGuard minimum, or qBittorrent holds a capability.
 
 - name: Verify each ARR tun2socks process is attached to its only TUN device
   ansible.builtin.command:
@@ -113,49 +117,75 @@
           done
         done
         exit 1
-  loop: [sonarr, radarr, prowlarr, qbittorrent, flaresolverr, bazarr]
+  loop: [sonarr, radarr, prowlarr, flaresolverr, bazarr]
   changed_when: false
 
-- name: Verify qBittorrent's configured and active tunnel routes
+- name: Verify the media UID route through the tunnel
   ansible.builtin.command:
-    argv: [k0s, kubectl, exec, -n, media, deployment/qbittorrent, -c, vpn-route, --, ip, route, get, 1.1.1.1]
+    argv: [k0s, kubectl, exec, -n, media, deployment/media-vpn, -c, wireguard, --, ip, route, get, 1.1.1.1, uid, "{{ media_uid }}"]
   register: media_validation_qbittorrent_route
   changed_when: false
 
-- name: Require qBittorrent's default route through tun0
+- name: Require qBittorrent's route through wg0
   ansible.builtin.assert:
-    that: media_validation_qbittorrent_route.stdout is search('dev tun0')
-    fail_msg: qBittorrent traffic is not routed through its TUN interface.
+    that: media_validation_qbittorrent_route.stdout is search('dev wg0')
+    fail_msg: qBittorrent traffic is not routed through the WireGuard tunnel.
+
+- name: Read the gateway output firewall
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, media, deployment/media-vpn, -c, wireguard, --, iptables, -S, OUTPUT]
+  register: media_validation_gateway_firewall
+  changed_when: false
+
+- name: Require the media UID limited to the tunnel, gateway DNS, and replies
+  ansible.builtin.assert:
+    that: >-
+      (media_validation_gateway_firewall.stdout_lines[1:6] | map('regex_replace', ' +$', '') | list) == [
+        '-A OUTPUT -m owner --uid-owner ' ~ media_uid ~ ' -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT',
+        '-A OUTPUT -d 127.0.0.1/32 -o lo -p tcp -m owner --uid-owner ' ~ media_uid ~ ' -m tcp --dport 53 -j ACCEPT',
+        '-A OUTPUT -d 127.0.0.1/32 -o lo -p udp -m owner --uid-owner ' ~ media_uid ~ ' -m udp --dport 53 -j ACCEPT',
+        '-A OUTPUT -o wg0 -m owner --uid-owner ' ~ media_uid ~ ' -j ACCEPT',
+        '-A OUTPUT -m owner --uid-owner ' ~ media_uid ~ ' -j DROP'
+      ]
+    fail_msg: The gateway firewall no longer confines qBittorrent to the tunnel.
+
+- name: Verify qBittorrent cannot reach the gluetun control server
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, media, deployment/media-vpn, -c, qbittorrent, --, curl, -sS, -m, '5', -o, /dev/null, http://127.0.0.1:8000/v1/vpn/status]
+  register: media_validation_qbittorrent_control
+  failed_when: media_validation_qbittorrent_control.rc == 0
+  changed_when: false
 
 - name: Read the qBittorrent interface binding
   ansible.builtin.command:
-    argv: [k0s, kubectl, exec, -n, media, deployment/qbittorrent, -c, qbittorrent, --, cat, /config/qBittorrent/qBittorrent.conf]
+    argv: [k0s, kubectl, exec, -n, media, deployment/media-vpn, -c, qbittorrent, --, cat, /config/qBittorrent/qBittorrent.conf]
   register: media_validation_qbittorrent_configuration
   changed_when: false
   no_log: true
 
-- name: Require qBittorrent bound to tun0 in anonymous mode without seeding after completion
+- name: Require qBittorrent bound to wg0 on the forwarded port in anonymous mode without seeding after completion
   ansible.builtin.assert:
     that:
-      - "'Session\\Interface=tun0' in media_validation_qbittorrent_configuration.stdout"
-      - "'Session\\InterfaceName=tun0' in media_validation_qbittorrent_configuration.stdout"
+      - "'Session\\Interface=wg0' in media_validation_qbittorrent_configuration.stdout"
+      - "'Session\\InterfaceName=wg0' in media_validation_qbittorrent_configuration.stdout"
+      - "('Session\\Port=' ~ private_cloud.media.vpn.forwarded_port) in media_validation_qbittorrent_configuration.stdout_lines"
       - "'Session\\GlobalMaxRatio=0' in media_validation_qbittorrent_configuration.stdout"
       - "'Session\\ShareLimitAction=Stop' in media_validation_qbittorrent_configuration.stdout"
       - "'Session\\AnonymousModeEnabled=true' in media_validation_qbittorrent_configuration.stdout"
-    fail_msg: qBittorrent has lost its tun0 interface binding, seeding limit, or anonymous mode.
+    fail_msg: qBittorrent has lost its wg0 interface binding, forwarded port, seeding limit, or anonymous mode.
   no_log: true
 
 - name: Read the ARR application process UIDs
   ansible.builtin.command:
-    argv: [k0s, kubectl, exec, -n, media, "deployment/{{ item }}", -c, "{{ item }}", --, id, -u]
+    argv: [k0s, kubectl, exec, -n, media, "deployment/{{ 'media-vpn' if item == 'qbittorrent' else item }}", -c, "{{ item }}", --, id, -u]
   loop: [sonarr, radarr, prowlarr, qbittorrent, flaresolverr, bazarr]
   register: media_validation_arr_uids
   changed_when: false
 
-- name: Require rootless ARR application containers
+- name: Require ARR application containers on the dedicated media UID
   ansible.builtin.assert:
-    that: item.stdout | trim == '1000'
-    fail_msg: "{{ item.item }} is not running as UID 1000."
+    that: item.stdout | trim == media_uid | string
+    fail_msg: "{{ item.item }} is not running as the dedicated media UID {{ media_uid }}."
   loop: "{{ media_validation_arr_uids.results }}"
   loop_control:
     label: "{{ item.item }}"
@@ -232,7 +262,7 @@
 
 - name: Read the guarded media exit address through the VPN
   ansible.builtin.command:
-    argv: [k0s, kubectl, exec, -n, media, deployment/qbittorrent, -c, qbittorrent, --, curl, -fsS, --max-time, '30', "{{ private_cloud.networking.public_ip_url }}"]
+    argv: [k0s, kubectl, exec, -n, media, deployment/media-vpn, -c, qbittorrent, --, curl, -fsS, --max-time, '30', "{{ private_cloud.networking.public_ip_url }}"]
   register: media_validation_vpn_address
   changed_when: false
 

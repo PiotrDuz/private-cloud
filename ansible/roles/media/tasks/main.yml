@@ -57,16 +57,16 @@
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_permissions.yml"
   vars:
     private_cloud_service_dataset_mountpoint: "/{{ media_datasets[item] }}"
-    private_cloud_service_dataset_owner: 1000
-    private_cloud_service_dataset_group: 1000
+    private_cloud_service_dataset_owner: "{{ media_uid }}"
+    private_cloud_service_dataset_group: "{{ media_uid }}"
   loop: "{{ media_services }}"
 
 - name: Create shared library and download folders
   ansible.builtin.file:
     path: "/{{ media_datasets['media-library'] }}/{{ item }}"
     state: directory
-    owner: 1000
-    group: 1000
+    owner: "{{ media_uid }}"
+    group: "{{ media_uid }}"
     mode: '0750'
   loop: [movies, tv, downloads, incomplete]
 
@@ -74,8 +74,8 @@
   ansible.builtin.file:
     path: "/{{ media_datasets[item.service] }}/{{ item.directory }}"
     state: directory
-    owner: 1000
-    group: 1000
+    owner: "{{ media_uid }}"
+    group: "{{ media_uid }}"
     mode: '0750'
   loop:
     - {service: qbittorrent, directory: qBittorrent/logs}
@@ -85,16 +85,16 @@
   ansible.builtin.file:
     path: "/{{ media_datasets['qbittorrent'] }}/qBittorrent"
     state: directory
-    owner: 1000
-    group: 1000
+    owner: "{{ media_uid }}"
+    group: "{{ media_uid }}"
     mode: '0750'
 
 - name: Install guarded qBittorrent defaults
   ansible.builtin.template:
     src: qbittorrent.conf.j2
     dest: "/{{ media_datasets['qbittorrent'] }}/qBittorrent/qBittorrent.conf"
-    owner: 1000
-    group: 1000
+    owner: "{{ media_uid }}"
+    group: "{{ media_uid }}"
     mode: '0600'
     force: false
 

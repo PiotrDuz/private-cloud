@@ -17,9 +17,9 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
+        runAsUser: {{ media_uid }}
+        runAsGroup: {{ media_uid }}
+        fsGroup: {{ media_uid }}
         fsGroupChangePolicy: OnRootMismatch
 {% if private_cloud.stages.intel_gpu | bool %}
         supplementalGroups: [{{ intel_gpu_render_group_id | int }}]

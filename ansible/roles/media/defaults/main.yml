@@ -1,6 +1,8 @@
 ---
 media_kubeconfig: /run/private-cloud/kubeconfig
 media_pv_capacity: 10Ti
+# Media workloads share an unused UID and GID, apart from the host administrator account at 1000.
+media_uid: 2000
 media_services: [jellyfin, sonarr, radarr, prowlarr, qbittorrent, bazarr, media-library]
 media_images:
   jellyfin: jellyfin/jellyfin:10.11.4@sha256:aab0b50a3ce43a41621fc7040a379cc57174059aec8f9c17a90176649a0c1ab1
@@ -10,8 +12,8 @@ media_images:
   qbittorrent: lscr.io/linuxserver/qbittorrent:5.1.2@sha256:7034f73a3c6fa4ea40fd67df462939d1665d765231b572523921c98c2db5362e
   bazarr: lscr.io/linuxserver/bazarr:v1.6.2-ls368@sha256:fb0437897eaa7f96cf6ac42f795f8dcc208d34ec969eac5d366454e767304eb9
   flaresolverr: ghcr.io/flaresolverr/flaresolverr:v3.5.2@sha256:c80ae007ce2ccdcd217a12426e4f039ef763ff90738c808d38810c3e59323767
-# FlareSolverr is stateless and runs one Chromium at a time, so its limit is fixed.
-media_flaresolverr_max_ram: 1Gi
+# FlareSolverr is stateless; concurrent challenges each start Chromium, and its in-memory /dev/shm counts too.
+media_flaresolverr_max_ram: 2Gi
 # Bazarr only matches subtitle files, so its limit is fixed.
 media_bazarr_max_ram: 512Mi
 media_vpn_gateway_image: qmcgaw/gluetun:v3.41.0@sha256:6b54856716d0de56e5bb00a77029b0adea57284cf5a466f23aad5979257d3045

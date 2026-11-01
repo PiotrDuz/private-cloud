@@ -32,7 +32,7 @@ The [arr stack](../arr/README.md) provisions the shared library and downloads me
 - The init container writes `KnownProxies` in `network.xml` from `private_cloud.networking.pod_cidr`.
 - The Jellyfin NetworkPolicy admits only Traefik, so the pod network can only be Traefik.
 - Automatic subtitle downloads and writes alongside media remain disabled.
-- The server runs as UID 1000 with the host render-device group.
+- The server runs as the dedicated media UID 2000 with the host render-device group.
 - Newly added libraries need local metadata and artwork saving off because the mount is read-only.
 
 Library settings follow Jellyfin's [LibraryOptions](https://github.com/jellyfin/jellyfin/blob/v10.11.4/MediaBrowser.Model/Configuration/LibraryOptions.cs) and [persisted library configuration](https://github.com/jellyfin/jellyfin/blob/v10.11.4/MediaBrowser.Controller/Entities/CollectionFolder.cs).

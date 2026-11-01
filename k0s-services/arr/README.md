@@ -7,9 +7,14 @@ The arr stack templates are managed by `ansible/roles/media` through the `media`
 - Sonarr, Radarr, Prowlarr, qBittorrent, Bazarr, and FlareSolverr run in the `media` namespace.
 - FlareSolverr is stateless and has no dataset.
 - External traffic and DNS go through the shared AirVPN WireGuard gateway.
-- Per-pod `tun2socks` helpers carry the guarded applications' traffic.
+- qBittorrent runs inside the gateway pod and uses the tunnel directly.
+- Per-pod `tun2socks` helpers carry the other guarded applications' traffic.
 - NetworkPolicy blocks direct Internet fallback.
-- qBittorrent binds to `tun0` with UPnP disabled.
+- The applications run as the dedicated media UID and GID 2000, which no host account uses.
+- Kubernetes user namespaces are not used, because the kernel cannot idmap the `/dev/net/tun` device mount that `tun2socks` and the gateway need.
+- qBittorrent binds to `wg0` with UPnP disabled.
+- The gateway firewall limits the media UID to `wg0`, gateway DNS, and replies.
+- AirVPN forwards `media.vpn.forwarded_port` to qBittorrent through the tunnel.
 - Traefik publishes the Radarr, Prowlarr, and Bazarr UIs at `radarr.<domain>`, `prowlarr.<domain>`, and `bazarr.<domain>` to local networks and VPN peers only.
 - These hostnames stay out of public DNS and resolve through LAN DNS.
 - Radarr, Prowlarr, and Bazarr keep their own logins; Traefik adds no authentication.
@@ -19,7 +24,7 @@ The arr stack templates are managed by `ansible/roles/media` through the `media`
 - This folder provisions the shared `media-library` dataset and claim.
 - Sonarr, Radarr, qBittorrent, and Bazarr mount the shared library writable.
 
-Gluetun selects an AirVPN server by configured country from its built-in list, so no DNS lookup leaves the tunnel. AirVPN port forwarding cannot reach qBittorrent through the shadowsocks and `tun2socks` path, so qBittorrent stays unreachable for inbound peers. The media role connects the applications through their native APIs after deployment.
+Gluetun selects an AirVPN server by configured country from its built-in list, so no DNS lookup leaves the tunnel. The media role connects the applications through their native APIs after deployment.
 
 [Jellyfin](../jellyfin/README.md) has its own templates and mounts the shared library read-only. The media role applies the arr stack and library storage before Jellyfin.
 

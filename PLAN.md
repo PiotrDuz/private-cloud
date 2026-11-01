@@ -337,7 +337,7 @@ This file is the source of truth for the desired system state and its major deci
 
 ### AirVPN WireGuard gateway
 
-- Route guarded media external traffic and DNS through an AirVPN WireGuard tunnel with per-pod tun2socks helpers
+- Route guarded media external traffic and DNS through an AirVPN WireGuard tunnel, with qBittorrent in the gateway pod on a forwarded port and per-pod tun2socks helpers for the other applications
 - Block direct Internet fallback when the VPN fails
 - Select AirVPN servers by configured country from gluetun's built-in server list without DNS outside the tunnel
 - Let gluetun's firewall pin traffic outside the tunnel to the selected server's WireGuard UDP port
@@ -367,6 +367,7 @@ This file is the source of truth for the desired system state and its major deci
 - Run ordinary application containers with fixed non-root UIDs and disabled privilege escalation
 - Claim Immich, AFFiNE, and Jellyfin administrators through the installer before publishing their routes
     * Run AFFiNE, Immich server, and OnlyOffice container root inside Kubernetes user namespaces
+    * Run Jellyfin and the ARR applications as a dedicated media UID that no host account uses
     * Map user-namespaced root to an unprivileged host UID
     * Preserve the container startup capabilities required by AFFiNE and OnlyOffice inside their user namespaces
 - Drop Linux capabilities except for workload-specific startup and networking requirements

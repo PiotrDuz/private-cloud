@@ -47,7 +47,7 @@ LUKS_KEY_FILE = RUNTIME_DIRECTORY / "luks-key"
 INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
 SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate", "validate")
-CURRENT_SCHEMA_VERSION = 17
+CURRENT_SCHEMA_VERSION = 18
 CURRENT_SECRETS_SCHEMA_VERSION = 9
 SECRET_SCHEMAS = {
     "storage": {"encryption_passphrase"},
@@ -113,6 +113,8 @@ MACHINE_SECRETS = {
 WIREGUARD_KEY_PATTERN = re.compile(r"[A-Za-z0-9+/]{43}=")
 COUNTRY_PATTERN = re.compile(r"[A-Z][A-Za-z .'-]{1,62}")
 AIRVPN_WIREGUARD_PORTS = {1637, 47107}
+# The gateway pod already listens on these ports for its WebUI, proxy, control, and health servers.
+MEDIA_GATEWAY_PORTS = {8000, 8080, 8388, 9999}
 ADMIN_PASSWORD_MINIMUM_LENGTH = 16
 AFFINE_PASSWORD_MAXIMUM_LENGTH = 32
 VENDOR_DEFAULT_PASSWORDS = {
@@ -553,7 +555,7 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
     if any(value not in {"720p", "1080p", "2160p"} for value in quality_profiles.values()):
         raise InstallerError("Media quality profiles must be 720p, 1080p, or 2160p")
     vpn = media.get("vpn")
-    if not isinstance(vpn, dict) or set(vpn) != {"gateway_cluster_ip", "server_countries", "endpoint_port", "peer_public_key", "address", "mtu", "dns", "persistent_keepalive"}:
+    if not isinstance(vpn, dict) or set(vpn) != {"gateway_cluster_ip", "server_countries", "endpoint_port", "forwarded_port", "peer_public_key", "address", "mtu", "dns", "persistent_keepalive"}:
         raise InstallerError("Media VPN configuration has missing or unknown keys")
     try:
         gateway_address = ipaddress.ip_address(vpn["gateway_cluster_ip"])
@@ -575,6 +577,8 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Media VPN server_countries must list AirVPN country names")
     if vpn.get("endpoint_port") not in AIRVPN_WIREGUARD_PORTS or type(vpn["endpoint_port"]) is not int:
         raise InstallerError("Media VPN endpoint_port must be an AirVPN WireGuard port: 1637 or 47107")
+    if type(vpn.get("forwarded_port")) is not int or not 1024 <= vpn["forwarded_port"] <= 65535 or vpn["forwarded_port"] in MEDIA_GATEWAY_PORTS:
+        raise InstallerError("Media VPN forwarded_port must be an AirVPN forwarded port between 1024 and 65535, other than 8000, 8080, 8388, and 9999")
     if not isinstance(vpn.get("peer_public_key"), str) or not WIREGUARD_KEY_PATTERN.fullmatch(vpn["peer_public_key"]):
         raise InstallerError("Invalid media VPN peer public key")
     if type(vpn.get("mtu")) is not int or not 1280 <= vpn["mtu"] <= 1420:

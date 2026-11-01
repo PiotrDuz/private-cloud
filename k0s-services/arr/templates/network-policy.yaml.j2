@@ -16,6 +16,14 @@ spec:
         - {protocol: UDP, port: 8388}
         - {protocol: TCP, port: 53}
         - {protocol: UDP, port: 53}
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [sonarr, radarr]
+      ports:
+        - {protocol: TCP, port: 8080}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -72,7 +80,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/name
         operator: In
-        values: [sonarr, radarr, prowlarr, qbittorrent, flaresolverr, bazarr]
+        values: [sonarr, radarr, prowlarr, flaresolverr, bazarr]
   policyTypes: [Ingress]
   ingress:
     - from:
@@ -80,12 +88,11 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: [sonarr, radarr, prowlarr, qbittorrent, flaresolverr, bazarr]
+                values: [sonarr, radarr, prowlarr, flaresolverr, bazarr]
       ports:
         - {protocol: TCP, port: 8989}
         - {protocol: TCP, port: 7878}
         - {protocol: TCP, port: 9696}
-        - {protocol: TCP, port: 8080}
         - {protocol: TCP, port: 8191}
         - {protocol: TCP, port: 6767}
 ---
@@ -107,14 +114,32 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: [sonarr, radarr, prowlarr, qbittorrent, flaresolverr, bazarr]
+                values: [sonarr, radarr, prowlarr, flaresolverr, bazarr]
       ports:
         - {protocol: TCP, port: 8989}
         - {protocol: TCP, port: 7878}
         - {protocol: TCP, port: 9696}
-        - {protocol: TCP, port: 8080}
         - {protocol: TCP, port: 8191}
         - {protocol: TCP, port: 6767}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qbittorrent-api-egress
+  namespace: media
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [sonarr, radarr]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: media-vpn}
+      ports:
+        - {protocol: TCP, port: 8080}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

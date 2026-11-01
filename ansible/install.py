@@ -316,6 +316,10 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
             vpn[key] = prompt_line(f"Media VPN {key}", vpn[key])
         for key in ("endpoint_port", "mtu", "persistent_keepalive"):
             vpn[key] = prompt_int(f"Media VPN {key}", vpn[key])
+        vpn["forwarded_port"] = prompt_int(
+            "Media VPN forwarded_port: the AirVPN port (Client Area, Ports) on which peers reach qBittorrent through the tunnel",
+            vpn["forwarded_port"],
+        )
         countries = prompt_line("AirVPN server countries separated by commas", ", ".join(vpn["server_countries"]))
         vpn["server_countries"] = [value.strip() for value in countries.split(",") if value.strip()]
         media["jellyfin_admin_username"] = prompt_line("Jellyfin administrator username", media["jellyfin_admin_username"])
