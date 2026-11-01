@@ -102,6 +102,7 @@ This file is the source of truth for the desired system state and its major deci
 - Use node-bound local storage and one replica per workload on this single-host cluster
 - Store container logs under /tank/secure/k0s/kubelet/logs in the quota-controlled ephemeral kubelet dataset
 - Rotate container logs as five 10Mi files per container
+- Limit each pod to 4096 processes and threads
 - Bound the persistent host journal to 1GiB and seven days when the logging stage is enabled
 - Keep CPU requests and memory limits without CPU limits for all repository-managed containers
 

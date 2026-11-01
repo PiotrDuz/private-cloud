@@ -247,12 +247,12 @@
     group: root
     mode: '0644'
 
-- name: Configure bounded container logs, namespaced VPN forwarding, and the upstream resolver
+- name: Configure bounded container logs and pod processes, namespaced VPN forwarding, and the upstream resolver
   ansible.builtin.copy:
     content: >-
       {{ k0s_effective_config | combine({'spec': {'workerProfiles':
         (k0s_effective_config.spec.workerProfiles | default([]) | rejectattr('name', 'equalto', 'default') | list) +
-        [k0s_default_worker_profile | combine({'values': {'containerLogMaxSize': '10Mi', 'containerLogMaxFiles': 5, 'podLogsDir': k0s_ephemeral_mountpoint ~ '/logs', 'resolvConf': k0s_kubelet_resolv_conf, 'allowedUnsafeSysctls': private_cloud.stages.networking | ternary(['net.ipv4.ip_forward'], [])}}, recursive=True)]
+        [k0s_default_worker_profile | combine({'values': {'containerLogMaxSize': '10Mi', 'containerLogMaxFiles': 5, 'podLogsDir': k0s_ephemeral_mountpoint ~ '/logs', 'resolvConf': k0s_kubelet_resolv_conf, 'podPidsLimit': k0s_pod_pids_limit, 'allowedUnsafeSysctls': private_cloud.stages.networking | ternary(['net.ipv4.ip_forward'], [])}}, recursive=True)]
       }}, recursive=True) | to_nice_yaml }}
     dest: "{{ k0s_config_file }}"
     owner: root
@@ -344,6 +344,7 @@
     k0s_published_worker_profile.rc == 0
     and (k0s_published_worker_profile.stdout | from_json).allowedUnsafeSysctls | default([]) == ['net.ipv4.ip_forward']
     and (k0s_published_worker_profile.stdout | from_json).resolvConf | default('') == k0s_kubelet_resolv_conf
+    and (k0s_published_worker_profile.stdout | from_json).podPidsLimit | default(0) == k0s_pod_pids_limit
   retries: 30
   delay: 2
   when: private_cloud.stages.networking | bool
@@ -369,6 +370,7 @@
     - >-
       (k0s_running_worker_profile.content | b64decode | from_yaml).allowedUnsafeSysctls | default([]) != ['net.ipv4.ip_forward']
       or (k0s_running_worker_profile.content | b64decode | from_yaml).resolvConf | default('') != k0s_kubelet_resolv_conf
+      or (k0s_running_worker_profile.content | b64decode | from_yaml).podPidsLimit | default(0) != k0s_pod_pids_limit
 
 - name: Validate the installed k0s node and storage
   ansible.builtin.include_tasks: ../validation/main.yml

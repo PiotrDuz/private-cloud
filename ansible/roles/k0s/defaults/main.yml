@@ -16,6 +16,8 @@ k0s_images_mountpoint: /tank/secure/k0s/containerd
 k0s_ephemeral_mountpoint: /tank/secure/k0s/kubelet
 k0s_config_file: /tank/secure/k0s/k0s.yaml
 k0s_kubelet_resolv_conf: /tank/secure/k0s/kubelet-resolv.conf
+# Counts threads too; Chromium, ffmpeg, and PostgreSQL stay well below it.
+k0s_pod_pids_limit: 4096
 k0s_controller_service: k0scontroller.service
 k0s_controller_dropin: /etc/systemd/system/k0scontroller.service.d/zfs.conf
 k0s_namespace: private-cloud

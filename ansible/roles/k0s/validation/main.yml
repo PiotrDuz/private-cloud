@@ -53,6 +53,12 @@
     fail_msg: The active kubelet has not loaded the VPN forwarding allowlist.
   when: private_cloud.stages.networking | bool
 
+- name: Require the per-pod process limit
+  ansible.builtin.assert:
+    that: (k0s_validation_worker_configuration.content | b64decode | from_yaml).podPidsLimit | default(0) == k0s_pod_pids_limit
+    fail_msg: The active kubelet does not limit processes per pod.
+  when: private_cloud.stages.networking | bool
+
 - name: Require cluster DNS to forward to the LAN DNS Service
   ansible.builtin.assert:
     that:
