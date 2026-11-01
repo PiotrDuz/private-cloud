@@ -154,6 +154,14 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 - [ ] Use Grist only from a browser session because API keys are unsupported.
 - [ ] Note the ten-seat limit for the self-hosted AFFiNE workspace.
 
+### Sterna mail client
+
+- [ ] Choose OpenID Connect sign-in in Sterna.
+- [ ] Enter `https://<stalwart-hostname>` as the issuer.
+- [ ] Enter `sterna` as the client ID; the installer registers it with the `app.sterna://oauth` redirect.
+- [ ] Sign in on the Stalwart page that Sterna opens, with the Stalwart mailbox account and its password.
+- [ ] Confirm Sterna lists the mailbox folders.
+
 ### Jellyfin native login
 
 - [ ] Confirm the installer completed Jellyfin's initial setup.

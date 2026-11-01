@@ -45,12 +45,13 @@ The Stalwart service is managed by `ansible/roles/stalwart`.
 
 ## OIDC provider
 
-- Stalwart is the OpenID Connect provider for OpenCloud, Grist, AFFiNE, and Immich.
+- Stalwart is the OpenID Connect provider for OpenCloud, Grist, AFFiNE, Immich, and the Sterna mail client.
 - The issuer is `https://<stalwart-hostname>`.
 - Every Stalwart account can sign in to every enabled application; Grist also requires team site membership.
 - The plan pins ES256 ID token signatures so applications verify them against the published JWKS.
 - The plan upserts one `OAuthClient` per enabled application with its exact redirect URIs.
 - OpenCloud registers public `web`, `OpenCloudDesktop`, `OpenCloudAndroid`, and `OpenCloudIOS` clients.
+- Sterna registers the public `sterna` client with the `app.sterna://oauth` redirect.
 - Grist, AFFiNE, and Immich register confidential clients with secrets from the encrypted configuration.
 - Loopback redirects match any port, so the desktop client works with its random callback port.
 - Stalwart 0.16.26 rejects the desktop client's dynamic registration, which then falls back to its registered client ID.

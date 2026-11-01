@@ -18,6 +18,7 @@
 {"@type":"update","object":"Authentication","value":{"directoryId":null}}
 {% set cloud_url = 'https://' ~ private_cloud.opencloud.hostname %}
 {% set oauth_clients = [
+  {'stage': 'stalwart', 'clientId': 'sterna', 'description': 'Sterna Mail', 'redirectUris': ['app.sterna://oauth']},
   {'stage': 'opencloud', 'clientId': 'web', 'description': 'OpenCloud Web', 'redirectUris': [cloud_url ~ '/', cloud_url ~ '/oidc-callback.html', cloud_url ~ '/oidc-silent-redirect.html']},
   {'stage': 'opencloud', 'clientId': 'OpenCloudDesktop', 'description': 'OpenCloud Desktop', 'redirectUris': ['http://127.0.0.1', 'http://localhost']},
   {'stage': 'opencloud', 'clientId': 'OpenCloudAndroid', 'description': 'OpenCloud Android', 'redirectUris': ['oc://android.opencloud.eu']},
