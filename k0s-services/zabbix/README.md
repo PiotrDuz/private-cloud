@@ -29,5 +29,5 @@ The Zabbix server and web frontend are managed by `ansible/roles/zabbix_server`.
 - ZFS, ECC, and SMART collector failures reach OpenObserve while metric output stays with Zabbix.
 - Shared dataset and edge certificate checks still cover OpenObserve storage and its HTTPS hostname.
 - The notifications stage configures the administrator media and Warning-or-higher email action.
-- Problems send recovery messages and hourly reminders to the Stalwart forwarding alias.
+- Problems send recovery messages and daily reminders to the Stalwart forwarding alias.
 - Live recipient delivery remains an operator acceptance check.

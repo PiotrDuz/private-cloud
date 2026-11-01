@@ -31,7 +31,8 @@ def configure_email(api, config):
     recovery = {"operationtype": 0, "opmessage_usr": [{"userid": user["userid"]}], "opmessage": {"mediatypeid": media_id, "default_msg": 0, "subject": "Resolved: {EVENT.NAME}", "message": body + "\nRecovered: {EVENT.RECOVERY.DATE} {EVENT.RECOVERY.TIME}"}}
     action = {
         "name": "Private cloud all warnings to Stalwart", "eventsource": 0, "status": 0,
-        "esc_period": "1h", "pause_suppressed": 1,
+        # A problem left open sends one reminder a day rather than filling the inbox every hour.
+        "esc_period": "1d", "pause_suppressed": 1,
         "filter": {"evaltype": 1, "conditions": [{"conditiontype": 0, "operator": 0, "value": config["group_id"]}, {"conditiontype": 4, "operator": 5, "value": "2"}]},
         "operations": [{**operation, "esc_step_from": 1, "esc_step_to": 0}],
         "recovery_operations": [recovery],

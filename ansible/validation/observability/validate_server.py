@@ -154,7 +154,7 @@ def validate_notifications(api, config, group_id):
         "selectOperations": "extend",
         "selectRecoveryOperations": "extend",
     }), "managed notification action")
-    if str(action.get("status")) != "0" or str(action.get("esc_period")) != "1h" or str(action.get("pause_suppressed")) != "1":
+    if str(action.get("status")) != "0" or str(action.get("esc_period")) != "1d" or str(action.get("pause_suppressed")) != "1":
         raise RuntimeError("The managed Zabbix notification action is disabled or has incorrect reminder behavior")
     conditions = action.get("filter", {}).get("conditions", [])
     if not any(str(item.get("conditiontype")) == "0" and str(item.get("value")) == str(group_id) for item in conditions):

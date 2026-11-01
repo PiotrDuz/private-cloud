@@ -173,7 +173,7 @@ Traefik renews HTTPS certificates automatically; Stalwart renews its SMTP STARTT
 
 ## Email alerts
 
-When notifications are enabled, Zabbix tracks metric alerts as problems and sends Warning-or-higher problems, recoveries, and hourly reminders. OpenObserve evaluates recognized warning, error, and critical logs every minute and sends throttled event notifications without recovery or reminder emails. A single matching log entry can trigger an alert.
+When notifications are enabled, Zabbix tracks metric alerts as problems and sends Warning-or-higher problems, recoveries, and daily reminders. OpenObserve evaluates recognized warning, error, and critical logs every minute and sends throttled event notifications without recovery or reminder emails. A single matching log entry can trigger an alert.
 
 Each OpenObserve rule suppresses repeated notifications for sixty minutes across all services. OpenObserve 0.90.3 has no per-service throttling outside its enterprise deduplication, so one noisy service can hide a new failure in another service for that hour. Search the `logs` stream after any alert to review every service in the window.
 
