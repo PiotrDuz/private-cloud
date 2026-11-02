@@ -63,14 +63,14 @@ def command_is_allowed(arguments: list[str]) -> bool:
 
 def detected_type(path: str) -> str:
     try:
+        # The scan lists SATA disks behind some controllers as SCSI; the device test probes for SAT.
         output = subprocess.run(
-            [SMARTCTL_PATH, "--scan", "-j"], capture_output=True, check=False
+            [SMARTCTL_PATH, "-d", "test", "-j", path], capture_output=True, check=False
         ).stdout
-        devices = json.loads(output).get("devices", [])
+        device_type = str(json.loads(output).get("device", {}).get("type", ""))
     except (OSError, ValueError):
         return "scsi"
-    types = [device.get("type") for device in devices if device.get("name") == path]
-    return types[0] if types and device_type_is_allowed(str(types[0])) else "scsi"
+    return device_type if device_type_is_allowed(device_type) else "scsi"
 
 
 def device_is_allowed(path: str) -> bool:

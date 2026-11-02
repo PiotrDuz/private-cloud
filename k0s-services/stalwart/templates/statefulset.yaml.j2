@@ -86,19 +86,20 @@ spec:
           resources:
             requests: {cpu: 250m, memory: {{ private_cloud_memory_requests.stalwart | private_cloud_memory_request(private_cloud.stalwart.max_ram) }}, ephemeral-storage: 256Mi}
             limits: {memory: {{ private_cloud.stalwart.max_ram | to_json }}, ephemeral-storage: 2Gi}
+          # Stalwart reads client addresses from X-Forwarded-For, so probes name the loopback client.
           startupProbe:
-            httpGet: {path: /healthz/ready, port: management}
+            httpGet: {path: /healthz/ready, port: management, httpHeaders: [{name: X-Forwarded-For, value: 127.0.0.1}]}
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 30
           readinessProbe:
-            httpGet: {path: /healthz/ready, port: management}
+            httpGet: {path: /healthz/ready, port: management, httpHeaders: [{name: X-Forwarded-For, value: 127.0.0.1}]}
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 24
           livenessProbe:
-            httpGet: {path: /healthz/live, port: management}
+            httpGet: {path: /healthz/live, port: management, httpHeaders: [{name: X-Forwarded-For, value: 127.0.0.1}]}
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 3
