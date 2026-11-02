@@ -18,6 +18,9 @@ def main() -> int:
     if not command_is_allowed(arguments):
         log_collector_errors("smart", ["rejected unsupported smartctl invocation"])
         return 64
+    if len(arguments) == 5 and arguments[3].startswith("3ware,") and not any(Path("/dev").glob("tw[ael]*")):
+        # Probing a disk for a missing 3ware controller makes the kernel warn about a deprecated SCSI ioctl.
+        return 2
     if len(arguments) == 5 and arguments[3] == "scsi":
         # Zabbix also discovers USB-bridged SATA disks as SCSI, which the bridge answers with failed commands.
         arguments[3] = detected_type(arguments[1])
