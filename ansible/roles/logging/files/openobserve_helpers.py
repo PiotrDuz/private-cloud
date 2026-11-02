@@ -90,28 +90,29 @@ def heartbeat_query():
 
 
 def severity_filter(level):
-    return conditions(("severity", "=", level), ("service", "!=", "openobserve"))
+    # Media apps other than Jellyfin are secondary; their logs stay searchable without email.
+    return {
+        "version": 2,
+        "conditions": group(
+            "AND",
+            condition("severity", "=", level),
+            condition("service", "!=", "openobserve"),
+            group("OR", condition("namespace", "!=", "media"), condition("service", "=", "jellyfin")),
+        ),
+    }
 
 
 def conditions(*entries):
-    return {
-        "version": 2,
-        "conditions": {
-            "filterType": "group",
-            "logicalOperator": "AND",
-            "conditions": [
-                {
-                    "filterType": "condition",
-                    "column": column,
-                    "operator": operator,
-                    "value": value,
-                    "ignore_case": False,
-                    "logicalOperator": "AND",
-                }
-                for column, operator, value in entries
-            ],
-        },
-    }
+    return {"version": 2, "conditions": group("AND", *(condition(*entry) for entry in entries))}
+
+
+def group(operator, *entries):
+    # Each entry's logicalOperator joins it to its siblings, so a nested group takes its parent's operator.
+    return {"filterType": "group", "logicalOperator": operator, "conditions": [{**entry, "logicalOperator": operator} for entry in entries]}
+
+
+def condition(column, operator, value):
+    return {"filterType": "condition", "column": column, "operator": operator, "value": value, "ignore_case": False}
 
 
 def contains(current, desired):

@@ -14,6 +14,7 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - `/etc/zabbix/private-cloud-datasets.json` lists enabled datasets to collect.
 - `zabbix-memory-ecc-collector.py` collects Linux EDAC counters.
 - `zabbix-kubernetes-collector.py` sums CPU, memory, and container restarts per Kubernetes workload.
+- The Kubernetes template skips restart triggers for media workloads other than Jellyfin.
 - `zabbix-smartctl-wrapper` constrains privileged SMART commands.
 - `collector_logging.py` sends ZFS, ECC, and SMART collector failures to the host journal.
 - Alloy forwards collector diagnostics to OpenObserve without changing Zabbix metric output.

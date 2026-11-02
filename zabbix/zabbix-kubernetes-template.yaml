@@ -143,3 +143,21 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - $.workloads
+          overrides:
+            - name: 'Media apps besides Jellyfin'
+              step: '1'
+              filter:
+                evaltype: AND
+                conditions:
+                  - macro: '{#NAMESPACE}'
+                    value: ^media$
+                    formulaid: A
+                  - macro: '{#WORKLOAD}'
+                    value: ^jellyfin$
+                    operator: NOT_MATCHES_REGEX
+                    formulaid: B
+              operations:
+                - operationobject: TRIGGER_PROTOTYPE
+                  operator: LIKE
+                  value: 'restarted a container'
+                  discover: NO_DISCOVER
