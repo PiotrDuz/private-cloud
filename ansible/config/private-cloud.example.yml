@@ -116,7 +116,8 @@ private_cloud:
     max_ram: 2Gi
   immich:
     storage_size: 100G
-    max_ram: 2Gi
+    # Video transcoding and thumbnails for a large upload batch exceed 2Gi.
+    max_ram: 4Gi
     machine_learning_max_ram: 4Gi
     machine_learning_accelerator: openvino
     valkey_max_ram: 256Mi
