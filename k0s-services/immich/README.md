@@ -18,6 +18,7 @@ The Immich service is managed by `ansible/roles/immich`.
 - `machine_learning_accelerator: openvino` selects the Intel OpenVINO machine-learning image.
 - OpenVINO requests one shared `gpu.intel.com/i915` resource.
 - GPU buffers count against the container memory, so OpenVINO needs `machine_learning_max_ram` of at least `4Gi`.
+- The server transcodes video on the CPU; its user namespace cannot join the host `render` group that owns the GPU.
 - A ClusterIP service exposes TCP `2283` only inside the cluster.
 - Traefik publishes the configured hostname through HTTPS.
 - The installer creates the first administrator as the managed Stalwart mailbox account before applying the route ConfigMap.

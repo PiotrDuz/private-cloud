@@ -53,6 +53,7 @@ This file is the source of truth for the desired system state and its major deci
 - Encrypt the root disk with LUKS2 and keep a recovery passphrase
 - Keep the tank/secure key file on the encrypted root
 - Disable all swap, including disk-backed swap and zram
+- Remove SAN multipath packages, which the single-host storage does not use
 - Install kernel, firmware, and boot-chain updates only by hand
 - Block DMA with strict IOMMU and kernel memory reads with lockdown
 - Disable magic SysRq

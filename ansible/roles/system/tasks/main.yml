@@ -18,6 +18,15 @@
     state: absent
     purge: true
 
+- name: Remove SAN multipath packages
+  ansible.builtin.apt:
+    name:
+      # The host has no SAN; sg3 udev rules warn about the USB boot disk on every SMART read.
+      - multipath-tools
+      - sg3-utils-udev
+    state: absent
+    purge: true
+
 - name: Remove swap entries from fstab
   ansible.builtin.lineinfile:
     path: /etc/fstab
