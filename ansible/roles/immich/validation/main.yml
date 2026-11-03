@@ -141,3 +141,35 @@
     that:
       - immich_validation_extensions.stdout | trim == (immich_pgvector_version ~ '|' ~ immich_vectorchord_version ~ '|earthdistance')
     fail_msg: The Immich database does not have the configured vector, VectorChord, and earthdistance extensions.
+
+- name: Find the Ready Immich server pod
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ immich_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=immich
+  register: immich_validation_server_pods
+  until:
+    - immich_validation_server_pods.resources | length > 0
+    - immich_validation_server_pods.resources[0].status.containerStatuses | default([]) | selectattr('ready', 'equalto', true) | list | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
+- name: Read the Immich server identity and GPU access
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ immich_kubeconfig }}"
+    namespace: "{{ immich_namespace }}"
+    pod: "{{ immich_validation_server_pods.resources[0].metadata.name }}"
+    command: sh -c 'id -u; if test -r /dev/dri/renderD128 && test -w /dev/dri/renderD128; then echo gpu; else echo cpu; fi'
+  register: immich_validation_server_identity
+  changed_when: false
+
+- name: Require the Immich server UID and its GPU access
+  ansible.builtin.assert:
+    that:
+      - immich_validation_server_identity.stdout_lines[0] == immich_uid | string
+      - immich_validation_server_identity.stdout_lines[1] == ('gpu' if private_cloud.stages.intel_gpu | bool else 'cpu')
+    fail_msg: The Immich server runs as the wrong UID or cannot open the Intel render device.

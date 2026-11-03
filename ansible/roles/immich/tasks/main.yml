@@ -51,7 +51,7 @@
   ansible.builtin.stat:
     path: /dev/dri/renderD128
   register: immich_intel_gpu_render_device
-  when: private_cloud.immich.machine_learning_accelerator == "openvino"
+  when: private_cloud.stages.intel_gpu | bool
 
 - name: Require the local Intel GPU render device
   ansible.builtin.assert:
@@ -59,24 +59,21 @@
       - immich_intel_gpu_render_device.stat.exists
       - immich_intel_gpu_render_device.stat.ischr | default(false)
     fail_msg: The Intel i915 render device /dev/dri/renderD128 is unavailable.
-  when: private_cloud.immich.machine_learning_accelerator == "openvino"
+  when: private_cloud.stages.intel_gpu | bool
 
 - name: Record the local Intel GPU render group
   ansible.builtin.set_fact:
     intel_gpu_render_group_id: "{{ immich_intel_gpu_render_device.stat.gid | int }}"
-  when: private_cloud.immich.machine_learning_accelerator == "openvino"
+  when: private_cloud.stages.intel_gpu | bool
 
-- name: Require Intel GPU support for Immich machine learning
+- name: Require Intel GPU support for Immich
   ansible.builtin.assert:
     that:
       - (immich_nodes.resources[0].status.allocatable['gpu.intel.com/i915'] | default('0') | int) >= 1
     fail_msg: >-
       Managed storage host {{ ansible_hostname }} does not advertise the required Intel i915 GPU resource.
       Enable the Intel GPU stage and verify the integrated GPU is available at /dev/dri/renderD128.
-  when: private_cloud.immich.machine_learning_accelerator == 'openvino'
-
-- name: Verify Immich user namespace support
-  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/user_namespace_compatibility.yml"
+  when: private_cloud.stages.intel_gpu | bool
 
 - name: Prepare the Immich service dataset
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
@@ -90,9 +87,15 @@
   ansible.builtin.file:
     path: "{{ immich_dataset_mountpoint }}/library"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ immich_uid }}"
+    group: "{{ immich_uid }}"
     mode: '0750'
+
+- name: Give the Immich server UID ownership of the library
+  ansible.builtin.command:
+    argv: [find, "{{ immich_dataset_mountpoint }}/library", (, '!', -user, "{{ immich_uid }}", -o, '!', -group, "{{ immich_uid }}", ), -print, -exec, chown, -h, "{{ immich_uid }}:{{ immich_uid }}", "{}", +]
+  register: immich_library_ownership
+  changed_when: immich_library_ownership.stdout | length > 0
 
 - name: Verify the Immich service dataset quota
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_quota.yml"

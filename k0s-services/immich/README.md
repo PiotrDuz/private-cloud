@@ -9,8 +9,8 @@ The Immich service is managed by `ansible/roles/immich`.
 - The local PV and PVC advertise a fixed `10Ti` capacity.
 - The PV stores the Immich media library.
 - The dataset is mounted at `/data` and the media location is `/data/library`.
-- The library directory stays private as `0750` owned by `root:root`.
-- An init container normalizes the library ownership inside the pod user namespace.
+- The server runs as the unused UID and GID `2001` without a user namespace.
+- The library directory stays private as `0750`, and the installer keeps every library file owned by `2001:2001`.
 - Immich uses a dedicated database on the shared VectorChord-enabled PostgreSQL service.
 - The role enables and verifies `vector`, `vchord`, and `earthdistance` in the Immich database.
 - Immich uses its disposable cluster-local `valkey-immich` service.
@@ -18,7 +18,8 @@ The Immich service is managed by `ansible/roles/immich`.
 - `machine_learning_accelerator: openvino` selects the Intel OpenVINO machine-learning image.
 - OpenVINO requests one shared `gpu.intel.com/i915` resource.
 - GPU buffers count against the container memory, so OpenVINO needs `machine_learning_max_ram` of at least `4Gi`.
-- The server transcodes video on the CPU; its user namespace cannot join the host `render` group that owns the GPU.
+- With the Intel GPU stage, the server joins the host `render` group and requests one shared `gpu.intel.com/i915` resource.
+- With the Intel GPU stage, the server transcodes and decodes video through Quick Sync (`qsv`).
 - A ClusterIP service exposes TCP `2283` only inside the cluster.
 - Traefik publishes the configured hostname through HTTPS.
 - The installer creates the first administrator as the managed Stalwart mailbox account before applying the route ConfigMap.
@@ -35,6 +36,7 @@ The Immich service is managed by `ansible/roles/immich`.
 - ID token validation uses `ES256` to match the Stalwart signing key.
 - The encrypted configuration holds the client secret as `immich.oidc_client_secret`.
 - An init container renders the client secret into `/config/immich-config.json` from the `IMMICH_OAUTH_*` environment.
+- The init container also renders the video acceleration setting.
 - The server reads the rendered configuration through `IMMICH_CONFIG_FILE`.
 - System settings are managed through the configuration file.
 - The web UI configuration editor is disabled while the configuration file is mounted.

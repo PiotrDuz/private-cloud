@@ -281,6 +281,7 @@ This file is the source of truth for the desired system state and its major deci
 - Deploy a disposable Valkey service for Immich background jobs
 - Deploy the Immich machine-learning service for face detection and recognition
 - Enable Intel OpenVINO acceleration through the shared i915 Kubernetes device resource
+- Transcode Immich video with Intel Quick Sync through the shared i915 Kubernetes device resource
 - Persist the Immich media library on its PV
 - Enable [Immich native OIDC](https://docs.immich.app/administration/oauth/) with Stalwart for web and mobile clients
 - Register a confidential client with HTTPS `/auth/login`, `/user-settings`, and `/api/oauth/mobile-redirect` redirects
@@ -367,7 +368,8 @@ This file is the source of truth for the desired system state and its major deci
 
 - Run ordinary application containers with fixed non-root UIDs and disabled privilege escalation
 - Claim Immich, AFFiNE, and Jellyfin administrators through the installer before publishing their routes
-    * Run AFFiNE, Immich server, and OnlyOffice container root inside Kubernetes user namespaces
+    * Run AFFiNE and OnlyOffice container root inside Kubernetes user namespaces
+    * Run the Immich server as a dedicated non-root UID so it can join the host render group
     * Run Jellyfin and the ARR applications as a dedicated media UID that no host account uses
     * Map user-namespaced root to an unprivileged host UID
     * Preserve the container startup capabilities required by AFFiNE and OnlyOffice inside their user namespaces

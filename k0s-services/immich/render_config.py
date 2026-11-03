@@ -8,7 +8,7 @@ OUTPUT_PATH = Path('/config/immich-config.json')
 
 
 def main():
-    configuration = {'oauth': oauth_configuration()}
+    configuration = {'oauth': oauth_configuration(), 'ffmpeg': ffmpeg_configuration()}
     OUTPUT_PATH.write_text(json.dumps(configuration, indent=2, sort_keys=True) + '\n')
 
 
@@ -29,6 +29,11 @@ def oauth_configuration():
         'storageLabelClaim': os.environ.get('IMMICH_OAUTH_STORAGE_LABEL_CLAIM', 'preferred_username'),
         'tokenEndpointAuthMethod': os.environ.get('IMMICH_OAUTH_TOKEN_ENDPOINT_AUTH_METHOD', 'client_secret_post'),
     }
+
+
+def ffmpeg_configuration():
+    accel = os.environ.get('IMMICH_FFMPEG_ACCEL', 'disabled')
+    return {'accel': accel, 'accelDecode': accel != 'disabled'}
 
 
 def boolean(name):
