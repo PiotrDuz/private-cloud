@@ -133,9 +133,20 @@
 
 - name: Read the gateway output firewall
   ansible.builtin.command:
-    argv: [k0s, kubectl, exec, -n, media, deployment/media-vpn, -c, wireguard, --, iptables, -S, OUTPUT]
+    argv: [k0s, kubectl, exec, -n, media, deployment/media-vpn, -c, wireguard, --, iptables, -t, mangle, -S, OUTPUT]
   register: media_validation_gateway_firewall
   changed_when: false
+
+- name: Read the gluetun output chain
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, media, deployment/media-vpn, -c, wireguard, --, iptables, -S, OUTPUT]
+  register: media_validation_gluetun_firewall
+  changed_when: false
+
+- name: Require a gluetun output chain that gluetun can parse
+  ansible.builtin.assert:
+    that: media_validation_gluetun_firewall.stdout is not search('--uid-owner')
+    fail_msg: Owner matches in the filter table stop gluetun from removing outdated tunnel rules.
 
 - name: Require the media UID limited to the tunnel, gateway DNS, and replies
   ansible.builtin.assert:

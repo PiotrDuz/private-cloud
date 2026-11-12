@@ -14,6 +14,9 @@ The arr stack templates are managed by `ansible/roles/media` through the `media`
 - Kubernetes user namespaces are not used, because the kernel cannot idmap the `/dev/net/tun` device mount that `tun2socks` and the gateway need.
 - qBittorrent binds to `wg0` with UPnP disabled.
 - The gateway firewall limits the media UID to `wg0`, gateway DNS, and replies.
+- The media UID rules live in the mangle table, so gluetun can still remove its own outdated rules.
+- Each gateway start clears firewall rules left in the pod network namespace.
+- The gateway drops its IPv6 addresses and routes before gluetun starts, so gluetun selects only IPv4 servers.
 - AirVPN forwards `media.vpn.forwarded_port` to qBittorrent through the tunnel.
 - Traefik publishes the Radarr, Prowlarr, and Bazarr UIs at `radarr.<domain>`, `prowlarr.<domain>`, and `bazarr.<domain>` to local networks and VPN peers only.
 - These hostnames stay out of public DNS and resolve through LAN DNS.
