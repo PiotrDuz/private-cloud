@@ -18,10 +18,10 @@ The arr stack templates are managed by `ansible/roles/media` through the `media`
 - Each gateway start clears firewall rules left in the pod network namespace.
 - The gateway drops its IPv6 addresses and routes before gluetun starts, so gluetun selects only IPv4 servers.
 - AirVPN forwards `media.vpn.forwarded_port` to qBittorrent through the tunnel.
-- Traefik publishes the Radarr, Prowlarr, and Bazarr UIs at `radarr.<domain>`, `prowlarr.<domain>`, and `bazarr.<domain>` to local networks and VPN peers only.
+- Traefik publishes the Sonarr, Radarr, Prowlarr, and Bazarr UIs at `sonarr.<domain>`, `radarr.<domain>`, `prowlarr.<domain>`, and `bazarr.<domain>` to local networks and VPN peers only.
 - These hostnames stay out of public DNS and resolve through LAN DNS.
-- Radarr, Prowlarr, and Bazarr keep their own logins; Traefik adds no authentication.
-- Sonarr and qBittorrent dashboards, peer ports, and discovery protocols stay unpublished.
+- Sonarr, Radarr, Prowlarr, and Bazarr keep their own logins; Traefik adds no authentication.
+- The qBittorrent dashboard, peer ports, and discovery protocols stay unpublished.
 - The arr stack and shared library use `no-backup` datasets.
 - Each application has a quota-controlled dataset and a dedicated `10Ti` PV.
 - This folder provisions the shared `media-library` dataset and claim.

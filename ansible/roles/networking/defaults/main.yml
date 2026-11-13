@@ -15,6 +15,7 @@ networking_traefik_route_services:
   - openobserve
   - jellyfin
   - amneziawg
+  - sonarr
   - radarr
   - prowlarr
   - bazarr

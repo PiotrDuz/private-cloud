@@ -38,6 +38,7 @@
           {'stage': 'zabbix_server', 'host': private_cloud.networking.zabbix_hostname},
           {'stage': 'logging', 'host': private_cloud.logging.hostname},
           {'stage': 'networking', 'host': private_cloud.networking.amneziawg.ui_hostname},
+          {'stage': 'media', 'host': private_cloud.media.sonarr_hostname},
           {'stage': 'media', 'host': private_cloud.media.radarr_hostname},
           {'stage': 'media', 'host': private_cloud.media.prowlarr_hostname},
           {'stage': 'media', 'host': private_cloud.media.bazarr_hostname},

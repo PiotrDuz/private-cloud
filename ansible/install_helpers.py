@@ -145,16 +145,17 @@ SERVICE_SUBDOMAINS = {
     "zabbix_server": "monitor",
 }
 AMNEZIAWG_UI_SUBDOMAIN = "vpn-admin"
+SONARR_SUBDOMAIN = "sonarr"
 RADARR_SUBDOMAIN = "radarr"
 PROWLARR_SUBDOMAIN = "prowlarr"
 BAZARR_SUBDOMAIN = "bazarr"
 MEDIA_SWITCH_SUBDOMAIN = "media-switch"
-MEDIA_LAN_HOSTNAMES = ("radarr_hostname", "prowlarr_hostname", "bazarr_hostname", "switch_hostname")
+MEDIA_LAN_HOSTNAMES = ("sonarr_hostname", "radarr_hostname", "prowlarr_hostname", "bazarr_hostname", "switch_hostname")
 HOMEPAGE_SUBDOMAIN = "www"
 DERIVED_KEYS = {
     ("networking",): {"acme_email", "managed_records", "traefik_internal_ip", "traefik_cluster_ip", "lan_dns_cluster_ip", "zabbix_hostname", "homepage_hostname", "lan_only_records"},
     ("networking", "amneziawg"): {"hostname", "ui_hostname", "dns"},
-    ("media",): {"hostname", "radarr_hostname", "prowlarr_hostname", "bazarr_hostname", "switch_hostname", "timezone"},
+    ("media",): {"hostname", "sonarr_hostname", "radarr_hostname", "prowlarr_hostname", "bazarr_hostname", "switch_hostname", "timezone"},
     ("onlyoffice",): {"hostname"},
     ("opencloud",): {"hostname", "admin_email"},
     ("grist",): {"hostname", "default_email"},
@@ -356,7 +357,7 @@ def resolve_public_configuration(configuration: Mapping[str, Any]) -> dict[str, 
         "homepage_hostname": homepage_hostname,
     })
     networking["amneziawg"].update({"hostname": hostnames["networking"], "ui_hostname": f"{AMNEZIAWG_UI_SUBDOMAIN}.{domain}", "dns": [str(lan_address.ip)]})
-    cloud["media"].update({"hostname": hostnames["media"], "radarr_hostname": f"{RADARR_SUBDOMAIN}.{domain}", "prowlarr_hostname": f"{PROWLARR_SUBDOMAIN}.{domain}", "bazarr_hostname": f"{BAZARR_SUBDOMAIN}.{domain}", "switch_hostname": f"{MEDIA_SWITCH_SUBDOMAIN}.{domain}", "timezone": timezone})
+    cloud["media"].update({"hostname": hostnames["media"], "sonarr_hostname": f"{SONARR_SUBDOMAIN}.{domain}", "radarr_hostname": f"{RADARR_SUBDOMAIN}.{domain}", "prowlarr_hostname": f"{PROWLARR_SUBDOMAIN}.{domain}", "bazarr_hostname": f"{BAZARR_SUBDOMAIN}.{domain}", "switch_hostname": f"{MEDIA_SWITCH_SUBDOMAIN}.{domain}", "timezone": timezone})
     # LAN DNS answers these names; public DNS never publishes them.
     networking["lan_only_records"] = [networking["amneziawg"]["ui_hostname"]] + ([cloud["media"][key] for key in MEDIA_LAN_HOSTNAMES] if stages.get("media") else [])
     for stage in ("onlyoffice", "opencloud", "logging"):
@@ -532,7 +533,7 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
         if rule["protocol"] not in {"TCP", "UDP"} or type(rule["port"]) is not int or not 1 <= rule["port"] <= 65535:
             raise InstallerError("Invalid AmneziaWG LAN protocol or port")
     media = cloud["media"]
-    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "radarr_hostname", "prowlarr_hostname", "bazarr_hostname", "switch_hostname", "timezone", "quality_profiles", "vpn", "max_ram", "jellyfin_admin_username"}:
+    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "sonarr_hostname", "radarr_hostname", "prowlarr_hostname", "bazarr_hostname", "switch_hostname", "timezone", "quality_profiles", "vpn", "max_ram", "jellyfin_admin_username"}:
         raise InstallerError("Media configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(media.get("storage_size", ""))) or not DOMAIN_PATTERN.fullmatch(str(media.get("hostname", ""))):
         raise InstallerError("Invalid media storage size or hostname")

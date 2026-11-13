@@ -134,8 +134,9 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: [radarr, prowlarr, bazarr]
+                values: [sonarr, radarr, prowlarr, bazarr]
       ports:
+        - {protocol: TCP, port: 8989}
         - {protocol: TCP, port: 7878}
         - {protocol: TCP, port: 9696}
         - {protocol: TCP, port: 6767}
