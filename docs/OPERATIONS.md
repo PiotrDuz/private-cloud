@@ -122,6 +122,8 @@ The commands find, suspend, resume, and delete an account. Suspension keeps the 
 - Update `media.vpn` endpoint, port, peer public key, and address through `update` mode when the server changes.
 - The Secret revision annotation restarts the gateway pod on the next run.
 - Check the tunnel with `sudo k0s kubectl exec -n media deployment/media-vpn -c wireguard -- ip -4 address show dev wg0`.
+- Run Settings, Indexers, Test All in Sonarr and Radarr after a tunnel outage to clear their indexer backoff.
+- Turn the VPN gateway and guarded applications on or off at `https://media-switch.<domain>` from the LAN or VPN.
 
 ## Account deletion
 
