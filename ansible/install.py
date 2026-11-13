@@ -311,6 +311,8 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
                 ("720p", "1080p", "2160p"),
                 media["quality_profiles"][service],
             )
+        languages = prompt_line("Bazarr subtitle languages as two-letter codes separated by commas", ", ".join(media["subtitle_languages"]))
+        media["subtitle_languages"] = [value.strip().lower() for value in languages.split(",") if value.strip()]
         vpn = media["vpn"]
         for key in ("gateway_cluster_ip", "address", "peer_public_key", "dns"):
             vpn[key] = prompt_line(f"Media VPN {key}", vpn[key])

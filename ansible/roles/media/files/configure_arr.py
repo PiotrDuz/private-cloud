@@ -4,7 +4,7 @@ import json
 import sys
 
 from arr_helpers import Arr, configure_download_client, configure_flaresolverr, configure_minimum_seeders, configure_prowlarr, configure_quality_profile, configure_root, read_api_key
-from bazarr_helpers import Bazarr, configure_bazarr, read_bazarr_key
+from bazarr_helpers import Bazarr, configure_bazarr, configure_bazarr_languages, read_bazarr_key
 
 
 def main():
@@ -24,6 +24,7 @@ def main():
     bazarr = Bazarr(f"http://{config['addresses']['bazarr']}:6767/api", read_bazarr_key('/' + config['datasets']['bazarr'] + '/config/config.yaml'))
     bazarr.wait_ready()
     changed |= configure_bazarr(bazarr, {name: clients[name].key for name in ('sonarr', 'radarr')})
+    changed |= configure_bazarr_languages(bazarr, config['subtitle_languages'])
     print(json.dumps({'changed': changed}))
 
 

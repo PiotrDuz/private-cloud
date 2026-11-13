@@ -1,4 +1,4 @@
-schema_version: 18
+schema_version: 19
 private_cloud:
   domain: example.com
   admin_email: admin@example.com
@@ -74,6 +74,9 @@ private_cloud:
     quality_profiles:
       sonarr: 1080p
       radarr: 1080p
+    # Bazarr's managed language profile lists these two-letter ISO 639-1 codes in order.
+    subtitle_languages:
+      - en
     vpn:
       gateway_cluster_ip: 10.96.0.53
       server_countries:

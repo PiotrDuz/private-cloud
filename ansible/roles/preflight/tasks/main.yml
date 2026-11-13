@@ -2,7 +2,7 @@
 - name: Require the supported public schema version
   ansible.builtin.assert:
     that:
-      - schema_version == 18
+      - schema_version == 19
     fail_msg: Public configuration schema version is unsupported
 
 - name: Require supported Debian-family target
@@ -33,7 +33,7 @@
       - (private_cloud.k0s.keys() | list | sort) == ['config_quota', 'ephemeral_quota', 'host_reserve_ram', 'images_quota']
       - (private_cloud.networking.keys() | list | sort) == ['acme_email', 'amneziawg', 'cloudflare_zone_id', 'cluster_dns_ip', 'homepage_hostname', 'lan_dns_cluster_ip', 'lan_only_records', 'local_network_cidrs', 'managed_records', 'pod_cidr', 'public_ip_url', 'service_cidr', 'storage_size', 'traefik_cluster_ip', 'traefik_internal_ip', 'zabbix_hostname']
       - (private_cloud.networking.amneziawg.keys() | list | sort) == ['admin_username', 'dns', 'hostname', 'lan_access', 'listen_port', 'storage_size', 'tunnel_cidr', 'ui_hostname']
-      - (private_cloud.media.keys() | list | sort) == ['bazarr_hostname', 'hostname', 'jellyfin_admin_username', 'max_ram', 'prowlarr_hostname', 'quality_profiles', 'radarr_hostname', 'sonarr_hostname', 'storage_size', 'switch_hostname', 'timezone', 'vpn']
+      - (private_cloud.media.keys() | list | sort) == ['bazarr_hostname', 'hostname', 'jellyfin_admin_username', 'max_ram', 'prowlarr_hostname', 'quality_profiles', 'radarr_hostname', 'sonarr_hostname', 'storage_size', 'subtitle_languages', 'switch_hostname', 'timezone', 'vpn']
       - (private_cloud.media.quality_profiles.keys() | list | sort) == ['radarr', 'sonarr']
       - (private_cloud.media.vpn.keys() | list | sort) == ['address', 'dns', 'endpoint_port', 'forwarded_port', 'gateway_cluster_ip', 'mtu', 'peer_public_key', 'persistent_keepalive', 'server_countries']
       - (private_cloud.postgres.keys() | list | sort) == ['max_ram', 'volume_size']

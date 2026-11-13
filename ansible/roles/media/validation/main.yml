@@ -219,7 +219,8 @@
       {{ {
         'addresses': dict(media_validation_arr_services.results | map(attribute='item') | zip(media_validation_arr_services.results | map(attribute='resources') | map('first') | map(attribute='spec.clusterIP'))),
         'datasets': media_datasets,
-        'quality_profiles': private_cloud.media.quality_profiles
+        'quality_profiles': private_cloud.media.quality_profiles,
+        'subtitle_languages': private_cloud.media.subtitle_languages
       } | to_json }}
   changed_when: false
   no_log: true

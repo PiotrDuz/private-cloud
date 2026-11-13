@@ -38,6 +38,9 @@ Gluetun selects an AirVPN server by configured country from its built-in list, s
 - Prowlarr routes indexers tagged `flaresolverr` through the managed `private-cloud-flaresolverr` proxy.
 - FlareSolverr solves Cloudflare challenges in Chromium through the AirVPN tunnel.
 - Bazarr connects to Sonarr and Radarr and saves subtitles beside the media files.
+- The installer maintains a `private-cloud` Bazarr language profile from `media.subtitle_languages`.
+- That profile is the default for new series and movies and covers any series or movie without a profile.
+- Other Bazarr language profiles and existing assignments stay operator choices.
 - Bazarr reaches subtitle providers only through the AirVPN tunnel.
 - Sonarr and Radarr use qBittorrent with separate download categories.
 - qBittorrent stops each torrent at share ratio 0, so it seeds only while downloading.

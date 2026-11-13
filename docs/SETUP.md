@@ -137,7 +137,7 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 
 - [ ] Select Prowlarr indexers and provide their credentials.
 - [ ] Tag indexers behind Cloudflare protection with `flaresolverr` in Prowlarr.
-- [ ] Create a Bazarr language profile, set it as the default for series and movies, and enable subtitle providers.
+- [ ] Enable Bazarr subtitle providers and enter their credentials.
 - [ ] Open `https://sonarr.<domain>`, `https://radarr.<domain>`, and `https://prowlarr.<domain>` from the LAN or VPN and set a Forms login on first visit.
 - [ ] Set a Forms login in Bazarr under Settings, General, Security.
 - [ ] Keep Sonarr, Radarr, Prowlarr, and Bazarr authentication required for every address, because all requests arrive from Traefik's pod address.

@@ -302,6 +302,7 @@ This file is the source of truth for the desired system state and its major deci
 - Connect Prowlarr, Sonarr, Radarr, and qBittorrent automatically with native API keys and a Vault-managed qBittorrent password
 - Run a stateless FlareSolverr behind the media VPN as Prowlarr's Cloudflare challenge proxy
 - Run Bazarr behind the media VPN, connected to Sonarr and Radarr, with a no-backup dataset
+- Maintain a default Bazarr language profile from the configured subtitle languages
 - Turn the VPN gateway and guarded applications on or off from a LAN-only switch
 - Keep Sonarr, Radarr, Prowlarr, the VPN gateway, and network helpers on native console output
 - Use a Recreate deployment for qBittorrent to prevent overlapping log checkpoint writers

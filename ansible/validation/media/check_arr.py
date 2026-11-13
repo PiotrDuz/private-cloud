@@ -9,7 +9,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "roles" / "media" / "files"))
 
 from arr_helpers import MINIMUM_SEEDERS, Arr, _quality_profile_state, desired_quality_profile, lagging_seeder_indexers, read_api_key
-from bazarr_helpers import Bazarr, bazarr_connection_state, bazarr_connections, read_bazarr_key
+from bazarr_helpers import Bazarr, bazarr_connection_state, bazarr_connections, bazarr_language_state, bazarr_language_target, read_bazarr_key
 
 
 def main():
@@ -31,6 +31,8 @@ def main():
     bazarr.wait_ready()
     if bazarr_connection_state(bazarr) != bazarr_connections({name: clients[name].key for name in ("sonarr", "radarr")}):
         raise RuntimeError("Bazarr's Sonarr and Radarr connections differ from service configuration")
+    if bazarr_language_state(bazarr) != bazarr_language_target(config["subtitle_languages"]):
+        raise RuntimeError("Bazarr's managed language profile or series and movie defaults differ from service configuration")
 
     print(json.dumps({"services": ["sonarr", "radarr", "prowlarr", "bazarr"], "result": "passed"}, separators=(",", ":")))
 

@@ -8,10 +8,11 @@ import urllib.request
 import yaml
 
 PORTS = {'sonarr': 8989, 'radarr': 7878}
+LANGUAGE_PROFILE = 'private-cloud'
 
 
 def configure_bazarr(client, keys):
-    """Connect Bazarr to Sonarr and Radarr; languages and subtitle providers stay operator choices."""
+    """Connect Bazarr to Sonarr and Radarr; subtitle providers stay operator choices."""
     desired = bazarr_connections(keys)
     changed = _connection_state(client.request('GET', '/system/settings')) != desired
     if changed:
@@ -23,6 +24,73 @@ def configure_bazarr(client, keys):
         if _connection_state(client.request('GET', '/system/settings')) != desired:
             raise RuntimeError('Bazarr did not persist its Sonarr and Radarr connections')
     return changed
+
+
+def configure_bazarr_languages(client, languages):
+    """Maintain the managed language profile as the default and give it to series and movies that have none."""
+    enabled = {language['code2'] for language in client.request('GET', '/system/languages') if language['enabled']}
+    profiles = client.request('GET', '/system/languages/profiles')
+    managed = next((profile for profile in profiles if profile['name'] == LANGUAGE_PROFILE), None)
+    desired = desired_language_profile(managed, profiles, languages)
+    changed = False
+    if not set(languages) <= enabled or managed != desired:
+        # Bazarr deletes every profile missing from the posted list, so the operator's other profiles are posted back unchanged.
+        others = [profile for profile in profiles if profile['name'] != LANGUAGE_PROFILE]
+        form = [('languages-enabled', code) for code in sorted(enabled | set(languages))]
+        client.request('POST', '/system/settings', form + [('languages-profiles', json.dumps(others + [desired]))])
+        changed = True
+    if bazarr_language_defaults(client) != desired['profileId']:
+        client.request('POST', '/system/settings', {
+            **{f'settings-general-{kind}_default_enabled': 'true' for kind in ('serie', 'movie')},
+            **{f'settings-general-{kind}_default_profile': str(desired['profileId']) for kind in ('serie', 'movie')},
+        })
+        changed = True
+    for route, key in (('/series', 'sonarrSeriesId'), ('/movies', 'radarrId')):
+        missing = [item[key] for item in client.request('GET', route + '?start=0&length=-1')['data'] if item['profileId'] is None]
+        if missing:
+            field = 'seriesid' if route == '/series' else 'radarrid'
+            client.request('POST', route, [(field, str(item)) for item in missing] + [('profileid', str(desired['profileId'])) for _ in missing])
+            changed = True
+    if bazarr_language_state(client) != bazarr_language_target(languages):
+        raise RuntimeError('Bazarr did not persist its managed language profile and defaults')
+    return changed
+
+
+def desired_language_profile(managed, profiles, languages):
+    profile_id = managed['profileId'] if managed else max((profile['profileId'] for profile in profiles), default=0) + 1
+    return {
+        'profileId': profile_id,
+        'name': LANGUAGE_PROFILE,
+        'cutoff': None,
+        'items': [
+            {'id': index, 'language': code, 'audio_exclude': 'False', 'audio_only_include': 'False', 'hi': 'False', 'forced': 'False'}
+            for index, code in enumerate(languages, 1)
+        ],
+        'mustContain': [],
+        'mustNotContain': [],
+        'originalFormat': 0,
+        'tag': None,
+    }
+
+
+def bazarr_language_target(languages):
+    return {'default': True, 'languages': list(languages)}
+
+
+def bazarr_language_state(client):
+    """Report the managed profile's languages and whether series and movies default to it."""
+    profile = next((profile for profile in client.request('GET', '/system/languages/profiles') if profile['name'] == LANGUAGE_PROFILE), None)
+    if profile is None:
+        return None
+    return {'default': bazarr_language_defaults(client) == profile['profileId'], 'languages': [item['language'] for item in profile['items']]}
+
+
+def bazarr_language_defaults(client):
+    """Return the profile ID that both series and movies default to, or None when they differ or are disabled."""
+    general = client.request('GET', '/system/settings')['general']
+    if not general.get('serie_default_enabled') or not general.get('movie_default_enabled'):
+        return None
+    return general.get('serie_default_profile') if general.get('serie_default_profile') == general.get('movie_default_profile') else None
 
 
 def bazarr_connections(keys):

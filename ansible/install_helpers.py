@@ -47,7 +47,7 @@ LUKS_KEY_FILE = RUNTIME_DIRECTORY / "luks-key"
 INSTALLER_LOG = RUNTIME_DIRECTORY / "installer.log"
 SERVICE_CATALOG = Path(__file__).resolve().parent / "service_catalog.yml"
 MODES = ("create", "update", "reapply", "rotate", "validate")
-CURRENT_SCHEMA_VERSION = 18
+CURRENT_SCHEMA_VERSION = 19
 CURRENT_SECRETS_SCHEMA_VERSION = 9
 SECRET_SCHEMAS = {
     "storage": {"encryption_passphrase"},
@@ -129,6 +129,7 @@ QUOTA_PATTERN = re.compile(r"[1-9][0-9]*[KMGTPE]")
 RAM_PATTERN = re.compile(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)")
 DOMAIN_PATTERN = re.compile(r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}")
 EMAIL_PATTERN = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}")
+SUBTITLE_LANGUAGE_PATTERN = re.compile(r"[a-z]{2}")
 USERNAME_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]{0,30}[A-Za-z0-9])?")
 MAILBOX_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._+-]{0,62}[A-Za-z0-9])?")
 TIMEZONE_PATTERN = re.compile(r"[A-Za-z_+-]+/[A-Za-z_+/-]+")
@@ -533,7 +534,7 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
         if rule["protocol"] not in {"TCP", "UDP"} or type(rule["port"]) is not int or not 1 <= rule["port"] <= 65535:
             raise InstallerError("Invalid AmneziaWG LAN protocol or port")
     media = cloud["media"]
-    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "sonarr_hostname", "radarr_hostname", "prowlarr_hostname", "bazarr_hostname", "switch_hostname", "timezone", "quality_profiles", "vpn", "max_ram", "jellyfin_admin_username"}:
+    if not isinstance(media, dict) or set(media) != {"storage_size", "hostname", "sonarr_hostname", "radarr_hostname", "prowlarr_hostname", "bazarr_hostname", "switch_hostname", "timezone", "quality_profiles", "subtitle_languages", "vpn", "max_ram", "jellyfin_admin_username"}:
         raise InstallerError("Media configuration has missing or unknown keys")
     if not QUOTA_PATTERN.fullmatch(str(media.get("storage_size", ""))) or not DOMAIN_PATTERN.fullmatch(str(media.get("hostname", ""))):
         raise InstallerError("Invalid media storage size or hostname")
@@ -556,6 +557,9 @@ def validate_resolved_configuration(configuration: Mapping[str, Any]) -> None:
         raise InstallerError("Media quality profile configuration is incomplete")
     if any(value not in {"720p", "1080p", "2160p"} for value in quality_profiles.values()):
         raise InstallerError("Media quality profiles must be 720p, 1080p, or 2160p")
+    languages = media.get("subtitle_languages")
+    if not isinstance(languages, list) or not languages or len(set(languages)) != len(languages) or any(not isinstance(value, str) or not SUBTITLE_LANGUAGE_PATTERN.fullmatch(value) for value in languages):
+        raise InstallerError("Media subtitle_languages must list unique two-letter ISO 639-1 codes")
     vpn = media.get("vpn")
     if not isinstance(vpn, dict) or set(vpn) != {"gateway_cluster_ip", "server_countries", "endpoint_port", "forwarded_port", "peer_public_key", "address", "mtu", "dns", "persistent_keepalive"}:
         raise InstallerError("Media VPN configuration has missing or unknown keys")

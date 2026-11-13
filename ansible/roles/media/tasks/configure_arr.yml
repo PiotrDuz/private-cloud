@@ -34,6 +34,7 @@
         'addresses': dict(media_arr_services.results | map(attribute='item') | zip(media_arr_services.results | map(attribute='resources') | map('first') | map(attribute='spec.clusterIP'))),
         'datasets': media_datasets,
         'quality_profiles': private_cloud.media.quality_profiles,
+        'subtitle_languages': private_cloud.media.subtitle_languages,
         'qbittorrent_password': private_cloud_secrets.media.qbittorrent_password
       } | to_json }}
   register: media_arr_configuration
