@@ -141,6 +141,12 @@ spec:
         - {protocol: TCP, port: 6767}
     - to:
         - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: media}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: media-switch}
+      ports: [{protocol: TCP, port: 8080}]
+    - to:
+        - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: observability}
           podSelector:
             matchLabels: {app.kubernetes.io/name: openobserve}

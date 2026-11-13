@@ -74,3 +74,15 @@ The configuration is [file-logs.conf](files/file-logs.conf). It discovers new fi
 Forwarding is best effort across abrupt crashes or rotation during an outage. Lines larger than 1 MiB are skipped with a Fluent Bit warning. Original application timestamps remain inside `message`; `collected_at` records collection time.
 
 The installer seeds qBittorrent defaults and the startup initializer reapplies logging, seeding limits, anonymous mode, and WebUI credentials on every pod start. File logging rotates at 10MiB and removes logs after seven days. An existing configuration must use the documented path; forwarding remains best effort during abrupt crashes, rotation, and collector outages.
+
+## Media switch
+
+- `media-switch.<domain>` serves a page that turns the VPN gateway and guarded applications on or off.
+- Traefik admits only local networks and VPN peers; the page has no login.
+- Turning off scales `media-vpn`, Sonarr, Radarr, Prowlarr, Bazarr, and FlareSolverr to 0 replicas.
+- Turning on scales the same deployments to 1 replica.
+- Jellyfin keeps running in both states.
+- The switch only accepts form posts whose `Origin` is its own hostname.
+- Its service account may only read those deployments and patch their scale.
+- Its NetworkPolicy admits Traefik and allows egress only to the Kubernetes API.
+- A reapply restores every deployment to 1 replica.

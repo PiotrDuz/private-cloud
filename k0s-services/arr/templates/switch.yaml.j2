@@ -1,0 +1,154 @@
+{% set switch_script = lookup('file', role_path ~ '/files/media_switch.py') %}
+{% set switch_workloads = ['media-vpn', 'sonarr', 'radarr', 'prowlarr', 'bazarr', 'flaresolverr'] %}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: media-switch
+  namespace: media
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: media-switch
+  namespace: media
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: {{ switch_workloads | to_json }}
+    verbs: [get]
+  - apiGroups: [apps]
+    resources: [deployments/scale]
+    resourceNames: {{ switch_workloads | to_json }}
+    verbs: [patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: media-switch
+  namespace: media
+subjects:
+  - {kind: ServiceAccount, name: media-switch, namespace: media}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: media-switch
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: media-switch, namespace: media}
+data:
+  media_switch.py: |
+{{ switch_script | indent(4, true) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-switch
+  namespace: media
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: media-switch}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: media-switch}
+      annotations:
+        checksum/script: {{ switch_script | hash('sha256') }}
+    spec:
+      serviceAccountName: media-switch
+      # The switch scales the guarded media deployments through the Kubernetes API.
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: media-switch
+          image: {{ media_switch_image }}
+          command: [python3, /app/media_switch.py]
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
+            - {name: PYTHONUNBUFFERED, value: '1'}
+            - {name: KUBERNETES_API, value: "https://{{ private_cloud.networking.traefik_internal_ip }}:6443"}
+            - {name: SWITCH_HOSTNAME, value: {{ private_cloud.media.switch_hostname | to_json }}}
+          ports:
+            - {name: http, containerPort: 8080, protocol: TCP}
+          readinessProbe: {tcpSocket: {port: http}, periodSeconds: 10}
+          livenessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 10, periodSeconds: 30}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: script, mountPath: /app, readOnly: true}
+      volumes:
+        - name: script
+          configMap: {name: media-switch, defaultMode: 0444}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: media-switch
+  namespace: media
+spec:
+  selector: {app.kubernetes.io/name: media-switch}
+  ports: [{name: http, port: 8080, targetPort: http, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: media-switch
+  namespace: media
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: media-switch}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: edge}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports: [{protocol: TCP, port: 8080}]
+  egress:
+    - to:
+        - ipBlock: {cidr: {{ private_cloud.networking.traefik_internal_ip }}/32}
+      ports: [{protocol: TCP, port: 6443}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-route-media-switch
+  namespace: edge
+  labels: {private-cloud.example/traefik-route: "true"}
+data:
+  media-switch.yaml: |
+    http:
+      routers:
+        media-switch:
+          entryPoints: [websecure]
+          rule: Host(`{{ private_cloud.media.switch_hostname }}`)
+          service: media-switch
+          middlewares: [media-switch-local-only]
+          tls:
+            certResolver: cloudflare
+      # LAN clients keep their source address; VPN peers arrive masqueraded from the AmneziaWG pod.
+      middlewares:
+        media-switch-local-only:
+          ipAllowList:
+            sourceRange:
+{% for network in private_cloud.networking.local_network_cidrs %}
+              - {{ network }}
+{% endfor %}
+              - {{ private_cloud.networking.pod_cidr }}
+      services:
+        media-switch:
+          loadBalancer:
+            servers:
+              - url: http://media-switch.media.svc.cluster.local:8080

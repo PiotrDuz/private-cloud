@@ -6,7 +6,7 @@
     kind: Deployment
     namespace: media
     name: "{{ item }}"
-  loop: [media-vpn, sonarr, radarr, prowlarr, flaresolverr, bazarr, jellyfin]
+  loop: [media-vpn, sonarr, radarr, prowlarr, flaresolverr, bazarr, jellyfin, media-switch]
   register: media_validation_deployments
   until:
     - media_validation_deployments.resources | default([]) | length == 1
