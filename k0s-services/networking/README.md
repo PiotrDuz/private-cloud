@@ -10,13 +10,17 @@ The networking services are managed by `ansible/roles/networking`.
 - The `forward-auth` Deployment in `edge` runs oauth2-proxy for Grist.
 - Traefik routes `/oauth2/` on the Grist host to oauth2-proxy through the file provider.
 - Pods reach the public hostname through the Traefik pod port.
+- A second Traefik entrypoint on pod port `8444` admits only the AmneziaWG pod.
+- Both entrypoints attach the `security-headers` middleware for HSTS, `nosniff`, and the referrer policy.
+- AmneziaWG steers peer HTTPS for the host address to that entrypoint inside its pod network namespace.
+- Local-only routes admit configured local networks on the shared entrypoint and every request on the VPN entrypoint.
 - The Cloudflare DDNS CronJob maintains configured public A records, proxy status, and TTL.
 - The `lan-dns` Deployment serves split DNS on host TCP and UDP `53` and to cluster DNS.
 - `lan-dns` answers encrypted DNS canaries with NXDOMAIN.
 - AmneziaWG runs as wg-easy and binds one configured UDP hostPort.
 - wg-easy runs the bundled userspace amneziawg-go without a host kernel module.
 - AmneziaWG routes and firewall rules remain inside its pod network namespace.
-- The wg-easy UI route admits only local networks and VPN peers.
+- The wg-easy, Zabbix, OpenObserve, and Stalwart `/admin` routes admit only local networks and VPN peers.
 - The AmneziaWG dataset has a quota and a dedicated `10Ti` PV.
 - Default-deny policies cover every managed namespace.
 - The host nftables policy limits all other incoming ports.

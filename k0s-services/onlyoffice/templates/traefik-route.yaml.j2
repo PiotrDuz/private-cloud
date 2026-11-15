@@ -9,7 +9,7 @@ data:
     http:
       routers:
         onlyoffice:
-          entryPoints: [websecure]
+          entryPoints: [websecure, vpn]
           rule: Host(`{{ private_cloud.onlyoffice.hostname }}`)
           service: onlyoffice
           tls:

@@ -156,19 +156,19 @@
     that: (networking_validation_amneziawg_information.stdout | from_json).isAwg
     fail_msg: wg-easy fell back to plain WireGuard instead of AmneziaWG.
 
-- name: Read the AmneziaWG tunnel and peer isolation rule
+- name: Read the AmneziaWG tunnel, peer isolation rule, and VPN entrypoint DNAT
   ansible.builtin.command:
-    argv: [k0s, kubectl, exec, -n, network-access, deployment/amneziawg, -c, amneziawg, --, /bin/sh, -c, "awg show wg0 listen-port && iptables -t mangle -C FORWARD -i wg0 -o wg0 -j DROP"]
+    argv: [k0s, kubectl, exec, -n, network-access, deployment/amneziawg, -c, amneziawg, --, /bin/sh, -c, "awg show wg0 listen-port && iptables -t mangle -C FORWARD -i wg0 -o wg0 -j DROP && iptables -t nat -C PREROUTING {{ networking_amneziawg_vpn_dnat }}"]
   register: networking_validation_amneziawg_tunnel
   changed_when: false
   failed_when: false
 
-- name: Require the tunnel on the configured port with peers isolated from each other
+- name: Require the tunnel on the configured port with peers isolated and HTTPS steered to the VPN entrypoint
   ansible.builtin.assert:
     that:
       - networking_validation_amneziawg_tunnel.rc == 0
       - networking_validation_amneziawg_tunnel.stdout | trim == private_cloud.networking.amneziawg.listen_port | string
-    fail_msg: The AmneziaWG tunnel is down, listens on another port, or lost its peer isolation rule; restart the amneziawg pod.
+    fail_msg: The AmneziaWG tunnel is down, listens on another port, or lost its peer isolation or VPN entrypoint DNAT rule; restart the amneziawg pod.
 
 - name: Read AmneziaWG's egress NetworkPolicy
   kubernetes.core.k8s_info:
@@ -196,6 +196,9 @@
             app.kubernetes.io/name: traefik
     networking_validation_amneziawg_traefik_egress_ports:
       - protocol: TCP
+        port: 8444
+    networking_validation_application_traefik_egress_ports:
+      - protocol: TCP
         port: 8443
   changed_when: false
 
@@ -208,10 +211,26 @@
       | list }}
   changed_when: false
 
-- name: Require AmneziaWG HTTPS egress to Traefik's pod port
+- name: Require AmneziaWG egress only to Traefik's VPN entrypoint
   ansible.builtin.assert:
-    that: networking_validation_amneziawg_traefik_egress_rules | length == 1
-    fail_msg: AmneziaWG peers cannot reach Traefik's HTTPS pod endpoint through hostPort DNAT.
+    that:
+      - networking_validation_amneziawg_traefik_egress_rules | length == 1
+      - networking_validation_amneziawg_networkpolicy.resources[0].spec.egress | map(attribute='ports') | select('defined') | flatten | selectattr('port', 'equalto', 8443) | list | length == 0
+    fail_msg: AmneziaWG peers cannot reach Traefik's VPN entrypoint, or can reach the shared HTTPS entrypoint pod port.
+
+- name: Require Traefik's VPN entrypoint to admit only the AmneziaWG pod
+  vars:
+    networking_validation_traefik_vpn_ingress: >-
+      {{ networking_validation_traefik_networkpolicy.resources[0].spec.ingress
+      | selectattr('ports', 'defined') | selectattr('ports', 'contains', {'protocol': 'TCP', 'port': 8444}) | list }}
+  ansible.builtin.assert:
+    that:
+      - networking_validation_traefik_vpn_ingress | length == 1
+      - networking_validation_traefik_vpn_ingress[0].ports | length == 1
+      - >-
+        networking_validation_traefik_vpn_ingress[0].from | default([])
+        == [{'namespaceSelector': {'matchLabels': {'kubernetes.io/metadata.name': 'network-access'}}, 'podSelector': {'matchLabels': {'app.kubernetes.io/name': 'amneziawg'}}}]
+    fail_msg: Pods other than AmneziaWG can reach Traefik's VPN entrypoint.
 
 - name: Read the Cloudflare DDNS CronJob
   kubernetes.core.k8s_info:
@@ -308,7 +327,7 @@
       - networking_validation_application_traefik_egress.resources | length == 1
       - networking_validation_application_traefik_egress.resources[0].spec.egress | length == 1
       - networking_validation_application_traefik_egress.resources[0].spec.egress[0].to == networking_validation_amneziawg_traefik_egress_to
-      - networking_validation_application_traefik_egress.resources[0].spec.egress[0].ports == networking_validation_amneziawg_traefik_egress_ports
+      - networking_validation_application_traefik_egress.resources[0].spec.egress[0].ports == networking_validation_application_traefik_egress_ports
     fail_msg: Applications cannot reach Traefik's HTTPS pod endpoint through hostPort DNAT.
 
 - name: Read the Traefik dynamic configuration
@@ -321,13 +340,35 @@
   register: networking_validation_traefik_dynamic
   changed_when: false
 
-- name: Require the Traefik header and forward-auth middlewares
+- name: Require the Traefik header, forward-auth, and LAN-only middlewares
   ansible.builtin.assert:
     that:
       - networking_validation_traefik_dynamic.resources | length == 1
-      - (networking_validation_traefik_dynamic.resources[0].data['tcp.yaml'] | from_yaml).http.middlewares.keys() | list | sort == ['forward-auth', 'strip-forwarded', 'strip-identity-headers']
+      - (networking_validation_traefik_dynamic.resources[0].data['tcp.yaml'] | from_yaml).http.middlewares.keys() | list | sort == ['forward-auth', 'local-only', 'security-headers', 'strip-forwarded', 'strip-identity-headers']
+      - >-
+        (networking_validation_traefik_dynamic.resources[0].data['tcp.yaml'] | from_yaml).http.middlewares['security-headers'].headers
+        == {'stsSeconds': 31536000, 'stsIncludeSubdomains': false, 'stsPreload': false, 'contentTypeNosniff': true, 'referrerPolicy': 'strict-origin-when-cross-origin'}
+      - (networking_validation_traefik_dynamic.resources[0].data['tcp.yaml'] | from_yaml).http.middlewares['local-only'].ipAllowList.sourceRange == private_cloud.networking.local_network_cidrs
       - (networking_validation_traefik_dynamic.resources[0].data['tcp.yaml'] | from_yaml).http.routers is not defined
     fail_msg: Traefik's dynamic configuration does not define the expected middlewares.
+
+- name: Read the Traefik Deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ networking_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    namespace: edge
+    name: traefik
+  register: networking_validation_traefik_deployment
+  changed_when: false
+
+- name: Require the security headers on both Traefik entrypoints
+  ansible.builtin.assert:
+    that:
+      - networking_validation_traefik_deployment.resources | length == 1
+      - "'--entryPoints.websecure.http.middlewares=security-headers@file' in networking_validation_traefik_deployment.resources[0].spec.template.spec.containers[0].args"
+      - "'--entryPoints.vpn.http.middlewares=security-headers@file' in networking_validation_traefik_deployment.resources[0].spec.template.spec.containers[0].args"
+    fail_msg: Traefik entrypoints do not attach the security-headers middleware.
 
 - name: Read the forward-auth helper resources
   kubernetes.core.k8s_info:

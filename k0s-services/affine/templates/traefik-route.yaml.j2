@@ -9,7 +9,7 @@ data:
     http:
       routers:
         affine:
-          entryPoints: [websecure]
+          entryPoints: [websecure, vpn]
           rule: Host(`{{ private_cloud.affine.hostname }}`)
           service: affine
           tls:

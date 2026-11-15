@@ -35,6 +35,10 @@ spec:
           image: {{ networking_traefik_image }}
           args:
             - --entryPoints.websecure.address=:8443
+            # Only the AmneziaWG pod reaches this entrypoint, so it carries VPN peers and local-only routes.
+            - --entryPoints.vpn.address=:8444
+            - --entryPoints.websecure.http.middlewares=security-headers@file
+            - --entryPoints.vpn.http.middlewares=security-headers@file
             - --log.format=json
             - --log.level=INFO
             - --accesslog=true
@@ -55,6 +59,7 @@ spec:
               valueFrom: {secretKeyRef: {name: cloudflare-dns-api, key: api-token}}
           ports:
             - {name: https, containerPort: 8443, hostPort: 443, protocol: TCP}
+            - {name: vpn, containerPort: 8444, protocol: TCP}
           readinessProbe: {httpGet: {path: /ping, port: 8080}, periodSeconds: 5}
           livenessProbe: {httpGet: {path: /ping, port: 8080}, periodSeconds: 10}
           resources:
@@ -97,6 +102,8 @@ spec:
   selector: {app.kubernetes.io/name: traefik}
   ports:
     - {name: https, port: 443, targetPort: https, protocol: TCP}
+    # AmneziaWG DNATs peer HTTPS for the host address to this port inside its own network namespace.
+    - {name: vpn, port: 8444, targetPort: vpn, protocol: TCP}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -110,6 +117,13 @@ spec:
   ingress:
     - ports:
         - {protocol: TCP, port: 8443}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: network-access}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: amneziawg}
+      ports:
+        - {protocol: TCP, port: 8444}
   egress:
     - to:
         - namespaceSelector:

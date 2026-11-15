@@ -9,9 +9,16 @@ data:
     http:
       routers:
         openobserve:
+          entryPoints: [vpn]
+          rule: Host(`{{ private_cloud.logging.hostname }}`)
+          service: openobserve
+          tls:
+            certResolver: cloudflare
+        openobserve-lan:
           entryPoints: [websecure]
           rule: Host(`{{ private_cloud.logging.hostname }}`)
           service: openobserve
+          middlewares: [local-only]
           tls:
             certResolver: cloudflare
       services:

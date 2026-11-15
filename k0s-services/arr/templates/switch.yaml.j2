@@ -132,21 +132,18 @@ data:
     http:
       routers:
         media-switch:
+          entryPoints: [vpn]
+          rule: Host(`{{ private_cloud.media.switch_hostname }}`)
+          service: media-switch
+          tls:
+            certResolver: cloudflare
+        media-switch-lan:
           entryPoints: [websecure]
           rule: Host(`{{ private_cloud.media.switch_hostname }}`)
           service: media-switch
-          middlewares: [media-switch-local-only]
+          middlewares: [local-only]
           tls:
             certResolver: cloudflare
-      # LAN clients keep their source address; VPN peers arrive masqueraded from the AmneziaWG pod.
-      middlewares:
-        media-switch-local-only:
-          ipAllowList:
-            sourceRange:
-{% for network in private_cloud.networking.local_network_cidrs %}
-              - {{ network }}
-{% endfor %}
-              - {{ private_cloud.networking.pod_cidr }}
       services:
         media-switch:
           loadBalancer:

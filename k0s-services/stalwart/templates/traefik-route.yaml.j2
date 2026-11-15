@@ -9,16 +9,24 @@ data:
     http:
       routers:
         stalwart:
-          entryPoints: [websecure]
+          entryPoints: [websecure, vpn]
           rule: Host(`{{ private_cloud.stalwart.hostname }}`)
           middlewares: [strip-forwarded]
+          service: stalwart
+          tls:
+            certResolver: cloudflare
+        # The administration console admits only LAN clients here; VPN peers reach it through the stalwart router on the vpn entrypoint.
+        stalwart-admin:
+          entryPoints: [websecure]
+          rule: Host(`{{ private_cloud.stalwart.hostname }}`) && PathPrefix(`/admin`)
+          middlewares: [strip-forwarded, local-only]
           service: stalwart
           tls:
             certResolver: cloudflare
 {% if private_cloud.stages.opencloud | bool %}
         # OpenCloud Web exchanges and refreshes tokens from the browser, which needs CORS on the OAuth endpoints.
         stalwart-oauth:
-          entryPoints: [websecure]
+          entryPoints: [websecure, vpn]
           rule: Host(`{{ private_cloud.stalwart.hostname }}`) && PathPrefix(`/auth/`)
           middlewares: [strip-forwarded, stalwart-oauth-cors]
           service: stalwart

@@ -9,7 +9,7 @@ data:
     http:
       routers:
         immich:
-          entryPoints: [websecure]
+          entryPoints: [websecure, vpn]
           rule: Host(`{{ private_cloud.immich.hostname }}`)
           service: immich
           tls:

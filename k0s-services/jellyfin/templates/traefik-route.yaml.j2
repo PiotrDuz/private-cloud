@@ -9,7 +9,7 @@ data:
     http:
       routers:
         jellyfin:
-          entryPoints: [websecure]
+          entryPoints: [websecure, vpn]
           rule: Host(`{{ private_cloud.media.hostname }}`)
           service: jellyfin
           tls:

@@ -9,21 +9,18 @@ data:
     http:
       routers:
         amneziawg:
+          entryPoints: [vpn]
+          rule: Host(`{{ private_cloud.networking.amneziawg.ui_hostname }}`)
+          service: amneziawg
+          tls:
+            certResolver: cloudflare
+        amneziawg-lan:
           entryPoints: [websecure]
           rule: Host(`{{ private_cloud.networking.amneziawg.ui_hostname }}`)
           service: amneziawg
-          middlewares: [amneziawg-local-only]
+          middlewares: [local-only]
           tls:
             certResolver: cloudflare
-      # LAN clients keep their source address; VPN peers arrive masqueraded from the AmneziaWG pod.
-      middlewares:
-        amneziawg-local-only:
-          ipAllowList:
-            sourceRange:
-{% for network in private_cloud.networking.local_network_cidrs %}
-              - {{ network }}
-{% endfor %}
-              - {{ private_cloud.networking.pod_cidr }}
       services:
         amneziawg:
           loadBalancer:

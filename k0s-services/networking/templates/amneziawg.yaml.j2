@@ -27,8 +27,11 @@ spec:
         - name: peer-isolation
           image: {{ networking_amneziawg_image }}
           command: [/bin/sh, -ceu]
+          # Peer HTTPS for the host address goes to Traefik's VPN entrypoint, which no other pod can reach.
           args:
-            - iptables -t mangle -C FORWARD -i wg0 -o wg0 -j DROP 2>/dev/null || iptables -t mangle -A FORWARD -i wg0 -o wg0 -j DROP
+            - >-
+              iptables -t mangle -C FORWARD -i wg0 -o wg0 -j DROP 2>/dev/null || iptables -t mangle -A FORWARD -i wg0 -o wg0 -j DROP;
+              iptables -t nat -C PREROUTING {{ networking_amneziawg_vpn_dnat }} 2>/dev/null || iptables -t nat -A PREROUTING {{ networking_amneziawg_vpn_dnat }}
           securityContext:
             privileged: false
             allowPrivilegeEscalation: false
@@ -137,13 +140,13 @@ spec:
               - 192.168.0.0/16
               - {{ private_cloud.networking.pod_cidr }}
               - {{ private_cloud.networking.service_cidr }}
-    # HostPort traffic to the configured HTTPS endpoint is DNATed to Traefik's pod port.
+    # The pod DNATs peer HTTPS for the host address to Traefik's VPN entrypoint through the Traefik Service.
     - to:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: edge}
           podSelector:
             matchLabels: {app.kubernetes.io/name: traefik}
-      ports: [{protocol: TCP, port: 8443}]
+      ports: [{protocol: TCP, port: 8444}]
     # HostPort traffic to the peer DNS address is DNATed to the LAN DNS pod port.
     - to:
         - namespaceSelector:

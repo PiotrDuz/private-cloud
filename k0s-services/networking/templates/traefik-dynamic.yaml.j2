@@ -7,6 +7,14 @@ data:
   tcp.yaml: |
     http:
       middlewares:
+        # Both entrypoints attach this to every router; no frame, CSP, or permissions policy because OpenCloud embeds editors.
+        security-headers:
+          headers:
+            stsSeconds: 31536000
+            stsIncludeSubdomains: false
+            stsPreload: false
+            contentTypeNosniff: true
+            referrerPolicy: strict-origin-when-cross-origin
         strip-identity-headers:
           headers:
             customRequestHeaders:
@@ -26,6 +34,13 @@ data:
           headers:
             customRequestHeaders:
               Forwarded: ""
+        # Local-only routers on websecure admit LAN clients; VPN peers use the vpn entrypoint, which only the AmneziaWG pod reaches.
+        local-only:
+          ipAllowList:
+            sourceRange:
+{% for network in private_cloud.networking.local_network_cidrs %}
+              - {{ network }}
+{% endfor %}
         # oauth2-proxy answers 202 with the verified email in X-Forwarded-User, or redirects the browser to Stalwart sign-in.
         forward-auth:
           forwardAuth:

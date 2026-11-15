@@ -78,6 +78,17 @@ Traefik binds host TCP `443` from a pod in `edge`.
 - Cloudflare token rotation restarts Traefik through a Secret revision annotation.
 - Unknown HTTPS hosts have no matching route.
 - The `strip-forwarded` file middleware removes client-supplied `Forwarded` headers on the Stalwart route.
+- Traefik has two entrypoints: `websecure` on pod port `8443` behind host TCP `443`, and `vpn` on pod port `8444`.
+- Only the AmneziaWG pod may reach the `vpn` entrypoint, through the Traefik Service.
+- Every public router listens on both entrypoints.
+- Both entrypoints attach the `security-headers` middleware to every router.
+- `security-headers` sets one-year HSTS without subdomains or preload, `nosniff`, and `strict-origin-when-cross-origin` referrers.
+- Traefik sets no global frame, content-security, or permissions policy because OpenCloud embeds editors in frames.
+- Traefik keeps its default TLS options with a TLS 1.2 minimum.
+- Traefik applies no rate limits; Stalwart throttles failed authentication itself.
+- Each local-only service has a `vpn` router and a `websecure` router with the shared `local-only` middleware.
+- The `local-only` middleware admits only `networking.local_network_cidrs`, so pods reaching `websecure` are refused.
+- Local-only services are the wg-easy UI, Sonarr, Radarr, Prowlarr, Bazarr, the media switch, Zabbix, OpenObserve, and Stalwart `/admin`.
 - The Zabbix route ConfigMap is applied only after the installer sets the Zabbix administrator password.
 - The dashboard is disabled.
 - Application services are ClusterIP-only.
@@ -88,7 +99,7 @@ Public DNS resolves enabled application names to the home WAN address. The LAN-o
 
 Stalwart's configured HTTPS URL is the shared OIDC issuer. LAN clients and pods reach that hostname through Traefik, so the issuer matches for browsers and services.
 
-OpenObserve is published through its configured exact HTTPS hostname. Alloy has no public route. When notifications are enabled, OpenObserve and Zabbix send alerts directly to Stalwart's internal SMTP listener on TCP `2525`.
+OpenObserve is published through its configured exact HTTPS hostname to local networks and VPN peers only. Zabbix is published the same way. Alloy has no public route. When notifications are enabled, OpenObserve and Zabbix send alerts directly to Stalwart's internal SMTP listener on TCP `2525`.
 
 ### Pod access to the public hostname
 
@@ -96,8 +107,8 @@ Pods resolve the public hostname to the Traefik Service on TCP `443`. Service tr
 
 - OpenCloud, OnlyOffice, AFFiNE, Immich, and the oauth2-proxy helper may reach the Traefik pod on TCP `8443`.
 - Grist does not reach Traefik because oauth2-proxy performs the OIDC exchange.
-- AmneziaWG reaches the same pod port through hostPort translation of the host address.
 - Application policies do not allow the untranslated Service or host address on TCP `443`.
+- Pod sources fall outside the `local-only` middleware, so pods reach only public routes.
 
 ## Homepage
 
@@ -108,7 +119,7 @@ The stateless `homepage` Deployment in `edge` serves `https://www.<domain>` with
 - The Apps section holds OpenCloud, AFFiNE, Grist, Immich, and Jellyfin.
 - The Administration section holds Stalwart `/admin/`, OpenObserve, Zabbix, Sonarr, Radarr, Prowlarr, Bazarr, the media switch, and `vpn-admin`.
 - OnlyOffice has no tile because users open documents through OpenCloud.
-- The `Sonarr (LAN)`, `Radarr (LAN)`, `Prowlarr (LAN)`, `Bazarr (LAN)`, `Media switch (LAN)`, and `VPN admin (LAN)` tiles work only from local networks and VPN peers.
+- Tiles marked `(LAN)` work only from local networks and VPN peers.
 - The pod accepts TCP `8080` from Traefik only and has no egress.
 
 ## Stalwart sign-in and Grist authentication
@@ -147,7 +158,7 @@ The external inbox remains the only Internet receiver; no inbound SMTP port is p
 - Without a public client in those headers, the message is delivered as loopback and SPF does not pass.
 - Temporary Stalwart failures are retried; permanent rejections are logged and skipped.
 
-JMAP, web access, and administration use the mail hostname on Traefik HTTPS TCP `443`. Stalwart relays non-local outbound messages through the configured external `inbox.eu` SMTP service.
+JMAP, web access, and administration use the mail hostname on Traefik HTTPS TCP `443`. Only the `/admin` console is limited to local networks and VPN peers; JMAP, including the JMAP management API, `/account`, `/api/`, `/auth/`, and discovery stay public. Stalwart relays non-local outbound messages through the configured external `inbox.eu` SMTP service.
 
 Stalwart owns its mail certificate lifecycle. It uses a dedicated Cloudflare DNS token to complete Let's Encrypt DNS-01 challenges for the mail hostname. The Stalwart certificate token and DDNS token are separate credentials:
 
@@ -198,13 +209,14 @@ The pod still has `NET_ADMIN` and `NET_RAW`, and the UI administrator can edit i
 - The installer creates the UI administrator from Vault on first start only.
 - Peers, client keys, QR codes, and per-peer firewall entries are managed in the UI.
 - The UI is published at `vpn-admin.<domain>` and admits only local networks and VPN peers.
+- A nat rule in the pod sends peer TCP `443` for the host address to the Traefik Service port `8444`.
 - The UI hostname stays out of public DNS and resolves through LAN DNS.
 - wg-easy stores its database and configuration on the `amneziawg` dataset.
 
 | Peer destination | Route | Enforcement |
 | --- | --- | --- |
 | Public Internet | Peer → AmneziaWG → host uplink → ISP. | NetworkPolicy permits public destinations; the pod applies NAT. |
-| Application names | Peer → LAN DNS → Traefik TCP `443`. | Only approved HTTPS hosts route to backends. |
+| Application names | Peer → LAN DNS → host address TCP `443` → pod DNAT → Traefik `vpn` entrypoint TCP `8444`. | Only approved HTTPS hosts route to backends; local-only routes are open to peers. |
 | Peer DNS | Peer → host address TCP/UDP `53` → `lan-dns`. | NetworkPolicy permits only the `lan-dns` pod port. |
 | LAN devices | Peer → AmneziaWG → configured LAN IP and port. | NetworkPolicy caps all peers at `networking.amneziawg.lan_access`; UI firewall entries narrow single peers. |
 | Other peers | No route. | A mangle rule drops `wg0` to `wg0` forwarding before wg-easy's rules. |
@@ -229,7 +241,8 @@ Everything omitted is denied. Each entry permits connection initiation in the st
 | WAN | Traefik | TCP `443`. |
 | WAN | AmneziaWG | Configured UDP port. |
 | Local networks | Host | TCP `22`, `6443`, and `31051`. |
-| LAN / AmneziaWG client | Traefik | TCP `443`. |
+| LAN client | Traefik | TCP `443`. |
+| AmneziaWG pod | Traefik `vpn` entrypoint | TCP `8444` through the Traefik Service. |
 | Traefik | Approved web backends / Jellyfin | Declared backend ports only. |
 | Jellyfin | metadata and artwork providers | TCP `443` after cluster DNS. |
 | OIDC-enabled applications / oauth2-proxy helper | Stalwart issuer | TCP `8443` to the Traefik pod after hostPort translation. |

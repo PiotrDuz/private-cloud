@@ -9,14 +9,14 @@ data:
     http:
       routers:
         grist:
-          entryPoints: [websecure]
+          entryPoints: [websecure, vpn]
           rule: Host(`{{ private_cloud.grist.hostname }}`)
           middlewares: [strip-identity-headers, forward-auth]
           service: grist
           tls:
             certResolver: cloudflare
         grist-oauth2:
-          entryPoints: [websecure]
+          entryPoints: [websecure, vpn]
           rule: Host(`{{ private_cloud.grist.hostname }}`) && PathPrefix(`/oauth2/`)
           priority: 10000
           middlewares: [strip-identity-headers]
