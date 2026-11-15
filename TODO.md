@@ -28,7 +28,13 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 - [ ] Confirm console login works only after a wipe.
 - [ ] Confirm held packages and the unattended-upgrades blacklist keep the booted kernel installed.
 - [ ] Confirm Zabbix, Alloy, and Intel GPU workloads run under kernel lockdown.
-- [ ] Add Zabbix items for the unlock state, Secure Boot state, and tripwire state.
+- [ ] Confirm a missing unlock interface wipes the unlock and shows the recovery prompt.
+- [ ] Confirm a wipe prints `wiped:` with a verified state and the recovery prompt still accepts the passphrase.
+- [ ] Confirm a USB device attached before the tripwire starts trips it against the enrolled device set.
+- [ ] Confirm an armed boot with the enrolled devices does not trip the tripwire.
+- [ ] Confirm a fresh configuration binds PCR 1 and survives three cold boots.
+- [x] Add Zabbix items for the unlock state, Secure Boot state, and tripwire state.
+- [ ] Confirm the boot integrity Zabbix items report on an enrolled host and clear after re-enrollment.
 
 ## Runtime validation gaps
 
@@ -73,10 +79,17 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 - [ ] Obtain a real Let's Encrypt certificate through Traefik with the public DNS 53 egress.
 - [ ] Verify OIDC discovery, token exchange, and WOPI callbacks reach the Traefik pod on TCP 8443.
 - [ ] Verify the installer claims Immich, AFFiNE, and Jellyfin administrators before their routes are published.
+- [ ] Verify Jellyfin Quick Sync hardware transcoding works under UID 2002 with the render group.
+- [ ] Verify Jellyfin starts, plays, and downloads metadata with its read-only root filesystem.
+- [ ] Verify Jellyfin reads arr-written library files through media group 2000.
+- [ ] Verify a reapply re-owns the existing Jellyfin dataset to UID 2002.
 - [ ] Verify Traefik serves every route from route ConfigMaps without Kubernetes API access.
 - [ ] Verify the Zabbix route ConfigMap appears only after the administrator password is set.
 - [ ] Verify oauth2-proxy login on the Grist host with a fresh Stalwart sign-in.
 - [ ] Verify Grist logout through `/oauth2/sign_out` lands on the Stalwart sign-in page.
+- [ ] Verify a public route returns the HSTS, nosniff, and referrer policy headers once.
+- [ ] Verify OnlyOffice and Draw.io still embed in OpenCloud with the security headers.
+- [ ] Verify Stalwart sign-in and app OIDC redirects work with the referrer policy.
 - [ ] Verify WOPI proof-key verification between OnlyOffice 9.4.0.1 and OpenCloud 7.2.4.
 - [ ] Fall back to `COLLABORATION_APP_PROOF_DISABLE=true` if proof-key verification fails.
 - [ ] Verify OnlyOffice rejects a foreign WOPI host.
@@ -84,5 +97,17 @@ Backup automation, snapshot retention, and recovery planning are deferred.
 - [ ] Verify Stalwart indexes and searches through its scoped Meilisearch key.
 - [ ] Verify the OpenObserve heartbeat aggregate alert fires when heartbeats stop.
 - [ ] Verify Zabbix PSK agent traffic works and a PSK rotation reconnects the agent.
+- [ ] Verify a reapply labels every managed namespace with privileged enforcement and baseline auditing.
+- [ ] Verify the API server audit log records baseline violations from the namespace labels.
 - [ ] Verify an interrupted `create` resumes from the recorded intent.
 - [ ] Verify k0s starts and routes with custom pod and service CIDRs.
+- [ ] Verify a VPN peer reaches public routes and local-only routes through Traefik's VPN entrypoint.
+- [ ] Verify a LAN client reaches Zabbix, OpenObserve, Stalwart `/admin`, and the other local-only routes.
+- [ ] Verify an application pod gets HTTP 403 from local-only routes and Stalwart `/admin`.
+- [ ] Verify a WAN client gets HTTP 403 from Zabbix, OpenObserve, and Stalwart `/admin` while Stalwart JMAP and OIDC still work.
+- [ ] Verify the Stalwart account manager at `/account` still works from WAN with `/admin` restricted.
+- [ ] Verify the gluetun 3.41.3 gateway connects, passes health checks, and forwards its port with `hostUsers: false`.
+- [ ] Verify qBittorrent reads and writes its dataset and the library as UID 2000 in the gateway user namespace.
+- [ ] Verify the gateway mangle rules survive a `wireguard` container restart and qBittorrent stays offline while gluetun is down.
+- [ ] Verify gluetun and qBittorrent cannot query cluster DNS on eth0 while the gateway CoreDNS still resolves `cluster.local`.
+- [ ] Verify the gateway starts in its user namespace after a host reboot before any other iptables user loads the netfilter modules.

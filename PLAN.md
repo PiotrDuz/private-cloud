@@ -64,8 +64,11 @@ This file is the source of truth for the desired system state and its major deci
 - Boot only an owner-signed UKI under Secure Boot, without shim or GRUB
 - Keep Secure Boot signing keys off the host
 - Hold the unattended root key in TPM NV memory, readable once per boot
-- Bind the key to PCRs 0, 2, 4, 7, 11, and a salted PCR 15 inventory of hardware and the gateway
-- Wipe the key on a failed check, a gateway change, or a USB attach
+- Bind the key to PCRs 0, 1, 2, 4, 7, 11, and a salted PCR 15 inventory of hardware and the gateway
+- Wipe and verify the key on every failed check once the TPM answers, a gateway change, or a USB attach
+- Trip at runtime on any USB or PCI device outside the enrolled set
+- Detect changes to the signed boot chain, firmware, enrolled hardware, and the gateway
+- Leave root filesystem changes after boot undetected
 - Wipe the key and power off when the gateway stays silent for 2 minutes at boot
 - Power off after a runtime wipe and never reboot from a check
 - Disable initrd shells
@@ -347,6 +350,8 @@ This file is the source of truth for the desired system state and its major deci
 - Let gluetun's firewall pin traffic outside the tunnel to the selected server's WireGuard UDP port
 - Cap the gateway NetworkPolicy at the AirVPN WireGuard UDP port on public addresses
 - Route external DNS through the VPN and cluster-local DNS through cluster DNS
+- Let only the gateway CoreDNS query cluster DNS
+- Load the qBittorrent UID firewall before qBittorrent starts and keep it through gluetun restarts
 - Disable guarded media IPv6 through the IPv4-only cluster configuration until equivalent capture and filtering exist
 
 ## Jellyfin
@@ -355,6 +360,7 @@ This file is the source of truth for the desired system state and its major deci
 - Deploy Jellyfin in the media namespace through the media installer stage
 - Create a Jellyfin dataset under tank/secure/backup/k0s/services/jellyfin with a quota and a dedicated 10Ti PV
 - Mount the shared media library read-only
+- Run Jellyfin with a read-only root filesystem and a temporary scratch volume
 - Use one shared Intel i915 GPU allocation for transcoding
 - Expose the configured hostname through Traefik HTTPS
 - Accept connections only from Traefik and allow direct Internet metadata egress
@@ -372,7 +378,11 @@ This file is the source of truth for the desired system state and its major deci
 - Claim Immich, AFFiNE, and Jellyfin administrators through the installer before publishing their routes
     * Run AFFiNE and OnlyOffice container root inside Kubernetes user namespaces
     * Run the Immich server as a dedicated non-root UID so it can join the host render group
-    * Run Jellyfin and the ARR applications as a dedicated media UID that no host account uses
+    * Run the ARR applications as a dedicated media UID that no host account uses
+    * Run Jellyfin as its own unused UID that reads the library only through the media group
+    * Keep Jellyfin out of user namespaces because host-owned render devices stay unmapped inside them
+    * Run the media VPN gateway pod inside a Kubernetes user namespace
+    * Keep the tun2socks-guarded ARR pods out of user namespaces because the `/dev/net/tun` mount cannot be idmapped
     * Map user-namespaced root to an unprivileged host UID
     * Preserve the container startup capabilities required by AFFiNE and OnlyOffice inside their user namespaces
 - Drop Linux capabilities except for workload-specific startup and networking requirements
@@ -383,6 +393,7 @@ This file is the source of truth for the desired system state and its major deci
 - Disable service-account token automounting for applications that do not need Kubernetes API access
     * Limit Alloy Kubernetes API access to workload discovery and event collection
 - Enforce namespace default-deny policies with explicit service and port exceptions
+- Label every managed namespace with Pod Security Admission baseline auditing while host-access workloads keep enforcement privileged
 - Keep application credentials in role-owned Kubernetes Secrets and persistent plaintext secrets out of the repository
 - Use Stalwart as the shared identity source for OIDC-enabled applications while retaining application-specific authorization
 - Keep host and Kubernetes administration on their own credentials and workload identities
@@ -419,6 +430,11 @@ This file is the source of truth for the desired system state and its major deci
 - Give Traefik a quota-controlled backup dataset and a dedicated 10Ti PV/PVC
 - Enable structured Traefik service and access logs on stdout
 - Disable the Traefik dashboard and leave unknown HTTPS hosts without a route
+- Give Traefik a second VPN entrypoint that only the AmneziaWG pod may reach
+- Attach one-year HSTS without subdomains or preload, nosniff, and a strict-origin referrer policy on both entrypoints
+- Admit only configured local networks to local-only routes on the shared HTTPS entrypoint
+- Serve local-only routes on the VPN entrypoint so peers keep access without trusting other pods
+- Publish Zabbix, OpenObserve, and the Stalwart `/admin` console only to local networks and VPN peers
 - Run a stateless nginx homepage in edge from a generated ConfigMap
 - Run a stateless [oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy) helper in edge for Grist's Stalwart OIDC login
 - Keep the helper's OIDC client secret and cookie-signing secret in Kubernetes Secrets
@@ -452,6 +468,7 @@ This file is the source of truth for the desired system state and its major deci
 
 - Run AmneziaWG with the userspace amneziawg-go implementation so no host kernel module is needed
 - Keep AmneziaWG routing, NAT, and peer firewall rules inside its pod network namespace
+- Steer peer HTTPS for the host address to Traefik's VPN entrypoint with a nat rule in the AmneziaWG pod
 - Route guarded media application egress through the AirVPN WireGuard gateway with fail-closed policies
 - Keep Jellyfin ingress behind Traefik and allow direct Internet metadata egress
 - Cap AmneziaWG peers at configured LAN destinations, peer DNS, Traefik, and public Internet through its NetworkPolicy
@@ -486,6 +503,7 @@ This file is the source of truth for the desired system state and its major deci
 
 - Keep infrastructure metrics and metric alerts in Zabbix
 - Keep ZFS, ECC, and SMART metric results in Zabbix while forwarding collector failures as logs
+- Alert on the unlock result, Secure Boot, and tripwire state when boot integrity is enabled
 - Check enabled HTTPS and Stalwart SMTP STARTTLS certificates through Zabbix with expiry alerts at 21 and 7 days
 - Keep Alloy health, retry, and dropped-entry monitoring in Zabbix
 - Run the Zabbix Alloy and certificate collector without sudo or OpenObserve administrator credentials
