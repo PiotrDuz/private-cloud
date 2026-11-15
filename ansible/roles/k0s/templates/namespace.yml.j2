@@ -1,41 +1,14 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: {{ k0s_namespace }}
-  labels:
-    kubernetes.io/metadata.name: {{ k0s_namespace }}
+{# Every namespace runs a pod that baseline rejects, so baseline is audited rather than enforced; warn would flood every apply. #}
+{% for namespace in [k0s_namespace, 'media', 'edge', 'network-access', 'dns-system', 'observability'] %}
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: media
+  name: {{ namespace }}
   labels:
-    kubernetes.io/metadata.name: media
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: edge
-  labels:
-    kubernetes.io/metadata.name: edge
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: network-access
-  labels:
-    kubernetes.io/metadata.name: network-access
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: dns-system
-  labels:
-    kubernetes.io/metadata.name: dns-system
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: observability
-  labels:
-    kubernetes.io/metadata.name: observability
+    kubernetes.io/metadata.name: {{ namespace }}
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: {{ k0s_pod_security_version }}
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/audit-version: {{ k0s_pod_security_version }}
+{% endfor %}

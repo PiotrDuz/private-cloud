@@ -66,3 +66,25 @@
       - lookup('ansible.builtin.file', k0s_kubelet_resolv_conf) | trim == 'nameserver ' ~ private_cloud.networking.lan_dns_cluster_ip
     fail_msg: The active kubelet does not point cluster DNS at the LAN DNS Service.
   when: private_cloud.stages.networking | bool
+
+- name: Read the Pod Security Admission labels of the managed namespaces
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k0s_kubeconfig_path }}"
+    api_version: v1
+    kind: Namespace
+    name: "{{ item }}"
+  loop: [ "{{ k0s_namespace }}", media, edge, network-access, dns-system, observability ]
+  register: k0s_validation_namespaces
+
+- name: Require baseline auditing on every managed namespace
+  ansible.builtin.assert:
+    that:
+      - item.resources | length == 1
+      - item.resources[0].metadata.labels['pod-security.kubernetes.io/enforce'] | default('') == 'privileged'
+      - item.resources[0].metadata.labels['pod-security.kubernetes.io/enforce-version'] | default('') == k0s_pod_security_version
+      - item.resources[0].metadata.labels['pod-security.kubernetes.io/audit'] | default('') == 'baseline'
+      - item.resources[0].metadata.labels['pod-security.kubernetes.io/audit-version'] | default('') == k0s_pod_security_version
+      - "'pod-security.kubernetes.io/warn' not in item.resources[0].metadata.labels"
+    fail_msg: Namespace {{ item.item }} does not carry the Pod Security Admission labels.
+  loop: "{{ k0s_validation_namespaces.results }}"
+  loop_control: {label: "{{ item.item }}"}

@@ -340,7 +340,7 @@ A deleted or weakened NetworkPolicy passes validation as long as its name is kno
 - **Encryption key:** the ZFS key sits on the host for automatic unlock. It protects detached disks, not a stolen machine.
 - **Host firewall:** the host accepts all traffic from the pod CIDR. A compromised pod, or a VPN peer routed through the AmneziaWG pod, can reach every host port unless the in-pod ACLs stop it.
 - **Broad HTTPS egress:** Grist, OnlyOffice, OpenCloud, AFFiNE, and Immich may reach any public HTTPS address, which gives a compromised app an easy exfiltration path. Narrow it where a stable destination exists.
-- **No admission baseline:** nothing enforces Pod Security Admission, so a future template can silently add privileges.
+- **Admission baseline audited only:** every managed namespace audits Pod Security baseline but enforces privileged, because each runs a host-access or NET_ADMIN/NET_RAW pod.
 - **AppArmor relaxation:** `kernel.apparmor_restrict_unprivileged_unconfined=0` is set host-wide to work around a runtime issue.
 - **Capacity:** memory requests are budgeted, but limits can burst together. PostgreSQL, indexing, ML inference, conversions, and imports can peak at the same time. Several OOM incidents are already recorded.
 - **Self-monitoring:** alerts depend on the same host, cluster, database, and mail server they monitor. Add an independent external check.
