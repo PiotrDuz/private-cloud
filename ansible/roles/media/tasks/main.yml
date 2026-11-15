@@ -44,6 +44,9 @@
     state: present
     persistent: present
 
+- name: Verify VPN gateway user namespace support
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/user_namespace_compatibility.yml"
+
 - name: Prepare media service datasets
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset.yml"
   vars:
@@ -57,8 +60,8 @@
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/service_dataset_permissions.yml"
   vars:
     private_cloud_service_dataset_mountpoint: "/{{ media_datasets[item] }}"
-    private_cloud_service_dataset_owner: "{{ media_uid }}"
-    private_cloud_service_dataset_group: "{{ media_uid }}"
+    private_cloud_service_dataset_owner: "{{ jellyfin_uid if item == 'jellyfin' else media_uid }}"
+    private_cloud_service_dataset_group: "{{ jellyfin_uid if item == 'jellyfin' else media_uid }}"
   loop: "{{ media_services }}"
 
 - name: Create shared library and download folders

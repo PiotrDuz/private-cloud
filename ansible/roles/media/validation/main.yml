@@ -17,6 +17,11 @@
   delay: 5
   changed_when: false
 
+- name: Require the VPN gateway in its own user namespace
+  ansible.builtin.assert:
+    that: media_validation_deployments.results[0].resources[0].spec.template.spec.hostUsers | default(true) == false
+    fail_msg: The media VPN gateway runs in the host user namespace.
+
 - name: Resolve the media service endpoints
   kubernetes.core.k8s_info:
     kubeconfig: "{{ media_kubeconfig }}"
@@ -160,6 +165,15 @@
       ]
     fail_msg: The gateway firewall no longer confines qBittorrent to the tunnel.
 
+- name: Require cluster DNS limited to the gateway CoreDNS
+  ansible.builtin.assert:
+    that: >-
+      (media_validation_gateway_firewall.stdout_lines[6:8] | map('regex_replace', ' +$', '') | list) == [
+        '-A OUTPUT -o eth0 -p tcp -m tcp --dport 53 -m owner ! --uid-owner 65532 -j DROP',
+        '-A OUTPUT -o eth0 -p udp -m udp --dport 53 -m owner ! --uid-owner 65532 -j DROP'
+      ]
+    fail_msg: Gateway processes other than CoreDNS can resolve names outside the tunnel.
+
 - name: Verify qBittorrent cannot reach the gluetun control server
   ansible.builtin.command:
     argv: [k0s, kubectl, exec, -n, media, deployment/media-vpn, -c, qbittorrent, --, curl, -sS, -m, '5', -o, /dev/null, http://127.0.0.1:8000/v1/vpn/status]
@@ -247,6 +261,27 @@
           map(attribute='requests') | first | default({}))) ==
         (private_cloud.stages.intel_gpu | bool)
     fail_msg: Jellyfin memory or Intel GPU configuration does not match the global settings.
+
+- name: Read the Jellyfin process identity
+  ansible.builtin.command:
+    argv: [k0s, kubectl, exec, -n, media, deployment/jellyfin, -c, jellyfin, --, id]
+  register: media_validation_jellyfin_identity
+  changed_when: false
+
+- name: Read the Intel render device for the Jellyfin group check
+  ansible.builtin.stat:
+    path: /dev/dri/renderD128
+  register: media_validation_render_device
+  when: private_cloud.stages.intel_gpu | bool
+
+- name: Require Jellyfin on its own UID with the library and render groups
+  ansible.builtin.assert:
+    that:
+      - media_validation_jellyfin_identity.stdout is search('^uid=' ~ jellyfin_uid ~ '[ (]')
+      - media_validation_jellyfin_identity.stdout is search(' gid=' ~ jellyfin_uid ~ '[ (]')
+      - "(',' ~ media_uid ~ ',') in (media_validation_jellyfin_identity.stdout | regex_replace('\\([^)]*\\)', '') | regex_replace('^.*groups=', ',') ~ ',')"
+      - not (private_cloud.stages.intel_gpu | bool) or (',' ~ (media_validation_render_device.stat.gid | int) ~ ',') in (media_validation_jellyfin_identity.stdout | regex_replace('\\([^)]*\\)', '') | regex_replace('^.*groups=', ',') ~ ',')
+    fail_msg: Jellyfin does not run as UID {{ jellyfin_uid }} with the media library and render groups.
 
 - name: Validate Jellyfin's public server API
   ansible.builtin.command:

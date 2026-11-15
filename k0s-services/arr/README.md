@@ -11,11 +11,14 @@ The arr stack templates are managed by `ansible/roles/media` through the `media`
 - Per-pod `tun2socks` helpers carry the other guarded applications' traffic.
 - NetworkPolicy blocks direct Internet fallback.
 - The applications run as the dedicated media UID and GID 2000, which no host account uses.
-- Kubernetes user namespaces are not used, because the kernel cannot idmap the `/dev/net/tun` device mount that `tun2socks` and the gateway need.
+- The gateway pod runs in a Kubernetes user namespace, because kernelspace WireGuard needs no TUN device.
+- The guarded application pods stay in the host user namespace, because the kernel cannot idmap the `/dev/net/tun` mount that `tun2socks` needs.
 - qBittorrent binds to `wg0` with UPnP disabled.
 - The gateway firewall limits the media UID to `wg0`, gateway DNS, and replies.
-- The media UID rules live in the mangle table, so gluetun can still remove its own outdated rules.
-- Each gateway start clears firewall rules left in the pod network namespace.
+- An init container loads the media UID rules into the mangle table before qBittorrent starts.
+- Gluetun never touches the mangle table, so the rules stay in place while gluetun restarts.
+- Only the gateway CoreDNS may query cluster DNS, and it forwards only `cluster.local` there.
+- Each gluetun start clears the filter and nat rules left in the pod network namespace.
 - The gateway drops its IPv6 addresses and routes before gluetun starts, so gluetun selects only IPv4 servers.
 - AirVPN forwards `media.vpn.forwarded_port` to qBittorrent through the tunnel.
 - Traefik publishes the Sonarr, Radarr, Prowlarr, and Bazarr UIs at `sonarr.<domain>`, `radarr.<domain>`, `prowlarr.<domain>`, and `bazarr.<domain>` to local networks and VPN peers only.

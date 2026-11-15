@@ -16,23 +16,35 @@ data:
         forward . {{ private_cloud.media.vpn.dns }}
     }
 ---
-{# qBittorrent shares the gateway network namespace, so its UID may only use the tunnel, gateway DNS, and replies; each rule lands first, so the last line is checked first. #}
-{# The rules live in the mangle table because gluetun cannot parse owner matches in the filter table and then never removes its outdated tunnel rules. #}
-{% set firewall_rules = [
-  'iptables -t mangle -I OUTPUT 1 -m owner --uid-owner ' ~ media_uid ~ ' -j DROP',
-  'iptables -t mangle -I OUTPUT 1 -m owner --uid-owner ' ~ media_uid ~ ' -o wg0 -j ACCEPT',
-  'iptables -t mangle -I OUTPUT 1 -m owner --uid-owner ' ~ media_uid ~ ' -o lo -d 127.0.0.1 -p udp --dport 53 -j ACCEPT',
-  'iptables -t mangle -I OUTPUT 1 -m owner --uid-owner ' ~ media_uid ~ ' -o lo -d 127.0.0.1 -p tcp --dport 53 -j ACCEPT',
-  'iptables -t mangle -I OUTPUT 1 -m owner --uid-owner ' ~ media_uid ~ ' -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT',
-  'ip6tables -t mangle -I OUTPUT 1 -m owner --uid-owner ' ~ media_uid ~ ' -j DROP'
-] | join('\n') %}
+{# qBittorrent shares the gateway network namespace, so its UID may only use the tunnel, gateway DNS, and replies; the first matching line wins. #}
+{# Only the gateway CoreDNS may query cluster DNS, so other gateway processes cannot resolve external names outside the tunnel. #}
+{# The rules live in the mangle table, which gluetun never flushes, so they outlast gluetun restarts. #}
+{% set firewall_rules = {
+  'ipv4.rules': [
+    '*mangle',
+    '-A OUTPUT -m owner --uid-owner ' ~ media_uid ~ ' -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT',
+    '-A OUTPUT -m owner --uid-owner ' ~ media_uid ~ ' -o lo -d 127.0.0.1 -p tcp --dport 53 -j ACCEPT',
+    '-A OUTPUT -m owner --uid-owner ' ~ media_uid ~ ' -o lo -d 127.0.0.1 -p udp --dport 53 -j ACCEPT',
+    '-A OUTPUT -m owner --uid-owner ' ~ media_uid ~ ' -o wg0 -j ACCEPT',
+    '-A OUTPUT -m owner --uid-owner ' ~ media_uid ~ ' -j DROP',
+    '-A OUTPUT -o eth0 -p tcp --dport 53 -m owner ! --uid-owner 65532 -j DROP',
+    '-A OUTPUT -o eth0 -p udp --dport 53 -m owner ! --uid-owner 65532 -j DROP',
+    'COMMIT'
+  ] | join('\n') ~ '\n',
+  'ipv6.rules': [
+    '*mangle',
+    '-A OUTPUT -m owner --uid-owner ' ~ media_uid ~ ' -j DROP',
+    'COMMIT'
+  ] | join('\n') ~ '\n'
+} %}
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: media-vpn-firewall
   namespace: media
 data:
-  post-rules.txt: {{ (firewall_rules ~ '\n') | to_json }}
+  ipv4.rules: {{ firewall_rules['ipv4.rules'] | to_json }}
+  ipv6.rules: {{ firewall_rules['ipv6.rules'] | to_json }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -52,13 +64,28 @@ spec:
       annotations:
         private-cloud.example/vpn-secret-revision: "{{ media_vpn_secret_revision }}"
         private-cloud.example/qbittorrent-secret-revision: "{{ media_qbittorrent_secret_revision }}"
-        # Gluetun reads its post rules only at startup.
-        checksum/firewall: {{ firewall_rules | hash('sha256') }}
+        # The firewall init container applies the rules once per pod network namespace.
+        checksum/firewall: {{ firewall_rules | to_json | hash('sha256') }}
         checksum/logging-settings: {{ (lookup('file', role_path ~ '/files/configure_qbittorrent.py') ~ lookup('file', role_path ~ '/files/qbittorrent_helpers.py')) | hash('sha256') }}
         checksum/file-logs: {{ lookup('file', playbook_dir ~ '/../k0s-services/arr/files/file-logs.conf') | hash('sha256') }}
     spec:
       automountServiceAccountToken: false
+      # Kernelspace WireGuard, iptables, and the mounted volumes work with the pod's own user namespace and need no TUN device.
+      hostUsers: false
       initContainers:
+        # The media UID rules are in place before qBittorrent starts and stay through gluetun restarts.
+        - name: firewall
+          image: {{ media_vpn_gateway_image }}
+          command: [/bin/sh, -ceu, 'iptables-restore /firewall/ipv4.rules; ip6tables-restore /firewall/ipv6.rules']
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL], add: [NET_ADMIN]}
+            seccompProfile: {type: RuntimeDefault}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: firewall, mountPath: /firewall, readOnly: true}
         - name: prepare-runtime
           image: {{ media_images.qbittorrent }}
           command: [/bin/sh, -ceu, 'chown {{ media_uid }}:{{ media_uid }} /run']
@@ -123,14 +150,14 @@ spec:
       containers:
         - name: wireguard
           image: {{ media_vpn_gateway_image }}
-          # Container restarts keep the pod network namespace, so clear routing rules and firewall rules left by the previous tunnel.
+          # Container restarts keep the pod network namespace, so clear routing rules and gluetun firewall rules left by the previous tunnel.
           # The pod has no IPv6 egress, and gluetun treats any IPv6 route at startup as support and then picks unreachable IPv6 servers.
           command:
             - /bin/sh
             - -c
             - >-
               while ip rule del table 51820 2>/dev/null; do :; done; while ip -6 rule del table 51820 2>/dev/null; do :; done;
-              for t in filter mangle nat; do iptables -t $t -F; iptables -t $t -X; ip6tables -t $t -F; ip6tables -t $t -X; done;
+              for t in filter nat; do iptables -t $t -F; iptables -t $t -X; ip6tables -t $t -F; ip6tables -t $t -X; done;
               ip link del wg0 2>/dev/null; ip -6 addr flush dev eth0; ip -6 route flush table all dev eth0; exec /gluetun-entrypoint
           env:
             # Gluetun's built-in AirVPN list supplies server addresses and the WireGuard public key, so no lookup leaves the tunnel;
@@ -184,9 +211,6 @@ spec:
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL], add: [NET_ADMIN, CHOWN]}
             seccompProfile: {type: RuntimeDefault}
-          volumeMounts:
-            - {name: tun, mountPath: /dev/net/tun}
-            - {name: firewall, mountPath: /iptables, readOnly: true}
         - name: dns
           image: {{ media_coredns_image }}
           args: [-conf, /etc/coredns/Corefile]
@@ -233,7 +257,6 @@ spec:
             - {name: config, mountPath: /config}
             - {name: library, mountPath: /media}
       volumes:
-        - {name: tun, hostPath: {path: /dev/net/tun, type: CharDevice}}
         - {name: dns-config, configMap: {name: media-vpn-dns, defaultMode: 0444}}
         - {name: firewall, configMap: {name: media-vpn-firewall, defaultMode: 0444}}
         - {name: runtime, emptyDir: {}}

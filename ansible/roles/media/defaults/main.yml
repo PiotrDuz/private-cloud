@@ -3,6 +3,8 @@ media_kubeconfig: /run/private-cloud/kubeconfig
 media_pv_capacity: 10Ti
 # Media workloads share an unused UID and GID, apart from the host administrator account at 1000.
 media_uid: 2000
+# Jellyfin is Internet-facing, so it runs as its own unused UID and only joins the media group to read the library.
+jellyfin_uid: 2002
 media_services: [jellyfin, sonarr, radarr, prowlarr, qbittorrent, bazarr, media-library]
 media_images:
   jellyfin: jellyfin/jellyfin:10.11.4@sha256:aab0b50a3ce43a41621fc7040a379cc57174059aec8f9c17a90176649a0c1ab1
@@ -17,7 +19,7 @@ media_flaresolverr_max_ram: 2Gi
 # Bazarr only matches subtitle files, so its limit is fixed.
 media_bazarr_max_ram: 512Mi
 media_switch_image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
-media_vpn_gateway_image: qmcgaw/gluetun:v3.41.0@sha256:6b54856716d0de56e5bb00a77029b0adea57284cf5a466f23aad5979257d3045
+media_vpn_gateway_image: qmcgaw/gluetun:v3.41.3@sha256:fa19cc76b2af13d57a8d3dc3066f2ada061b1c761b8aecf989b3877c0486e027
 media_tun2socks_image: ghcr.io/xjasonlyu/tun2socks:v2.7.0@sha256:f89e05e123404d4047caf680a988cd22f8faa62629bcf6d83735cafc1f3dc935
 media_coredns_image: registry.k8s.io/coredns/coredns:v1.12.4@sha256:986f04c2e15e147d00bdd51e8c51bcef3644b13ff806be7d2ff1b261d6dfbae1
 media_datasets:

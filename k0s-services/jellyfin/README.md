@@ -14,7 +14,8 @@ The Jellyfin templates are managed by `ansible/roles/media` through the `media` 
 - The installer creates the administrator named by `private_cloud.media.jellyfin_admin_username` with `private_cloud_secrets.media.jellyfin_admin_password`.
 - The startup wizard is skipped when Jellyfin already reports it completed.
 - The installer skips the wizard's configuration step so the managed settings stay unchanged.
-- `fsGroupChangePolicy: OnRootMismatch` keeps starts from re-owning volumes.
+- The pod sets no `fsGroup`, so starts never re-own the dataset or the library.
+- The installer owns the Jellyfin dataset as UID and GID `2002`.
 - The shared library claim is read-only at both the volume and the mount.
 - `KnownProxies` trusts forwarded headers only from the cluster pod network.
 - TCP `8096` accepts traffic only from Traefik.
@@ -32,7 +33,11 @@ The [arr stack](../arr/README.md) provisions the shared library and downloads me
 - The init container writes `KnownProxies` in `network.xml` from `private_cloud.networking.pod_cidr`.
 - The Jellyfin NetworkPolicy admits only Traefik, so the pod network can only be Traefik.
 - Automatic subtitle downloads and writes alongside media remain disabled.
-- The server runs as the dedicated media UID 2000 with the host render-device group.
+- The server runs as the unused UID `2002`, apart from the arr media UID `2000`.
+- Supplemental group `2000` grants read access to the arr-owned library, which has no group write bits.
+- The host render-device group grants `/dev/dri` access for Quick Sync.
+- The pod runs without a user namespace because unmapped host render groups would block the device.
+- The root filesystem is read-only, and `/tmp` is a size-limited `emptyDir` that also serves as `HOME`.
 - Newly added libraries need local metadata and artwork saving off because the mount is read-only.
 
 Library settings follow Jellyfin's [LibraryOptions](https://github.com/jellyfin/jellyfin/blob/v10.11.4/MediaBrowser.Model/Configuration/LibraryOptions.cs) and [persisted library configuration](https://github.com/jellyfin/jellyfin/blob/v10.11.4/MediaBrowser.Controller/Entities/CollectionFolder.cs).

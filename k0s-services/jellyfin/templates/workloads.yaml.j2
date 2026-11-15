@@ -17,13 +17,14 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        runAsUser: {{ media_uid }}
-        runAsGroup: {{ media_uid }}
-        fsGroup: {{ media_uid }}
-        fsGroupChangePolicy: OnRootMismatch
+        runAsUser: {{ jellyfin_uid }}
+        runAsGroup: {{ jellyfin_uid }}
 {% if private_cloud.stages.intel_gpu | bool %}
-        supplementalGroups: [{{ intel_gpu_render_group_id | int }}]
+        supplementalGroups: [{{ media_uid }}, {{ intel_gpu_render_group_id | int }}]
+{% else %}
+        supplementalGroups: [{{ media_uid }}]
 {% endif %}
+        seccompProfile: {type: RuntimeDefault}
       initContainers:
         - name: configure-local-library
           image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
@@ -52,6 +53,7 @@ spec:
             - {name: JELLYFIN_DATA_DIR, value: /config}
             - {name: JELLYFIN_CONFIG_DIR, value: /config/config}
             - {name: JELLYFIN_CACHE_DIR, value: /config/cache}
+            - {name: HOME, value: /tmp}
           ports:
             - {name: http, containerPort: 8096, protocol: TCP}
           startupProbe:
@@ -79,14 +81,17 @@ spec:
 {% endif %}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
             seccompProfile: {type: RuntimeDefault}
           volumeMounts:
             - {name: config, mountPath: /config}
+            - {name: tmp, mountPath: /tmp}
             - {name: library, mountPath: /media, readOnly: true}
       volumes:
         - {name: settings, configMap: {name: jellyfin-settings}}
         - {name: config, persistentVolumeClaim: {claimName: jellyfin-data}}
+        - {name: tmp, emptyDir: {sizeLimit: 1Gi}}
         - {name: library, persistentVolumeClaim: {claimName: media-library-data, readOnly: true}}
 ---
 apiVersion: v1
