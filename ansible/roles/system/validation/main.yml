@@ -19,3 +19,40 @@
   ansible.builtin.assert:
     that: system_validation_swap_target.stdout | trim == 'masked'
     fail_msg: swap.target must be masked so no swap activates at boot.
+
+- name: Read the effective unattended upgrade setting
+  ansible.builtin.command: apt-config shell UPGRADE APT::Periodic::Unattended-Upgrade
+  register: system_validation_unattended
+  changed_when: false
+
+- name: Read the unattended upgrade unit states
+  ansible.builtin.command: systemctl is-enabled apt-daily-upgrade.timer unattended-upgrades.service
+  register: system_validation_upgrade_units
+  changed_when: false
+  failed_when: false
+
+- name: Require manual package upgrades
+  ansible.builtin.assert:
+    that:
+      - system_validation_unattended.stdout | trim == "UPGRADE='0'"
+      - system_validation_upgrade_units.stdout_lines | map('trim') | list == ['masked', 'masked']
+    fail_msg: Unattended package upgrades are still enabled.
+
+- name: Find snapd for validation
+  ansible.builtin.stat:
+    path: /usr/bin/snap
+  register: system_validation_snap
+
+- name: Read the snap refresh hold for validation
+  ansible.builtin.command: snap get system refresh.hold
+  register: system_validation_snap_hold
+  changed_when: false
+  failed_when: false
+  when: system_validation_snap.stat.exists
+
+- name: Require held snap auto-refresh
+  ansible.builtin.assert:
+    that: system_validation_snap_hold.stdout | trim == 'forever'
+    fail_msg: Snap packages still refresh automatically.
+  when: system_validation_snap.stat.exists
+

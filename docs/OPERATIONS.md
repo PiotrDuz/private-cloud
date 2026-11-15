@@ -214,6 +214,18 @@ Backup automation and independent outage monitoring are not configured by this r
 - After reboot, confirm datasets are mounted, pods are ready, and monitoring has resumed.
 - Back up the Manticore dataset and review its release notes before changing the pinned image.
 
+## Package updates
+
+- Unattended upgrades are off, and snaps hold their auto-refresh indefinitely.
+- Install package updates by hand:
+
+```bash
+sudo apt update && sudo apt upgrade
+sudo snap refresh
+```
+
+- Follow the boot integrity steps below when the stage is enabled.
+
 ## Boot integrity updates
 
 - Hold kernel, firmware, and boot-chain packages until a maintenance visit.
