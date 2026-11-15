@@ -145,5 +145,5 @@ private_cloud:
   notifications:
     from_address: user@example.com
   boot_integrity:
-    extra_pcrs: []
+    extra_pcrs: [1]
     extra_drivers: []

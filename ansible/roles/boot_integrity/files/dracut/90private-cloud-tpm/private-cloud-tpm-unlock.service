@@ -13,3 +13,4 @@ ExecStart=/usr/lib/private-cloud/unlock.sh
 ExecStop=/usr/lib/private-cloud/unlock.sh cleanup
 TimeoutStartSec=infinity
 SyslogIdentifier=private-cloud-tpm
+StandardOutput=journal+console

@@ -41,10 +41,15 @@ def set_state(armed: bool) -> None:
 
 
 def wipe() -> None:
-    """Destroy the unattended unlock secret; the key goes first and the state last."""
-    for handle, size in ((KEY_HANDLE, KEY_SIZE), (RECORD_HANDLE, RECORD_SIZE)):
-        tpm("tpm2_nvwrite", handle, "-C", handle, "-i-", input=bytes(size), check=False)
-    set_state(False)
+    """Destroy the unattended unlock secret, key first and state last; raise unless every write succeeded and the state reads back wiped."""
+    failed = []
+    for name, handle, size in (("key", KEY_HANDLE, KEY_SIZE), ("record", RECORD_HANDLE, RECORD_SIZE), ("state", STATE_HANDLE, 1)):
+        if tpm("tpm2_nvwrite", handle, "-C", handle, "-i-", input=bytes(size), check=False).returncode != 0:
+            failed.append(name)
+    if not failed and state() != "wiped":
+        failed.append("readback")
+    if failed:
+        raise TpmError(f"The wipe did not complete: {', '.join(failed)}")
 
 
 def provision(record_policy: bytes, key_policy: bytes, record: bytes, key: bytes) -> None:

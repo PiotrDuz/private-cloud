@@ -65,7 +65,7 @@ firmware (PCR 0, 2) ── Secure Boot, owner keys only (PCR 7)
             3. gateway mismatch or USB attach → wipe → recovery prompt
             4. extend PCR 15 with H(salt ‖ hardware inventory ‖ gateway MAC)
             5. read the LUKS key from TPM NV, then read-lock it
-            6. read failure → wipe → recovery prompt
+            6. any failed check or TPM error → wipe → verify → recovery prompt
             7. hand the key to systemd-cryptsetup, delete it from /run
   └─ root mounted → zfs-load-key@tank-secure from /etc/zfs/keys → k0s
   └─ armed: tripwires on, no console login
@@ -124,8 +124,9 @@ The operator then needs two secrets at the console: the LUKS recovery passphrase
 | 11 | UKI sections and the boot phase | Kernel, initrd, or command line change; after leaving the initrd |
 | 15 | Salted hardware and gateway inventory from the initrd | Any device, disk, NIC, or gateway change |
 
-- Bind the key to PCRs 0, 2, 4, 7, 11, and 15.
-- Add PCRs 1 and 5 only if their values stay identical across three cold boots on this board.
+- Bind the key to PCRs 0, 1, 2, 4, 7, 11, and 15 by default.
+- Remove PCR 1 from `extra_pcrs` only if it changes across cold boots on this board.
+- Add PCR 5 only if its value stays identical across three cold boots on this board.
 - Predict PCR 11 for the `enter-initrd` phase with `systemd-measure calculate`.
 - Use literal PCR values, not a signed PCR policy.
 
@@ -172,11 +173,15 @@ A MAC check proves only that a device with that MAC answers. It does not stop a 
 | Gateway answers with another MAC | Wipe, then recovery prompt |
 | Inventory still differs after 60 seconds | Measure it anyway; the key read fails and wipes |
 | Key read fails with a policy error | Wipe, then recovery prompt |
-| No TPM device or a transport error | Recovery prompt without wipe |
-| Armed host, USB device attached at runtime | Wipe, then power off |
+| Unlock interface missing, state unreadable, or any other TPM error after the TPM answered | Wipe, then recovery prompt |
+| No TPM device | Recovery prompt without wipe |
+| Armed host, USB or PCI device outside the enrollment at runtime | Wipe, then power off |
 | Armed host, another gateway MAC at runtime | Wipe, then power off |
 
 - Wipe by overwriting the key and boot record indexes with zeros, then marking the state `wiped`.
+- Verify the wipe from each write status and a read-back of the state index.
+- Report `wiped:<reason>` or `wipe-failed:<reason>:<steps>` in `/run/private-cloud/unlock-result` and on the console.
+- Record the tripwire reason and wipe outcome in `/var/lib/private-cloud/tripwire-result`, then power off either way.
 - Kill the TPM LUKS keyslot during the next re-enrollment, not from the initrd.
 
 Why: the TPM's dictionary-attack lockout counts only failed authorization values, such as PINs. PCR mismatches are not counted, so a retry limit never trips without a PIN. The wipe is the retry limit, and it allows one attempt. Attaching a keyboard during the initrd waits is also the operator's way into the recovery prompt when the gateway is gone for good.
@@ -185,10 +190,15 @@ Why: the TPM's dictionary-attack lockout counts only failed authorization values
 
 - Arm the tripwire service only when the state index says `armed`.
 - Boot with `usbcore.authorized_default=2` so newly attached external USB devices get no driver.
-- Poll USB and PCI devices every 0.5 seconds against the set present 20 seconds after boot.
-- On any new device, wipe and power off.
+- Record the USB and PCI lines of `inventory.sh` in the enrollment file as the trusted device set.
+- Poll sysfs every 0.5 seconds and rerun `inventory.sh` on any change and every 5 seconds.
+- On any device line outside the enrolled set, wipe and power off.
+- Ignore removed devices and a silent gateway at runtime.
 - Every 30 seconds, ARP the gateway; wipe and power off when replies arrive and none carries the enrolled MAC.
 - Disarm the tripwire before planned maintenance with `systemctl stop private-cloud-tripwire.service`.
+- Report the unlock result, Secure Boot, a stopped tripwire, and an unacknowledged trip to Zabbix.
+
+A same-model USB bridge on the same port with the same generic serial is indistinguishable at this layer; the disk line in PCR 15 still binds the boot.
 
 Why power off and not reboot: a reboot would give a thief a host that unlocks itself again. Power off clears the keys from RAM. The next boot sees the wiped state and runs no checks, so there is no loop. A proxy-ARP device answering next to the real gateway does not trip the wipe.
 
@@ -285,6 +295,8 @@ Firmware settings are manual steps; see [SETUP.md](SETUP.md#boot-integrity). A C
 - The administrator password guards the console in the wiped state; it needs the same strength.
 - Held kernel packages delay kernel security fixes until the next maintenance visit.
 - Cheap N305 boards may ship incomplete firmware: missing Setup Mode, unstable PCR 1, or broken PTT NV persistence.
+- Changes to the root filesystem after boot are not measured; root is protected only by LUKS and the running host's access controls.
+- A transient TPM error in the initrd wipes the key and needs a re-enrollment.
 
 ## Operations
 

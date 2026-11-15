@@ -1,6 +1,7 @@
 #!/bin/bash
 # Unattended LUKS unlock from TPM NV memory; runs in the initrd before systemd-cryptsetup.
 # Every path ends with exit 0 so a failed check falls through to the recovery passphrase prompt.
+# Every failed check after the TPM answers wipes the key; only the wiped and unenrolled states run no checks.
 
 CONFIGURATION=${PRIVATE_CLOUD_CONFIGURATION:-/etc/private-cloud/boot-integrity.conf}
 RUN=${PRIVATE_CLOUD_RUN:-/run/private-cloud}
@@ -14,6 +15,7 @@ INVENTORY_WAIT=${PRIVATE_CLOUD_INVENTORY_WAIT:-60}
 GATEWAY_WAIT=${PRIVATE_CLOUD_GATEWAY_WAIT:-120}
 POWER_OFF=
 INVENTORY_TEXT=
+WIPE_FAILED=
 
 # shellcheck source=/dev/null
 . "$CONFIGURATION"
@@ -26,11 +28,11 @@ main() {
     case "$(read_state)" in
         armed) unlock ;;
         wiped)
-            zero_indexes
+            zero_indexes || inert "wiped:rewipe-failed:$WIPE_FAILED"
             inert wiped
             ;;
         unenrolled) inert unenrolled ;;
-        *) finish "error:state" ;;
+        *) wipe state-unreadable ;;
     esac
 }
 
@@ -47,12 +49,12 @@ unlock() {
     [[ $salt =~ [^0] ]] || wipe record-empty
 
     wait_inventory "$expected" || wipe inventory-mismatch
-    join_network || finish "error:no-interface"
+    join_network || wipe no-interface
     wait_gateway "$expected" "$gateway"
 
     measurement=$(printf '%s\n%s\n%s\n' "$salt" "$INVENTORY_TEXT" "$gateway" | sha256sum | cut -d' ' -f1)
-    pcr15_unused || finish "error:pcr15-used"
-    tpm2_pcrextend "15:sha256=$measurement" > /dev/null 2>&1 || finish "error:extend"
+    pcr15_unused || wipe pcr15-used
+    tpm2_pcrextend "15:sha256=$measurement" > /dev/null 2>&1 || wipe extend-failed
 
     (umask 077 && : > "$KEY_DIRECTORY/$LUKS_VOLUME.key" && nv_read "$KEY" "$PCRS,11,15" "$KEY_DIRECTORY/$LUKS_VOLUME.key" > /dev/null)
     status=$?
@@ -84,8 +86,7 @@ wait_for_tpm() {
 read_state() {
     local attempt value
     for attempt in 1 2 3; do
-        if tpm2_nvread "$STATE" -C "$STATE" > "$RUN/state.out" 2> "$RUN/state.err"; then
-            value=$(od -An -v -tx1 "$RUN/state.out" | tr -d ' \n')
+        if value=$(state_value); then
             [ "$value" = 01 ] && echo armed || echo wiped
             return
         fi
@@ -96,6 +97,11 @@ read_state() {
         sleep 1
     done
     echo error
+}
+
+state_value() {
+    tpm2_nvread "$STATE" -C "$STATE" > "$RUN/state.out" 2> "$RUN/state.err" || return 1
+    od -An -v -tx1 "$RUN/state.out" | tr -d ' \n'
 }
 
 # Prints the NV contents as hex, or writes them to $3. Returns 2 on a policy failure and 3 on any other failure.
@@ -135,11 +141,12 @@ policy_session() {
 
 read_failed() {
     [ "$1" -eq 2 ] && wipe "$2-policy"
-    finish "error:tpm-$2"
+    wipe "$2-error"
 }
 
+# The result names the indexes whose write failed and a state that did not read back as wiped.
 wipe() {
-    zero_indexes
+    zero_indexes || finish "wipe-failed:$1:$WIPE_FAILED"
     finish "wiped:$1"
 }
 
@@ -148,10 +155,15 @@ wipe_and_power_off() {
     wipe "$1"
 }
 
+# The key and record are read-locked or policy-bound, so their write status is the check; the state reads back.
 zero_indexes() {
-    head -c 64 /dev/zero | tpm2_nvwrite "$KEY" -C "$KEY" -i- > /dev/null 2>&1
-    head -c 128 /dev/zero | tpm2_nvwrite "$RECORD" -C "$RECORD" -i- > /dev/null 2>&1
-    printf '\000' | tpm2_nvwrite "$STATE" -C "$STATE" -i- > /dev/null 2>&1
+    local failed=
+    head -c 64 /dev/zero | tpm2_nvwrite "$KEY" -C "$KEY" -i- > /dev/null 2>&1 || failed+=key,
+    head -c 128 /dev/zero | tpm2_nvwrite "$RECORD" -C "$RECORD" -i- > /dev/null 2>&1 || failed+=record,
+    printf '\000' | tpm2_nvwrite "$STATE" -C "$STATE" -i- > /dev/null 2>&1 || failed+=state,
+    [ "$(state_value)" = 00 ] || failed+=readback,
+    WIPE_FAILED=${failed%,}
+    [ -z "$failed" ]
 }
 
 wait_inventory() {

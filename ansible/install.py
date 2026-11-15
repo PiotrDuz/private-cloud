@@ -369,7 +369,7 @@ def collect_public_configuration(existing: dict[str, Any] | None, mode: str) -> 
         cloud["notifications"]["from_address"] = prompt_line("Alert sender address for mail delivered locally to Stalwart", cloud["notifications"]["from_address"])
     if "boot_integrity" in sections:
         boot = cloud["boot_integrity"]
-        pcrs = prompt_line("Boot integrity extra PCRs separated by spaces (1 and 5 only)", " ".join(str(value) for value in boot["extra_pcrs"])).split()
+        pcrs = prompt_line("Boot integrity extra PCRs separated by spaces (1 and 5 only; 1 binds firmware settings and is the default)", " ".join(str(value) for value in boot["extra_pcrs"])).split()
         boot["extra_pcrs"] = [int(value) if value.isdigit() else value for value in pcrs]
         boot["extra_drivers"] = prompt_line("Boot integrity extra initrd drivers separated by spaces", " ".join(boot["extra_drivers"])).split()
     if "zabbix" in sections:

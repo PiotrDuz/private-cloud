@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import tpm_nv
-from boot_settings import AUTHORIZE_USB_SCRIPT, ENROLLMENT, INITRD_INVENTORY, INVENTORY_SCRIPT, ROOT_USB_RULES, UKI_LIBRARY, UNLOCK_RESULT, load_settings
+from boot_settings import AUTHORIZE_USB_SCRIPT, ENROLLMENT, INITRD_INVENTORY, INVENTORY_SCRIPT, ROOT_USB_RULES, UKI_LIBRARY, UNLOCK_RESULT, device_lines, load_settings
 from install_helpers import LUKS_KEY_FILE, LUKS_PASSPHRASE_FILE, InstallerError, atomic_write, prompt_bool, prompt_choice, prompt_secret
 
 CRYPTTAB = Path("/etc/crypttab")
@@ -155,7 +155,7 @@ def arm(configuration: Mapping[str, Any], build: Mapping[str, str], inventory: s
     replace_luks_slot(device, passphrase, key)
     tpm_nv.provision(record_policy, key_policy, record, key.encode())
     expected = {str(index): value.hex() for index, value in measured.items()}
-    description = {"build": build["name"], "gateway_mac": gateway, "expected_pcrs": expected, "enrolled_at": datetime.now(timezone.utc).isoformat()}
+    description = {"build": build["name"], "gateway_mac": gateway, "devices": device_lines(inventory), "expected_pcrs": expected, "enrolled_at": datetime.now(timezone.utc).isoformat()}
     atomic_write(ENROLLMENT, json.dumps(description, indent=2) + "\n", 0o600)
     tpm_nv.set_state(True)
 

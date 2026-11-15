@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""Runtime tripwire for the TPM unlock: wipes the secret and powers off on a new device or another gateway."""
+"""Runtime tripwire for the TPM unlock: wipes the secret and powers off on a device outside the enrollment or another gateway."""
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tpm_nv
-from boot_settings import CONSOLE_FLAG, ENROLLMENT, load_settings
+from boot_settings import CONSOLE_FLAG, ENROLLMENT, INVENTORY_SCRIPT, TRIPWIRE_RESULT, device_lines, load_settings
 
 POLL_SECONDS = 0.5
 GATEWAY_SECONDS = 30
+INVENTORY_SECONDS = 5
 
 
 def main() -> int:
@@ -41,13 +44,19 @@ def allow_console() -> None:
 
 def watch() -> None:
     settings = load_settings()
-    gateway = json.loads(ENROLLMENT.read_text())["gateway_mac"]
-    baseline = devices()
-    next_gateway = time.monotonic() + GATEWAY_SECONDS
+    enrollment = json.loads(ENROLLMENT.read_text())
+    gateway, enrolled = enrollment["gateway_mac"], set(enrollment["devices"])
+    names: set[str] = set()
+    next_gateway = next_inventory = time.monotonic()
     while True:
-        if devices() - baseline:
-            trip("new-device")
-            return
+        # The cheap sysfs listing triggers a full inventory at once; a periodic one catches a device that appeared half-populated.
+        current = device_names()
+        if current != names or time.monotonic() >= next_inventory:
+            names, next_inventory = current, time.monotonic() + INVENTORY_SECONDS
+            added = devices() - enrolled
+            if added:
+                trip("new-device " + "; ".join(sorted(added)))
+                return
         if time.monotonic() >= next_gateway:
             next_gateway = time.monotonic() + GATEWAY_SECONDS
             macs = gateway_macs(settings["INTERFACE"], settings["GATEWAY_IP"])
@@ -58,9 +67,15 @@ def watch() -> None:
 
 
 def trip(reason: str) -> None:
-    print(f"private-cloud-tripwire: {reason}; wiping the unlock secret and powering off", flush=True)
     try:
-        tpm_nv.wipe()
+        try:
+            tpm_nv.wipe()
+            outcome = "wipe verified"
+        except (tpm_nv.TpmError, OSError) as error:
+            outcome = f"wipe failed: {error}"
+        print(f"private-cloud-tripwire: {reason}; {outcome}; powering off", flush=True)
+        TRIPWIRE_RESULT.write_text(f"{datetime.now(timezone.utc).isoformat()} {outcome}: {reason}\n")
+        os.sync()
     finally:
         subprocess.run(["systemctl", "poweroff", "--force"], check=False)
 
@@ -72,21 +87,14 @@ def current_state() -> str:
         return "armed"
 
 
-def devices() -> set[tuple[str, ...]]:
-    found: set[tuple[str, ...]] = set()
-    for device in Path("/sys/bus/usb/devices").glob("*"):
-        if (device / "idVendor").exists():
-            found.add(("usb", device.name, attribute(device, "idVendor"), attribute(device, "idProduct"), attribute(device, "serial")))
-    for device in Path("/sys/bus/pci/devices").glob("*"):
-        found.add(("pci", device.name, attribute(device, "vendor"), attribute(device, "device")))
-    return found
+def devices() -> set[str]:
+    """Return the USB and PCI lines exactly as the enrollment recorded them from the same inventory script."""
+    inventory = subprocess.run([str(INVENTORY_SCRIPT)], capture_output=True, text=True, check=True).stdout
+    return set(device_lines(inventory))
 
 
-def attribute(device: Path, name: str) -> str:
-    try:
-        return (device / name).read_text().strip()
-    except OSError:
-        return ""
+def device_names() -> set[str]:
+    return {path.name for bus in ("usb", "pci") for path in Path(f"/sys/bus/{bus}/devices").iterdir()}
 
 
 def gateway_macs(interface: str, gateway: str) -> set[str]:

@@ -5,7 +5,6 @@ ConditionPathExists=/dev/tpmrm0
 
 [Service]
 ExecCondition=/usr/local/libexec/private-cloud/tripwire.py armed
-ExecStartPre=/usr/bin/sleep 20
 ExecStart=/usr/local/libexec/private-cloud/tripwire.py run
 Restart=always
 RestartSec=5

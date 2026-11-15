@@ -70,7 +70,8 @@ The `boot_integrity` stage implements the TPM unlock described in [TPM_ANALYSIS.
 
 ### Board checks
 
-- [ ] Record PCR 1 and PCR 5 across three cold boots and set `extra_pcrs` only if they stay identical.
+- [ ] Record PCR 1 and PCR 5 across three cold boots.
+- [ ] Remove 1 from `extra_pcrs` if PCR 1 changes, and add 5 only if PCR 5 stays identical.
 - [ ] List the USB devices that `usbcore.authorized_default=2` leaves unauthorized.
 - [ ] Confirm the PTT NV contents survive a cold boot and a power loss.
 - [ ] Confirm the display works after the Microsoft UEFI CA is removed.
