@@ -693,6 +693,8 @@
     - "{{ playbook_dir }}/../zabbix/zabbix-smartctl-wrapper"
     - "{{ playbook_dir }}/../zabbix/zabbix-zfs-template.yaml"
     - "{{ playbook_dir }}/../zabbix/zabbix-memory-ecc-template.yaml"
+    - "{{ playbook_dir }}/../zabbix/zabbix-boot-integrity-collector.py"
+    - "{{ playbook_dir }}/../zabbix/zabbix-boot-integrity-template.yaml"
   delegate_to: localhost
   register: preflight_assets
   when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
@@ -714,6 +716,8 @@
       - preflight_assets.results[2].stat.executable
       - not preflight_assets.results[3].stat.executable
       - not preflight_assets.results[4].stat.executable
+      - preflight_assets.results[5].stat.executable
+      - not preflight_assets.results[6].stat.executable
     fail_msg: Repository asset modes do not match the runtime contract
   when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
 
@@ -723,6 +727,7 @@
   loop:
     - "{{ playbook_dir }}/../zabbix/zabbix-zfs-template.yaml"
     - "{{ playbook_dir }}/../zabbix/zabbix-memory-ecc-template.yaml"
+    - "{{ playbook_dir }}/../zabbix/zabbix-boot-integrity-template.yaml"
   delegate_to: localhost
   when: private_cloud.stages.zabbix_agent or private_cloud.stages.zabbix_server
 

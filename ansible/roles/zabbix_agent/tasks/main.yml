@@ -95,6 +95,16 @@
     mode: '0755'
   notify: Restart Zabbix Agent 2
 
+- name: Copy the boot integrity collector
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../zabbix/zabbix-boot-integrity-collector.py"
+    dest: "{{ zabbix_boot_integrity_collector }}"
+    owner: root
+    group: root
+    mode: '0755'
+  when: private_cloud.stages.boot_integrity | bool
+  notify: Restart Zabbix Agent 2
+
 - name: Install the monitored dataset inventory
   ansible.builtin.copy:
     content: "{{ {'datasets': private_cloud_monitored_datasets, 'allowed': private_cloud_allowed_datasets} | to_nice_json }}\n"
@@ -126,6 +136,17 @@
     owner: root
     group: root
     mode: '0644'
+  notify: Restart Zabbix Agent 2
+
+# The collector runs as root because /run/private-cloud is private to root.
+- name: Install boot integrity user parameters
+  ansible.builtin.template:
+    src: boot-integrity.conf.j2
+    dest: "{{ zabbix_boot_integrity_config }}"
+    owner: root
+    group: root
+    mode: '0644'
+  when: private_cloud.stages.boot_integrity | bool
   notify: Restart Zabbix Agent 2
 
 - name: Install SMART plugin configuration

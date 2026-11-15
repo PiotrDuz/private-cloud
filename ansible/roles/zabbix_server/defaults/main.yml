@@ -13,9 +13,12 @@ zabbix_kubeconfig: /run/private-cloud/kubeconfig
 zabbix_host_group: Private cloud
 zabbix_dashboard_name: Private cloud
 zabbix_pool_name: tank
-zabbix_template_choices:
+zabbix_base_template_choices:
   - [Linux by Zabbix agent active]
   - [SMART by Zabbix agent active 2, SMART by Zabbix agent 2 active]
   - [ZFS by Zabbix agent active]
   - [Memory ECC by Zabbix agent active]
   - [Kubernetes workloads by Zabbix agent active]
+zabbix_template_choices: >-
+  {{ zabbix_base_template_choices
+     + ([['Boot integrity by Zabbix agent active']] if private_cloud.stages.boot_integrity | bool else []) }}

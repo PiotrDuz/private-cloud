@@ -13,6 +13,7 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - `zabbix-zfs-collector.py` collects pool, dataset, scrub, and snapshot metrics.
 - `/etc/zabbix/private-cloud-datasets.json` lists enabled datasets to collect.
 - `zabbix-memory-ecc-collector.py` collects Linux EDAC counters.
+- `zabbix-boot-integrity-collector.py` reads the unlock result, Secure Boot, and tripwire state through a no-argument sudo rule.
 - `zabbix-kubernetes-collector.py` sums CPU, memory, and container restarts per Kubernetes workload.
 - The Kubernetes template skips restart triggers for media workloads other than Jellyfin.
 - `zabbix-smartctl-wrapper` constrains privileged SMART commands.
@@ -22,6 +23,8 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - Zabbix Agent and the host object authenticate with a PSK stored in the encrypted configuration.
 - `zabbix-zfs-template.yaml` defines ZFS items, discovery, and alerts.
 - `zabbix-memory-ecc-template.yaml` defines ECC items, discovery, and alerts.
+- `zabbix-boot-integrity-template.yaml` defines unlock, Secure Boot, and tripwire items and alerts.
+- The boot integrity collector and template are installed only when the `boot_integrity` stage is enabled.
 - `zabbix-kubernetes-template.yaml` defines workload discovery, items, and restart alerts.
 - `configure_dashboards.py` maintains the Private cloud dashboard from the host's live items.
 
@@ -55,6 +58,9 @@ The host integration is managed by `ansible/roles/zabbix_agent`.
 - `zfs.metrics` reports pool health, errors, capacity, leaf quotas, and quota headroom.
 - `zfs.snapshots` reports snapshot counts, retained bytes, and age.
 - `memory.ecc.metrics` reports corrected and uncorrected ECC counters.
+- `boot.integrity.metrics` reports this boot's unlock result, Secure Boot, the tripwire service, and the last trip.
+- A failed wipe is a Disaster; any other unlock result than `unlocked` is High.
+- A trip stays a problem until a re-enrollment rewrites the enrollment record.
 - `kubernetes.workloads` reports CPU, memory, and restarts per workload every minute.
 - The native SMART plugin reports disk discovery and health.
 

@@ -1,0 +1,214 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 7a21befb7e8c4c869d085c9bd5928a94
+      name: Templates/Security
+  templates:
+    - uuid: deb9edec2ca34f669cb7725d899c2d9e
+      template: 'Boot integrity by Zabbix agent active'
+      name: 'Boot integrity by Zabbix agent active'
+      description: 'TPM unlock outcome, Secure Boot, and runtime tripwire state of the boot_integrity stage.'
+      groups:
+        - name: Templates/Security
+      items:
+        - uuid: cf82ae0fb7de4b4ba5624346c72c8f30
+          name: 'Boot integrity: Metrics JSON'
+          type: ZABBIX_ACTIVE
+          key: boot.integrity.metrics
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          tags:
+            - tag: component
+              value: raw
+        - uuid: 05a2b7e8bc7b4fad932b2631130398d8
+          name: 'Boot integrity: Unlock result'
+          type: DEPENDENT
+          key: boot.integrity.unlock.result
+          delay: '0'
+          history: 90d
+          trends: '0'
+          value_type: TEXT
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.unlock_result
+          master_item:
+            key: boot.integrity.metrics
+          tags:
+            - tag: component
+              value: unlock
+        - uuid: d3f1c751c68a4de98c85811b8af545c2
+          name: 'Boot integrity: Unlock state'
+          type: DEPENDENT
+          key: boot.integrity.unlock.state
+          delay: '0'
+          history: 90d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.unlock_code
+          master_item:
+            key: boot.integrity.metrics
+          tags:
+            - tag: component
+              value: unlock
+          valuemap:
+            name: 'Boot integrity unlock state'
+          triggers:
+            - uuid: fccaa09e73e74fab8efd48db9b672b85
+              expression: 'last(/Boot integrity by Zabbix agent active/boot.integrity.unlock.state)=4'
+              name: 'Boot integrity wipe failed after a failed check; the unlock key may still be live'
+              priority: DISASTER
+            - uuid: bf90349708b14eceb6a46db714a4d0f2
+              expression: 'last(/Boot integrity by Zabbix agent active/boot.integrity.unlock.state)<>0 and last(/Boot integrity by Zabbix agent active/boot.integrity.unlock.state)<>4'
+              name: 'Boot integrity did not unlock this boot unattended'
+              priority: HIGH
+        - uuid: dc191adcf41d4ed8a4f98851450efecf
+          name: 'Boot integrity: Secure Boot enabled'
+          type: DEPENDENT
+          key: boot.integrity.secure_boot
+          delay: '0'
+          history: 90d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.secure_boot
+          master_item:
+            key: boot.integrity.metrics
+          tags:
+            - tag: component
+              value: secure-boot
+          valuemap:
+            name: 'Boot integrity enabled state'
+          triggers:
+            - uuid: 2bc5d5ddd73b4d9d908fbde1dbc06d38
+              expression: 'last(/Boot integrity by Zabbix agent active/boot.integrity.secure_boot)=0'
+              name: 'Secure Boot is disabled'
+              priority: HIGH
+        - uuid: 6adf04a0f1dd40008830bc25374fe801
+          name: 'Boot integrity: Tripwire active'
+          type: DEPENDENT
+          key: boot.integrity.tripwire.active
+          delay: '0'
+          history: 30d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.tripwire_active
+          master_item:
+            key: boot.integrity.metrics
+          tags:
+            - tag: component
+              value: tripwire
+          valuemap:
+            name: 'Boot integrity enabled state'
+        - uuid: 0aa3487b613b4a3e9d0f4919b6b0c8b2
+          name: 'Boot integrity: Tripwire last trip'
+          type: DEPENDENT
+          key: boot.integrity.tripwire.result
+          delay: '0'
+          history: 90d
+          trends: '0'
+          value_type: TEXT
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.tripwire_result
+          master_item:
+            key: boot.integrity.metrics
+          tags:
+            - tag: component
+              value: tripwire
+        - uuid: eedada5e935442178e440f3ca9e36745
+          name: 'Boot integrity: Tripwire trip since enrollment'
+          type: DEPENDENT
+          key: boot.integrity.tripwire.pending
+          delay: '0'
+          history: 90d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.tripwire_pending
+          master_item:
+            key: boot.integrity.metrics
+          tags:
+            - tag: component
+              value: tripwire
+          triggers:
+            - uuid: 6d91ad1e36634decbcc1016c9d9ed0d3
+              expression: 'last(/Boot integrity by Zabbix agent active/boot.integrity.tripwire.pending)=1'
+              name: 'Boot integrity tripwire tripped since the last enrollment'
+              priority: HIGH
+        - uuid: 74c1ecb635a2434aa71d97eb55bb36cb
+          name: 'Boot integrity: Collector errors'
+          type: DEPENDENT
+          key: boot.integrity.collector.errors
+          delay: '0'
+          history: 30d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.error_count
+          master_item:
+            key: boot.integrity.metrics
+          tags:
+            - tag: component
+              value: health
+          triggers:
+            - uuid: 7aab49fa17cb4f0a8a366f0fa470a0f4
+              expression: 'last(/Boot integrity by Zabbix agent active/boot.integrity.collector.errors)>0'
+              name: 'Boot integrity collector reports errors'
+              priority: HIGH
+        - uuid: 1654bec7bba0414abd49d3661c86e04c
+          name: 'Boot integrity: Metrics heartbeat'
+          type: DEPENDENT
+          key: boot.integrity.metrics.heartbeat
+          delay: '0'
+          history: 7d
+          units: unixtime
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.generated_at
+          master_item:
+            key: boot.integrity.metrics
+          tags:
+            - tag: component
+              value: health
+          triggers:
+            - uuid: 4656ee4c578f434d9468c89c04ea9c87
+              expression: 'nodata(/Boot integrity by Zabbix agent active/boot.integrity.metrics.heartbeat,5m)=1'
+              name: 'No boot integrity metrics received for 5 minutes'
+              priority: HIGH
+      valuemaps:
+        - uuid: 98876fcb2faf4606b5baf542d47302b1
+          name: 'Boot integrity enabled state'
+          mappings:
+            - value: '0'
+              newvalue: 'Disabled'
+            - value: '1'
+              newvalue: 'Enabled'
+        - uuid: e8fe88036ade464e823bdb0a87618d22
+          name: 'Boot integrity unlock state'
+          mappings:
+            - value: '0'
+              newvalue: 'Unlocked'
+            - value: '1'
+              newvalue: 'Inert'
+            - value: '2'
+              newvalue: 'Wiped'
+            - value: '3'
+              newvalue: 'Error'
+            - value: '4'
+              newvalue: 'Wipe failed'
+            - value: '5'
+              newvalue: 'No result'
+            - value: '6'
+              newvalue: 'Unknown result'
+  triggers:
+    - uuid: b647a877a57040fea3af751f029b043b
+      expression: 'last(/Boot integrity by Zabbix agent active/boot.integrity.tripwire.active)=0 and last(/Boot integrity by Zabbix agent active/boot.integrity.unlock.state)=0'
+      name: 'Boot integrity tripwire is not running after an unattended unlock'
+      priority: HIGH

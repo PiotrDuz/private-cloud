@@ -1,2 +1,5 @@
 # Managed by private-cloud Ansible.
 zabbix ALL=(root) NOPASSWD: {{ zabbix_smart_wrapper }} *
+{% if private_cloud.stages.boot_integrity | bool %}
+zabbix ALL=(root) NOPASSWD: {{ zabbix_boot_integrity_collector }} ""
+{% endif %}

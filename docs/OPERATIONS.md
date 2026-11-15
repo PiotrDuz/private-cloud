@@ -33,10 +33,12 @@ sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py --inventory /etc/zabbi
 sudo -u zabbix /usr/local/libexec/zabbix/zfs-collector.py --inventory /etc/zabbix/private-cloud-datasets.json snapshots | python3 -m json.tool
 sudo -u zabbix /usr/local/libexec/zabbix/memory-ecc-collector.py | python3 -m json.tool
 sudo -u zabbix /usr/local/libexec/zabbix/kubernetes-collector.py /etc/zabbix/private-cloud-kubernetes.json | python3 -m json.tool
+sudo -u zabbix sudo -n /usr/local/libexec/zabbix/boot-integrity-collector.py | python3 -m json.tool
 sudo zabbix_agent2 -t zfs.metrics
 sudo zabbix_agent2 -t zfs.snapshots
 sudo zabbix_agent2 -t memory.ecc.metrics
 sudo zabbix_agent2 -t kubernetes.workloads
+sudo zabbix_agent2 -t boot.integrity.metrics
 sudo zabbix_agent2 -t smart.disk.discovery
 ```
 
@@ -215,6 +217,7 @@ Backup automation and independent outage monitoring are not configured by this r
 ## Boot integrity updates
 
 - Hold kernel, firmware, and boot-chain packages until a maintenance visit.
+- Treat a firmware setup change like a boot-chain update, because PCR 1 is bound by default.
 - Stop the tripwire before attaching a keyboard to a running armed host.
 - Run the installer after package updates to build the new unsigned UKI.
 - Sign the UKI on the workstation and copy it to `signed.efi` in the build directory.
@@ -231,6 +234,10 @@ Backup automation and independent outage monitoring are not configured by this r
 - Power the router on first, then the host, before re-enrolling after a long outage.
 - A moved or stolen-and-recovered host needs the same re-enrollment.
 - Read `journalctl -b -t private-cloud-tpm` for the wipe reason of the last boot.
+- Treat a `wipe-failed:` unlock result as a live key and re-enroll before leaving the host.
+- Read `/var/lib/private-cloud/tripwire-result` for the last runtime trip and its wipe outcome.
+- Re-enroll to clear the Zabbix tripwire trip problem.
+- Expect a Zabbix tripwire problem while the tripwire is stopped for maintenance.
 - Compare the logged PCR values with `expected_pcrs` in `/var/lib/private-cloud/boot-integrity.json`.
 - Delete a build directory under `/var/lib/private-cloud/uki/` to force a rebuild.
 

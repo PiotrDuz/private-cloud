@@ -24,6 +24,11 @@
       - "{{ playbook_dir }}/../zabbix/zabbix-memory-ecc-template.yaml"
       - "{{ playbook_dir }}/../zabbix/zabbix-kubernetes-template.yaml"
 
+- name: Add the boot integrity template when the stage is enabled
+  ansible.builtin.set_fact:
+    zabbix_template_paths: "{{ zabbix_template_paths + [playbook_dir ~ '/../zabbix/zabbix-boot-integrity-template.yaml'] }}"
+  when: private_cloud.stages.boot_integrity | bool
+
 - name: Prepare the Zabbix kubeconfig
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/kubeconfig.yml"
   vars:

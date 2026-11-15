@@ -60,6 +60,29 @@
     that: (zabbix_agent_validation_ecc_metrics.stdout | from_json).error_count | int == 0
     fail_msg: Memory ECC collector output is invalid or reports errors.
 
+- name: Check the boot integrity Agent item
+  ansible.builtin.command:
+    argv: [zabbix_agent2, -t, boot.integrity.metrics, -c, "{{ zabbix_agent_config }}"]
+  register: zabbix_agent_validation_boot_integrity_item
+  changed_when: false
+  failed_when: zabbix_agent_validation_boot_integrity_item.rc != 0 or 'ZBX_NOTSUPPORTED' in zabbix_agent_validation_boot_integrity_item.stdout
+  when: private_cloud.stages.boot_integrity | bool
+
+- name: Run the boot integrity collector through the Zabbix sudo rule
+  ansible.builtin.command:
+    argv: [runuser, -u, zabbix, --, sudo, -n, "{{ zabbix_boot_integrity_collector }}"]
+  register: zabbix_agent_validation_boot_integrity
+  changed_when: false
+  when: private_cloud.stages.boot_integrity | bool
+
+- name: Validate boot integrity collector output
+  ansible.builtin.assert:
+    that:
+      - (zabbix_agent_validation_boot_integrity.stdout | from_json).error_count | int == 0
+      - (zabbix_agent_validation_boot_integrity.stdout | from_json).secure_boot | int == 1
+    fail_msg: Boot integrity collector output is invalid, reports errors, or sees Secure Boot off.
+  when: private_cloud.stages.boot_integrity | bool
+
 - name: Run the Kubernetes workload collector as the Zabbix user
   ansible.builtin.command:
     argv: [runuser, -u, zabbix, --, "{{ zabbix_kubernetes_collector }}", "{{ zabbix_kubernetes_access }}"]
