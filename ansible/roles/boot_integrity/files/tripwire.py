@@ -31,6 +31,9 @@ def main() -> int:
     if command == "run":
         watch()
         return 0
+    if command == "wipe":
+        tpm_nv.wipe()
+        return 0
     return 2
 
 

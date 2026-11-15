@@ -236,8 +236,28 @@ sudo snap refresh
 - Rerun the installer to install the signed UKI.
 - Expect the first reboot to wipe the unlock and ask for the LUKS recovery passphrase.
 - Log in with the administrator password and unplug external USB devices except a USB system disk.
-- Rerun the installer to enroll the unlock again.
-- Reboot and run the installer `validate` action.
+- Re-enroll the unlock as described below.
+
+### Re-enroll the unlock
+
+- Re-enroll after a wipe, a boot-chain update, a firmware setup change, or a moved host.
+- Unplug every external USB device, including the keyboard, except a USB system disk.
+- Wipe a key that is still armed first, for example after a `wipe-failed:` result:
+
+```bash
+sudo /usr/local/libexec/private-cloud/tripwire.py wipe
+```
+
+- Run the installer in `reapply` mode; it enrolls only when the unlock is not armed:
+
+```bash
+sudo python3 ansible/install.py
+```
+
+- Review the gateway MAC and the USB and PCI device list it prints before confirming.
+- Enter the LUKS recovery passphrase when prompted.
+- Expect `boot_integrity: enrolled; reboot to verify the unattended unlock` in the result.
+- Reboot, confirm the host unlocks without input, and run the installer `validate` action.
 
 ### Recovery
 
